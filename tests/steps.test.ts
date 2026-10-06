@@ -16,6 +16,7 @@ function scene(i: number, start: number, end: number): Scene {
     asset_type: null,
     asset_path: null,
     asset_source: null,
+    asset_credit: null,
     start_sec: start,
     end_sec: end,
     locked: false

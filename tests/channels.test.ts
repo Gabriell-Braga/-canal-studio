@@ -43,6 +43,7 @@ describe('migration to multi-channel', () => {
     const raw = new Database(file)
     raw.exec('DELETE FROM channels; DROP INDEX idx_videos_channel;')
     raw.exec('ALTER TABLE videos DROP COLUMN channel_id; DROP TABLE channels;')
+    raw.exec('ALTER TABLE scenes DROP COLUMN asset_credit')
     raw.exec('DELETE FROM settings')
     raw.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('voice', '"bm_george"')
     raw

@@ -219,6 +219,7 @@ function toScene(r: Row): Scene {
     asset_type: (r.asset_type as Scene['asset_type']) ?? null,
     asset_path: (r.asset_path as string) ?? null,
     asset_source: (r.asset_source as string) ?? null,
+    asset_credit: (r.asset_credit as string) ?? null,
     start_sec: (r.start_sec as number) ?? null,
     end_sec: (r.end_sec as number) ?? null,
     locked: Boolean(r.locked)

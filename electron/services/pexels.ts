@@ -2,6 +2,7 @@ import { createWriteStream, mkdirSync, renameSync } from 'fs'
 import { dirname } from 'path'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
+import { WIKIMEDIA_USER_AGENT } from './wikimedia'
 
 interface PexelsVideoFile {
   id: number
@@ -32,6 +33,8 @@ export interface StockCandidate {
   kind: 'stock_video' | 'stock_photo'
   url: string
   duration?: number
+  /** Attribution required by the file's license, if any. */
+  credit?: string
 }
 
 async function pexelsGet<T>(path: string, key: string, signal?: AbortSignal): Promise<T> {
@@ -99,7 +102,8 @@ export async function searchStock(
 }
 
 export async function download(url: string, out: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(url, { signal })
+  // Wikimedia's CDN rejects requests without a descriptive User-Agent.
+  const res = await fetch(url, { signal, headers: { 'User-Agent': WIKIMEDIA_USER_AGENT } })
   if (!res.ok || !res.body) throw new Error(`Download falhou: HTTP ${res.status}`)
   mkdirSync(dirname(out), { recursive: true })
   const tmp = `${out}.part`

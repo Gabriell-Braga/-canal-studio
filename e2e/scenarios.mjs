@@ -532,3 +532,24 @@ async function tour({ launch, api, shot, log }) {
 }
 
 scenarios.tour = tour
+
+/** Stock providers without keys: "Outro resultado" on a scene pulls a Wikimedia Commons image. */
+async function stock({ launch, api, log }) {
+  const { app, page } = await launch()
+  const video = (await api(page, 'videos.list', 1)).find((v) => v.video_path)
+  assert(video, 'a produced video')
+  const before = await api(page, 'videos.get', video.id)
+  const scene = before.scenes[3]
+  log(`Cena 4: "${scene.visual_keywords}"`)
+  const after = await api(page, 'scenes.nextStock', scene.id)
+  log(
+    `Nova mídia: ${after.asset_type} ${after.asset_source} ${after.asset_credit ?? '(domínio público)'}`
+  )
+  assert(after.asset_source?.startsWith('wikimedia:'), 'came from Wikimedia')
+  const again = await api(page, 'scenes.nextStock', scene.id)
+  assert(again.asset_source !== after.asset_source, 'second click gives another file')
+  log(`Outro resultado: ${again.asset_source}`)
+  await app.close()
+}
+
+scenarios.stock = stock

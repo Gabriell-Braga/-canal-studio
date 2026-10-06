@@ -24,6 +24,7 @@ import { steps } from '../steps'
 import { configurePython, ensurePython, hasVenv, stopPython } from '../services/python'
 import { configureRemotion } from '../services/remotion'
 import { configureMusic } from '../steps/render'
+import { configureStockCache } from '../services/stock'
 import { isConnected as isYoutubeConnected, readStats, refreshStats } from '../services/youtube'
 import { registerIpc } from './ipc'
 import { handleMedia, registerMediaScheme } from './media'
@@ -225,6 +226,7 @@ app.whenReady().then(async () => {
   handleMedia(() => [dataDir()])
   configureRemotion(appRoot())
   configureMusic(channelMusicDir)
+  configureStockCache(join(dataDir(), 'cache', 'stock'))
   configurePython({
     serverDir: join(appRoot(), 'python'),
     venvDir: app.isPackaged

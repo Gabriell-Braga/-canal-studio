@@ -161,6 +161,8 @@ export interface Scene {
   asset_type: AssetType | null
   asset_path: string | null
   asset_source: string | null
+  /** Attribution line when the license requires one (Wikimedia CC BY). */
+  asset_credit: string | null
   start_sec: number | null
   end_sec: number | null
   locked: boolean
@@ -201,6 +203,8 @@ export interface PublishSlot {
   time: string
 }
 
+export type StockProvider = 'pixabay' | 'pexels' | 'wikimedia'
+
 export interface Settings {
   ollamaUrl: string
   ollamaModel: string
@@ -220,6 +224,11 @@ export interface Settings {
   comfyPath: string
   comfyCheckpoint: string
   pexelsApiKey: string
+  pixabayApiKey: string
+  /** Stock sources tried in this order for each scene (per channel). */
+  stockProviders: StockProvider[]
+  /** Also use CC BY files from Wikimedia, credited in the video description. */
+  wikimediaAllowCcBy: boolean
   aiImageRatio: number
   captionsEnabled: boolean
   musicVolume: number
@@ -243,6 +252,7 @@ export const CHANNEL_SETTING_KEYS = [
   'voiceSpeed',
   'scenePauseSec',
   'aiImageRatio',
+  'stockProviders',
   'captionsEnabled',
   'musicVolume',
   'templates',

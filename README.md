@@ -1,6 +1,6 @@
 # Canal Studio
 
-Windows desktop app that produces long-form videos for a faceless English-language YouTube channel. Everything runs locally and free: the script comes from Ollama, the voice from Kokoro, captions from faster-whisper, images from ComfyUI (SDXL), stock footage from Pexels, and the render from Remotion.
+Windows desktop app that produces long-form videos for a faceless English-language YouTube channel. Everything runs locally and free: the script comes from Ollama, the voice from Kokoro, captions from faster-whisper, images from ComfyUI (SDXL), stock footage and photos from Pixabay and Wikimedia Commons (Pexels optional), and the render from Remotion.
 
 You approve the script and the final video. Everything else is automatic, queued, and the heavy work runs in a night window.
 
@@ -47,7 +47,9 @@ Run `Canal Studio-<version>-setup.exe` from `dist/`. It installs for the current
 
 1. Open **Serviços**. Click **Instalar** on "Servidor Python". This creates a virtual environment and downloads Kokoro, faster-whisper and the CUDA libraries (about 3 GB on disk, several minutes). Follow the progress in **Fila e Worker → Logs**.
 2. Open **Configurações**:
-   - Paste your **Pexels API key** (free at pexels.com/api → "Your API key"). Without it, every scene uses an AI image.
+   - Paste your **Pixabay API key**: create a free account at pixabay.com, then open pixabay.com/api/docs while logged in; the key is shown under "Parameters".
+   - Wikimedia Commons needs no key and is on by default (historical photos, paintings and maps).
+   - Pexels paused new API keys in 2026. Paste a Pexels key only if you already have one.
    - Check the ComfyUI folder.
    - Choose a voice and click **Ouvir amostra**.
    - Set the night window, the limit of videos per night, and the publish slots.
@@ -74,8 +76,8 @@ Important limits:
 
 The app runs several YouTube channels side by side. It opens on the channel picker; switch channels from the card at the top of the sidebar.
 
-- **Per channel** (Configurações do canal): name and color, script and review prompts, default length and niche, voice, captions, music volume and music folder, templates, AI image ratio, publish slots and time zone, synthetic content default, and the YouTube connection.
-- **Shared** (Configurações gerais): Ollama model, night window and nightly limit, Whisper, ComfyUI, Pexels key, Google Cloud client, data folder, startup. There is one GPU, so the queue is shared and shows which channel each job belongs to.
+- **Per channel** (Configurações do canal): name and color, script and review prompts, default length and niche, voice, captions, music volume and music folder, templates, AI image ratio, stock provider order, publish slots and time zone, synthetic content default, and the YouTube connection.
+- **Shared** (Configurações gerais): Ollama model, night window and nightly limit, Whisper, ComfyUI, Pixabay and Pexels keys, Wikimedia CC BY option, Google Cloud client, data folder, startup. There is one GPU, so the queue is shared and shows which channel each job belongs to.
 - A new channel can start from another channel's settings. Changing it never touches the original.
 - The first channel keeps everything that existed before multi-channel support (videos, settings, YouTube login) and its music stays in `dados\musica`. Other channels use `dados\canais\<id>\musica` (Configurações do canal → Abrir).
 
@@ -105,7 +107,7 @@ ERROR at any step, with "Tentar de novo a partir desta etapa"
 | script | Ollama structured JSON, validated with Zod, plus a self-review with fact alerts | yes |
 | audio | Kokoro per scene (cached by text), joined with pauses, compressed, loudnorm to -14 LUFS | yes* |
 | transcribe | faster-whisper word timestamps (CUDA, CPU fallback) | yes |
-| scenes | Pexels stock video/photo, otherwise SDXL in ComfyUI, all images of a video in one batch | yes |
+| scenes | Stock video/photo from the channel's providers in order (Pixabay, Wikimedia Commons, Pexels), otherwise SDXL in ComfyUI, all images of a video in one batch | yes |
 | render | Remotion in a separate process: Ken Burns, crossfades, word-by-word captions, music | yes |
 | thumbnail | 3 options: headline from the LLM, background from AI image or video frames | yes |
 | metadata | Final title (≤70 chars), description with chapters, 10–15 tags | yes |
@@ -119,7 +121,7 @@ VRAM on 12 GB: Ollama runs with `keep_alive: 0`; before ComfyUI the app unloads 
 
 ## Configuration reference
 
-All settings live on **Configurações** and are stored in the local SQLite database (`dados\canal.db`, table `settings`). Secrets: the YouTube refresh token is encrypted with Windows DPAPI (Electron `safeStorage`). The Pexels key and the Google client secret are stored in the local database, never in the code.
+All settings live on **Configurações** and are stored in the local SQLite database (`dados\canal.db`, table `settings`). Secrets: the YouTube refresh token is encrypted with Windows DPAPI (Electron `safeStorage`). The Pixabay and Pexels keys and the Google client secret are stored in the local database, never in the code.
 
 Templates: three looks rotate between videos so the channel does not look identical every time:
 
@@ -134,8 +136,10 @@ Templates: three looks rotate between videos so the channel does not look identi
 | "Servidor Python não instalado" | Serviços → Instalar on "Servidor Python". |
 | Whisper says it fell back to CPU | The CUDA DLLs did not load. It still works, slower. Set Configurações → Legendas → Dispositivo to CPU to skip the attempt. |
 | ComfyUI does not start | Check the folder in Configurações. Start `run_nvidia_gpu.bat` by hand to see its error. |
-| "Sem chave da Pexels" in the logs | Add the key in Configurações. |
-| Pexels "Limite atingido" | The free API allows 200 requests per hour. The scene falls back to AI; try "Outro resultado" later. |
+| "Nenhum banco de imagens ativo" in the logs | Add a Pixabay key or enable Wikimedia Commons in Configurações do canal. |
+| Pixabay "Limite atingido" | The free API allows 100 searches per minute. The scene tries the next provider, then AI. Searches are cached for 24 h. |
+| Pexels "Request API access" says key issuance is paused | Pexels stopped issuing new keys. Use Pixabay and Wikimedia Commons instead. |
+| Wikimedia images look old | That is the archive: great for history topics. Put Pixabay first for modern topics. |
 | Render fails with a timeout | Usually a very large stock clip. Swap the scene and re-render. |
 | `spawn ffmpeg ENOENT` | FFmpeg is not on PATH. Reinstall with winget and restart the app. |
 | Upload fails with `invalid_grant` | The OAuth token expired (testing mode). Reconnect on the Canal screen. |
@@ -172,6 +176,8 @@ Check the license of every model and asset you use for commercial use.
 | gemma3:12b (alternative) | Gemma Terms of Use | Yes, with use restrictions |
 | SDXL base 1.0 | CreativeML Open RAIL++-M | Yes, with use restrictions |
 | Flux.1 Dev | Non-commercial license | **Not used** |
+| Pixabay videos and photos | Pixabay Content License | Yes, no attribution required; do not sell unaltered copies or use them in a misleading way |
+| Wikimedia Commons files | Public domain / CC0 (always), CC BY (optional) | Yes; CC BY files are credited automatically in the description. CC BY-SA, NC and ND are never used |
 | Pexels videos and photos | Pexels License | Yes, no attribution required; do not sell unaltered copies |
 | YouTube Audio Library | Per track | Check whether attribution is required |
 
@@ -204,7 +210,7 @@ electron/   main process
   db/       SQLite schema, repositories, settings
   queue/    scheduler, GPU lock, night window, publish slots
   steps/    script, audio, transcribe, scenes, render, thumbnail, metadata, upload
-  services/ Ollama, ComfyUI, Python sidecar, Pexels, FFmpeg, Remotion, YouTube
+  services/ Ollama, ComfyUI, Python sidecar, Pixabay, Wikimedia, Pexels, FFmpeg, Remotion, YouTube
 src/        React UI
 shared/     types shared by main, preload, UI and Remotion
 remotion/   compositions (video, thumbnail) and render.ts worker

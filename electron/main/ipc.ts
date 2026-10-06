@@ -34,6 +34,7 @@ import { channelMusicDir, dataDir, projectDir, setDataDir } from './paths'
 import { channelSummaries } from './channels'
 import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scenes'
 import { freeComfy } from '../services/comfy'
+import { usableProviders } from '../services/stock'
 import {
   connect as connectYoutube,
   disconnect as disconnectYoutube,
@@ -116,11 +117,13 @@ export function registerIpc(
     getSettings(getVideo(getScene(sceneId).video_id).channel_id)
   handle('scenes:nextStock', async (id: number) => {
     const s = sceneSettings(id)
-    if (!s.pexelsApiKey) throw new Error('Configure a chave da Pexels em Configurações')
+    if (!usableProviders(s).length) {
+      throw new Error('Nenhum banco de mídia ativo. Configure a Pixabay ou ative o Wikimedia.')
+    }
     const scene = getScene(id)
     const tried = scene.asset_source ? [scene.asset_source] : []
     const ok = await assignStock(scene, sceneDir(id), s, tried)
-    if (!ok) throw new Error('Nenhum outro resultado na Pexels para estas palavras-chave')
+    if (!ok) throw new Error('Nenhum outro resultado nos bancos de mídia para estas palavras-chave')
     return getScene(id)
   })
   handle('scenes:generateAi', async (id: number) => {

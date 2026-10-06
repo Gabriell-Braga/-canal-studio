@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { FolderOpen, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, FolderOpen, Trash2 } from 'lucide-react'
 import {
   CHANNEL_SETTING_KEYS,
   type PublishSlot,
+  type StockProvider,
   type Settings as SettingsT
 } from '../../shared/types'
 import {
@@ -19,6 +20,75 @@ import { api, errorText, mediaUrl } from '../lib/api'
 import { useChannel } from '../lib/channel'
 
 type Scope = 'channel' | 'global'
+
+const PROVIDERS: { id: StockProvider; name: string; note: string }[] = [
+  { id: 'pixabay', name: 'Pixabay', note: 'vídeos e fotos modernos · precisa de chave grátis' },
+  { id: 'wikimedia', name: 'Wikimedia Commons', note: 'fotos e pinturas históricas · sem chave' },
+  { id: 'pexels', name: 'Pexels', note: 'vídeos e fotos · chaves novas pausadas' }
+]
+
+/** Enable, disable and reorder the stock sources of a channel. */
+function ProviderOrder({
+  value,
+  onChange
+}: {
+  value: StockProvider[]
+  onChange: (v: StockProvider[]) => void
+}): React.JSX.Element {
+  const ordered = [...value, ...PROVIDERS.map((p) => p.id).filter((id) => !value.includes(id))]
+  const move = (id: StockProvider, delta: number): void => {
+    const list = [...value]
+    const i = list.indexOf(id)
+    const j = i + delta
+    if (i < 0 || j < 0 || j >= list.length) return
+    ;[list[i], list[j]] = [list[j], list[i]]
+    onChange(list)
+  }
+  return (
+    <div className="divide-y divide-white/[0.05] overflow-hidden rounded-lg border border-ink-700">
+      {ordered.map((id) => {
+        const p = PROVIDERS.find((x) => x.id === id)!
+        const on = value.includes(id)
+        const pos = value.indexOf(id)
+        return (
+          <div key={id} className="flex items-center gap-3 bg-ink-950/40 px-3 py-2.5">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={on}
+              onChange={(e) =>
+                onChange(e.target.checked ? [...value, id] : value.filter((x) => x !== id))
+              }
+            />
+            <span className="w-5 text-center text-xs font-semibold text-brand-300">
+              {on ? pos + 1 : ''}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className={`text-sm ${on ? 'text-ink-100' : 'text-ink-500'}`}>{p.name}</div>
+              <div className="text-xs text-ink-500">{p.note}</div>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!on || pos === 0}
+              onClick={() => move(id, -1)}
+            >
+              <ArrowUp size={14} />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!on || pos === value.length - 1}
+              onClick={() => move(id, 1)}
+            >
+              <ArrowDown size={14} />
+            </Button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 const ScopeContext = createContext<Scope>('global')
 const CHANNEL_KEYS = new Set<string>(CHANNEL_SETTING_KEYS)
 
@@ -428,10 +498,34 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               onChange={(e) => set('aiImageRatio', Number(e.target.value))}
             />
           </Field>
+          <div className="md:col-span-2">
+            <span className="mb-1.5 block text-[13px] font-medium text-ink-200">
+              Bancos de imagens e vídeos (em ordem de preferência)
+            </span>
+            <ProviderOrder value={s.stockProviders} onChange={(v) => set('stockProviders', v)} />
+            <span className="mt-1.5 block text-xs text-ink-500">
+              Para cada cena, o app tenta o primeiro banco; sem resultado, o próximo; sem nada, gera
+              imagem com IA. Canais de história costumam render mais com o Wikimedia primeiro.
+            </span>
+          </div>
         </Section>
 
         <Section title="Imagens e vídeos de banco" scope="global">
-          <Field label="Chave da Pexels API" hint="Grátis em pexels.com/api (veja o README).">
+          <Field
+            label="Chave da Pixabay API"
+            hint="Grátis: crie a conta em pixabay.com, depois abra pixabay.com/api/docs logado; a chave aparece na seção Parameters."
+          >
+            <input
+              className={inputClass}
+              type="password"
+              value={s.pixabayApiKey}
+              onChange={(e) => set('pixabayApiKey', e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Chave da Pexels API"
+            hint="A Pexels pausou a emissão de chaves novas. Só preencha se você já tiver uma."
+          >
             <input
               className={inputClass}
               type="password"
@@ -439,6 +533,18 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               onChange={(e) => set('pexelsApiKey', e.target.value)}
             />
           </Field>
+          <label className="flex items-start gap-2 text-sm text-ink-200 md:col-span-2">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4"
+              checked={s.wikimediaAllowCcBy}
+              onChange={(e) => set('wikimediaAllowCcBy', e.target.checked)}
+            />
+            <span>
+              Wikimedia Commons: usar também arquivos CC BY, com crédito automático na descrição do
+              vídeo. Sem esta opção, só domínio público e CC0. CC BY-SA, NC e ND nunca são usados.
+            </span>
+          </label>
           <Field label="Pasta do ComfyUI">
             <input
               className={inputClass}

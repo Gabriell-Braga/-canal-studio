@@ -92,6 +92,16 @@ ${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter 
       )
       description += `\n\nChapters\n${lines.join('\n')}`
     }
+    // Licenses like CC BY require crediting the author where the work is used.
+    const credits = [
+      ...new Set(
+        listScenes(videoId)
+          .map((sc) => sc.asset_credit)
+          .filter(Boolean)
+      )
+    ]
+    if (credits.length)
+      description += `\n\nImage credits\n${credits.map((c) => `- ${c}`).join('\n')}`
     const tags = [...new Set(meta.tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(
       0,
       15

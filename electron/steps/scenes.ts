@@ -5,7 +5,8 @@ import { getScene, listScenes, updateScene } from '../db/repo'
 import { ensureComfy, freeComfy, generateImage } from '../services/comfy'
 import { isValidFile } from '../services/ffmpeg'
 import { unloadAll } from '../services/ollama'
-import { download, searchStock } from '../services/pexels'
+import { download } from '../services/pexels'
+import { PROVIDER_LABELS, searchAll, usableProviders } from '../services/stock'
 import { pythonPost } from '../services/python'
 import type { Step } from './types'
 
@@ -29,19 +30,20 @@ function usedSources(videoId: number, exceptSceneId?: number): Set<string> {
   )
 }
 
-/** Try Pexels for one scene. Returns false when nothing usable was found. */
+/** Try the stock providers for one scene. Returns false when nothing usable was found. */
 export async function assignStock(
   scene: Scene,
   dir: string,
   s: Settings,
   extraExclude: string[] = [],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onWarn?: (message: string) => void
 ): Promise<boolean> {
-  if (!s.pexelsApiKey) return false
+  if (!usableProviders(s).length) return false
   const exclude = usedSources(scene.video_id, scene.id)
   extraExclude.forEach((e) => exclude.add(e))
   const query = scene.visual_keywords || scene.narration.split(/\s+/).slice(0, 4).join(' ')
-  const candidates = await searchStock(query, sceneDuration(scene), s.pexelsApiKey, exclude, signal)
+  const candidates = await searchAll(query, sceneDuration(scene), s, exclude, onWarn, signal)
   const pick = candidates[0]
   if (!pick) return false
   const ext = pick.kind === 'stock_video' ? '.mp4' : '.jpg'
@@ -50,7 +52,12 @@ export async function assignStock(
     `scene_${String(scene.index).padStart(3, '0')}_${pick.source.replace(/\W+/g, '_')}${ext}`
   )
   if (!isValidFile(out)) await download(pick.url, out, signal)
-  updateScene(scene.id, { asset_type: pick.kind, asset_path: out, asset_source: pick.source })
+  updateScene(scene.id, {
+    asset_type: pick.kind,
+    asset_path: out,
+    asset_source: pick.source,
+    asset_credit: pick.credit ?? null
+  })
   return true
 }
 
@@ -70,7 +77,12 @@ export async function assignAi(
   const prompt = scene.image_prompt || scene.visual_keywords || scene.narration
   const out = join(dir, `scene_${String(scene.index).padStart(3, '0')}_ai_${Date.now()}.png`)
   await generateImage(prompt, out, s, { signal })
-  updateScene(scene.id, { asset_type: 'ai_image', asset_path: out, asset_source: 'comfyui' })
+  updateScene(scene.id, {
+    asset_type: 'ai_image',
+    asset_path: out,
+    asset_source: 'comfyui',
+    asset_credit: null
+  })
 }
 
 export const scenesStep: Step = {
@@ -85,7 +97,10 @@ export const scenesStep: Step = {
     const needAi: Scene[] = []
     let stock = 0
     let kept = 0
-    if (!s.pexelsApiKey) ctx.log('Sem chave da Pexels: todas as cenas usarão imagens IA', 'warn')
+    const providers = usableProviders(s)
+    if (!providers.length)
+      ctx.log('Nenhum banco de imagens ativo: todas as cenas usarão IA', 'warn')
+    else ctx.log(`Bancos de mídia: ${providers.map((p) => PROVIDER_LABELS[p]).join(' → ')}`)
 
     for (const [i, scene] of scenes.entries()) {
       if (ctx.signal.aborted) throw new Error('Cancelado')
@@ -93,15 +108,18 @@ export const scenesStep: Step = {
         kept++
         continue
       }
-      if (wantAi.has(i) || !s.pexelsApiKey) {
+      if (wantAi.has(i) || !providers.length) {
         needAi.push(scene)
         continue
       }
       try {
-        if (await assignStock(scene, dir, s, [], ctx.signal)) stock++
+        if (await assignStock(scene, dir, s, [], ctx.signal, (m) => ctx.log(m, 'warn'))) stock++
         else needAi.push(scene)
       } catch (error) {
-        ctx.log(`Pexels falhou na cena ${scene.index + 1}: ${(error as Error).message}`, 'warn')
+        ctx.log(
+          `Banco de mídia falhou na cena ${scene.index + 1}: ${(error as Error).message}`,
+          'warn'
+        )
         needAi.push(scene)
       }
       ctx.progress((0.3 * (i + 1)) / scenes.length)

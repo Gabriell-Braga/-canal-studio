@@ -120,6 +120,9 @@ const migrations: string[] = [
   UPDATE secrets SET key = 'youtube.refresh_token.1' WHERE key = 'youtube.refresh_token';
   UPDATE settings SET key = 'state.ch.1.youtubeChannel' WHERE key = 'state.youtubeChannel';
   UPDATE settings SET key = 'state.ch.1.statsUpdatedAt' WHERE key = 'state.statsUpdatedAt';
+  `,
+  `
+  ALTER TABLE scenes ADD COLUMN asset_credit TEXT;
   `
 ]
 

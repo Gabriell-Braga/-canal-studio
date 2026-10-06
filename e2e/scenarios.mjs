@@ -437,3 +437,30 @@ async function scriptLength({ launch, api, log, waitUntil }) {
 }
 
 scenarios.scriptLength = scriptLength
+
+/** Packaged app (E2E_EXE) on a copy of a phase4 data folder: services screen and a real re-render. */
+async function packaged({ launch, api, shot, log, waitUntil }) {
+  const { app, page } = await launch()
+  await page.getByTestId('nav-services').click()
+  await page.getByText(/de \d+ prontos/).waitFor({ timeout: 60_000 })
+  await shot(page, 'services')
+  const services = await api(page, 'services.check')
+  services.forEach((s) => log(`  ${s.name}: ${s.state} ${s.detail ?? ''}`))
+  const video = (await api(page, 'videos.list')).find((v) => v.video_path)
+  assert(video, 'a rendered video in the data folder')
+  const lastJob = Math.max(0, ...(await api(page, 'videos.get', video.id)).jobs.map((j) => j.id))
+  await api(page, 'videos.rerender', video.id)
+  log('Re-render no app empacotado…')
+  await waitUntil(
+    async () => {
+      const d = await api(page, 'videos.get', video.id)
+      if (d.video.status === 'ERROR') throw new Error(d.video.error_message)
+      return d.jobs.some((j) => j.id > lastJob && j.type === 'render' && j.status === 'done')
+    },
+    { label: 'packaged render', timeoutMs: 20 * 60_000, everyMs: 5000 }
+  )
+  log('Render OK no app empacotado')
+  await app.close()
+}
+
+scenarios.packaged = packaged

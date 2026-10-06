@@ -20,8 +20,11 @@ const shotsDir = process.env.E2E_SHOTS ?? join(dataDir, 'screenshots')
 mkdirSync(shotsDir, { recursive: true })
 
 async function launch() {
+  // E2E_EXE runs the packaged app (dist/win-unpacked/canal-studio.exe) instead of out/.
   const app = await electron.launch({
-    args: [join(root, 'out', 'main', 'index.js')],
+    ...(process.env.E2E_EXE
+      ? { executablePath: process.env.E2E_EXE, args: [] }
+      : { args: [join(root, 'out', 'main', 'index.js')] }),
     cwd: root,
     env: { ...process.env, CANAL_E2E: '1', CANAL_DATA_DIR: dataDir, CANAL_TICK_MS: '1000' }
   })

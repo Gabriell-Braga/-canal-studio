@@ -393,3 +393,21 @@ async function phase5({ launch, api, shot, log, waitUntil }) {
 }
 
 scenarios.phase5 = phase5
+
+/** Fase 6 without Google credentials: Canal screen, guide, quota, and a clear error on connect. */
+async function phase6({ launch, api, shot, log }) {
+  const { app, page } = await launch()
+  await page.getByTestId('nav-channel').click()
+  await page.getByText('Cota da API:').waitFor()
+  await page.getByText('Guia: configurar o Google Cloud').click()
+  await page.getByText('App para computador').first().waitFor()
+  await shot(page, 'channel')
+  const result = await api(page, 'youtube.connect')
+  log(`Conectar sem credenciais: ${result.message}`)
+  assert(!result.ok && /Client ID/.test(result.message), 'asks for client id')
+  const stats = await api(page, 'youtube.stats')
+  assert(stats.connected === false && stats.quotaLimit === 10000, 'stats shape')
+  await app.close()
+}
+
+scenarios.phase6 = phase6

@@ -130,7 +130,13 @@ export function createChannel(name: string, color: string): Channel {
   return getChannel(Number(info.lastInsertRowid))
 }
 
-export function updateChannel(id: number, patch: { name?: string; color?: string }): Channel {
+export function updateChannel(
+  id: number,
+  patch: { name?: string; color?: string; avatar_path?: string | null }
+): Channel {
+  if (patch.avatar_path !== undefined) {
+    db().prepare('UPDATE channels SET avatar_path = ? WHERE id = ?').run(patch.avatar_path, id)
+  }
   if (patch.name !== undefined)
     db().prepare('UPDATE channels SET name = ? WHERE id = ?').run(patch.name, id)
   if (patch.color !== undefined)

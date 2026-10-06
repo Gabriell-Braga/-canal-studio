@@ -8,6 +8,7 @@ import {
   nativeImage,
   powerSaveBlocker
 } from 'electron'
+import { statSync } from 'fs'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -25,10 +26,15 @@ import { configurePython, ensurePython, hasVenv, stopPython } from '../services/
 import { configureRemotion } from '../services/remotion'
 import { configureMusic } from '../steps/render'
 import { configureStockCache } from '../services/stock'
-import { isConnected as isYoutubeConnected, readStats, refreshStats } from '../services/youtube'
+import {
+  configureYoutube,
+  isConnected as isYoutubeConnected,
+  readStats,
+  refreshStats
+} from '../services/youtube'
 import { registerIpc } from './ipc'
 import { handleMedia, registerMediaScheme } from './media'
-import { appRoot, channelMusicDir, dataDir, projectDir } from './paths'
+import { appRoot, channelDir, channelMusicDir, dataDir, projectDir } from './paths'
 
 const isE2E = process.env.CANAL_E2E === '1'
 const startHidden = process.argv.includes('--hidden')
@@ -39,7 +45,16 @@ let quitting = false
 let powerBlockId: number | null = null
 let scheduler: Scheduler
 
-if (!isE2E && !app.requestSingleInstanceLock()) {
+/** When this build was made; a newer build started later takes over from this one. */
+const BUILD_ID = (() => {
+  try {
+    return statSync(__filename).mtimeMs
+  } catch {
+    return 0
+  }
+})()
+
+if (!isE2E && !app.requestSingleInstanceLock({ buildId: BUILD_ID })) {
   app.quit()
 }
 registerMediaScheme()
@@ -211,7 +226,20 @@ function scheduleStatsRefresh(): void {
   setInterval(check, 3600_000)
 }
 
-app.on('second-instance', showWindow)
+app.on('second-instance', (_event, _argv, _cwd, data) => {
+  const newer = (data as { buildId?: number } | undefined)?.buildId ?? 0
+  if (newer > BUILD_ID) {
+    // The shortcut was opened after an update: restart on the new build instead of
+    // bringing back this old window. Running jobs go back to the queue on restart.
+    quitting = true
+    scheduler?.stop()
+    stopPython()
+    app.relaunch()
+    app.exit(0)
+    return
+  }
+  showWindow()
+})
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('app.canalstudio')
@@ -227,6 +255,7 @@ app.whenReady().then(async () => {
   configureRemotion(appRoot())
   configureMusic(channelMusicDir)
   configureStockCache(join(dataDir(), 'cache', 'stock'))
+  configureYoutube({ channelDir })
   configurePython({
     serverDir: join(appRoot(), 'python'),
     venvDir: app.isPackaged

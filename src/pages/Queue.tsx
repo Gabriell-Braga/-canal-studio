@@ -26,7 +26,12 @@ function JobRow({
       <span className="w-24 shrink-0 font-medium text-ink-100">{JOB_LABELS[job.type]}</span>
       {channel && (
         <span title={channel.name}>
-          <ChannelAvatar name={channel.name} color={channel.color} size={20} />
+          <ChannelAvatar
+            name={channel.name}
+            color={channel.color}
+            avatar={channel.avatar_path}
+            size={20}
+          />
         </span>
       )}
       <button

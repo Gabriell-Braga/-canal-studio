@@ -115,6 +115,8 @@ export interface Channel {
   id: number
   name: string
   color: string
+  /** YouTube channel picture, downloaded when the channel connects */
+  avatar_path: string | null
   created_at: string
 }
 

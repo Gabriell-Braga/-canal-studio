@@ -1,12 +1,13 @@
 import { safeStorage, shell } from 'electron'
-import { createReadStream, statSync } from 'fs'
+import { createReadStream, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { createServer } from 'http'
 import { youtube, type youtube_v3 } from '@googleapis/youtube'
 import { youtubeAnalytics } from '@googleapis/youtubeanalytics'
 import { OAuth2Client } from 'google-auth-library'
 import type { ChannelStats } from '../../shared/types'
 import { db, now } from '../db'
-import { listVideos } from '../db/repo'
+import { listVideos, updateChannel } from '../db/repo'
 import { getSettings } from '../db/settings'
 
 const SCOPES = [
@@ -125,20 +126,60 @@ export async function connect(channelId: number): Promise<string> {
     )
   saveSecret(tokenKey(channelId), tokens.refresh_token)
   oauth.setCredentials(tokens)
-  const yt = youtube({ version: 'v3', auth: oauth })
+  return syncChannelIdentity(channelId, oauth)
+}
+
+let channelDirFor: (channelId: number) => string = () => ''
+
+export function configureYoutube(opts: { channelDir: (channelId: number) => string }): void {
+  channelDirFor = opts.channelDir
+}
+
+/**
+ * Copy the YouTube channel's name and picture into the Canal Studio channel, so the
+ * picker and sidebar show the real channel. Runs on connect and on every stats refresh.
+ */
+export async function syncChannelIdentity(channelId: number, auth?: OAuth2Client): Promise<string> {
+  const yt = youtube({ version: 'v3', auth: auth ?? authed(channelId) })
   const me = await yt.channels.list({ part: ['snippet'], mine: true })
   addQuota(COST.list)
-  const title = me.data.items?.[0]?.snippet?.title ?? 'canal'
+  const snippet = me.data.items?.[0]?.snippet
+  if (!snippet) throw new Error('Esta conta Google não tem canal no YouTube')
+  const title = snippet.title ?? 'Canal'
   db()
     .prepare(
       'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
     )
     .run(`state.ch.${channelId}.youtubeChannel`, JSON.stringify(title))
+
+  let avatar: string | undefined
+  const thumbs = snippet.thumbnails
+  const url = thumbs?.high?.url ?? thumbs?.medium?.url ?? thumbs?.default?.url
+  const dir = channelDirFor(channelId)
+  if (url && dir) {
+    try {
+      const res = await fetch(url)
+      if (res.ok) {
+        mkdirSync(dir, { recursive: true })
+        avatar = join(dir, `avatar-${Date.now()}.jpg`)
+        writeFileSync(avatar, Buffer.from(await res.arrayBuffer()))
+        // Keep only the newest picture.
+        for (const f of readdirSync(dir)) {
+          if (f.startsWith('avatar-') && join(dir, f) !== avatar)
+            rmSync(join(dir, f), { force: true })
+        }
+      }
+    } catch {
+      // Without the picture the colored initials stay.
+    }
+  }
+  updateChannel(channelId, { name: title, ...(avatar ? { avatar_path: avatar } : {}) })
   return title
 }
 
 export function disconnect(channelId: number): void {
   deleteSecret(tokenKey(channelId))
+  updateChannel(channelId, { avatar_path: null })
 }
 
 function authed(channelId: number): OAuth2Client {
@@ -221,6 +262,7 @@ export async function setThumbnail(
 
 export async function refreshStats(channelId: number): Promise<void> {
   const oauth = authed(channelId)
+  await syncChannelIdentity(channelId, oauth).catch(() => undefined)
   const analytics = youtubeAnalytics({ version: 'v2', auth: oauth })
   const today = new Date().toISOString().slice(0, 10)
   const save = db().prepare(

@@ -168,7 +168,12 @@ function ChannelManagement(): React.JSX.Element {
         </div>
       )}
       <div className="mt-5 flex flex-wrap items-end gap-5">
-        <ChannelAvatar name={name || '?'} color={channel.color} size={52} />
+        <ChannelAvatar
+          name={name || '?'}
+          color={channel.color}
+          avatar={channel.avatar_path}
+          size={52}
+        />
         <div className="min-w-64 flex-1">
           <Field label="Nome">
             <input

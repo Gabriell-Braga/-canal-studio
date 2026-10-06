@@ -45,7 +45,7 @@ export default function ChannelPicker({ channels, onSelect, onCreated }: Props):
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <ChannelAvatar name={c.name} color={c.color} size={44} />
+                  <ChannelAvatar name={c.name} color={c.color} avatar={c.avatar_path} size={44} />
                   <div className="min-w-0">
                     <div className="truncate text-[15px] font-semibold text-white">{c.name}</div>
                     <div className="mt-0.5 flex items-center gap-1 truncate text-xs text-ink-400">

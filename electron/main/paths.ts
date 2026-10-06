@@ -58,6 +58,13 @@ export function musicDir(): string {
   return dir
 }
 
+/** Per-channel files (YouTube picture, music of channels other than the first). */
+export function channelDir(channelId: number): string {
+  const dir = join(dataDir(), 'canais', String(channelId))
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
 /**
  * Background music per channel. Channel 1 keeps the original dados/musica folder;
  * other channels get dados/canais/{id}/musica.

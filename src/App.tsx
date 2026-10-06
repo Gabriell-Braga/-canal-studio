@@ -95,7 +95,12 @@ function ChannelSwitcher({
             : 'border-white/[0.06] bg-ink-850 hover:border-white/10 hover:bg-ink-800'
         }`}
       >
-        <ChannelAvatar name={channel.name} color={channel.color} size={34} />
+        <ChannelAvatar
+          name={channel.name}
+          color={channel.color}
+          avatar={channel.avatar_path}
+          size={34}
+        />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-white">{channel.name}</div>
           <div className="truncate text-[11px] text-ink-400">
@@ -119,7 +124,7 @@ function ChannelSwitcher({
               }}
               className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-ink-200 transition-colors hover:bg-ink-700"
             >
-              <ChannelAvatar name={c.name} color={c.color} size={24} />
+              <ChannelAvatar name={c.name} color={c.color} avatar={c.avatar_path} size={24} />
               <span className="min-w-0 flex-1 truncate">{c.name}</span>
               {c.scriptReview + c.finalReview > 0 && (
                 <span className="rounded-full bg-amber-400/15 px-1.5 text-[10px] font-semibold text-amber-200">

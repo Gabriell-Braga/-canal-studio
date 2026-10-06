@@ -1,5 +1,6 @@
 import { useEffect, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { mediaUrl } from '../lib/api'
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline'
 
@@ -138,12 +139,25 @@ export function Badge({
 export function ChannelAvatar({
   name,
   color,
+  avatar,
   size = 32
 }: {
   name: string
   color: string
+  /** YouTube channel picture; falls back to colored initials */
+  avatar?: string | null
   size?: number
 }): React.JSX.Element {
+  if (avatar) {
+    return (
+      <img
+        src={mediaUrl(avatar)}
+        alt=""
+        className="shrink-0 rounded-lg object-cover ring-1 ring-white/10"
+        style={{ width: size, height: size }}
+      />
+    )
+  }
   const initials = name
     .split(/\s+/)
     .filter(Boolean)

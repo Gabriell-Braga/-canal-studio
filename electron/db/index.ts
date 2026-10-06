@@ -131,6 +131,9 @@ const migrations: string[] = [
   ALTER TABLE videos ADD COLUMN short_end REAL;
   CREATE INDEX idx_videos_parent ON videos(parent_id);
   ALTER TABLE jobs ADD COLUMN args TEXT;
+  `,
+  `
+  ALTER TABLE channels ADD COLUMN avatar_path TEXT;
   `
 ]
 

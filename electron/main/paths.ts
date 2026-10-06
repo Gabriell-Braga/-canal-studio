@@ -57,3 +57,13 @@ export function musicDir(): string {
   mkdirSync(dir, { recursive: true })
   return dir
 }
+
+/**
+ * Background music per channel. Channel 1 keeps the original dados/musica folder;
+ * other channels get dados/canais/{id}/musica.
+ */
+export function channelMusicDir(channelId: number): string {
+  const dir = channelId === 1 ? musicDir() : join(dataDir(), 'canais', String(channelId), 'musica')
+  mkdirSync(dir, { recursive: true })
+  return dir
+}

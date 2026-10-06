@@ -38,6 +38,11 @@ async function launch() {
   )
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
+  // The app opens on the channel picker; scenarios work on the first channel unless told otherwise.
+  if (process.env.E2E_STAY_ON_PICKER !== '1') {
+    await page.getByTestId('channel-card').first().click()
+    await page.getByTestId('channel-switcher').waitFor()
+  }
   return { app, page }
 }
 
@@ -48,6 +53,7 @@ const ctx = {
   log: (msg) => console.log(`[${new Date().toLocaleTimeString('pt-BR')}] ${msg}`),
   shot: async (page, label) => {
     const file = join(shotsDir, `${String(++step).padStart(2, '0')}-${label}.png`)
+    await page.waitForTimeout(450) /* let enter animations finish */
     await page.screenshot({ path: file })
     console.log(`  screenshot: ${file}`)
   },

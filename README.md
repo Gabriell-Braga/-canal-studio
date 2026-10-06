@@ -70,6 +70,15 @@ Important limits:
 - **Testing mode tokens** expire after 7 days. Reconnect on the Canal screen when an upload fails with an authentication error.
 - **Custom thumbnails** need a phone-verified channel (youtube.com/verify).
 
+## Channels
+
+The app runs several YouTube channels side by side. It opens on the channel picker; switch channels from the card at the top of the sidebar.
+
+- **Per channel** (Configurações do canal): name and color, script and review prompts, default length and niche, voice, captions, music volume and music folder, templates, AI image ratio, publish slots and time zone, synthetic content default, and the YouTube connection.
+- **Shared** (Configurações gerais): Ollama model, night window and nightly limit, Whisper, ComfyUI, Pexels key, Google Cloud client, data folder, startup. There is one GPU, so the queue is shared and shows which channel each job belongs to.
+- A new channel can start from another channel's settings. Changing it never touches the original.
+- The first channel keeps everything that existed before multi-channel support (videos, settings, YouTube login) and its music stays in `dados\musica`. Other channels use `dados\canais\<id>\musica` (Configurações do canal → Abrir).
+
 ## Daily use
 
 1. **Produção** → paste topics, one per line → **Adicionar** → **Gerar roteiros**. Scripts run right away (about 1 minute per 10 minutes of video).

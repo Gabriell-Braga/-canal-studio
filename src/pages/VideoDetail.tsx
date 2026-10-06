@@ -42,11 +42,11 @@ export default function VideoDetail({ id, onBack }: Props): React.JSX.Element {
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
   const [redoStep, setRedoStep] = useState<JobType>('render')
 
-  if (data === undefined) return <p className="text-zinc-500">Carregando…</p>
+  if (data === undefined) return <p className="text-ink-500">Carregando…</p>
   if (data === null) {
     return (
       <div>
-        <p className="mb-3 text-zinc-400">Vídeo não encontrado.</p>
+        <p className="mb-3 text-ink-400">Vídeo não encontrado.</p>
         <Button onClick={onBack}>Voltar</Button>
       </div>
     )
@@ -119,7 +119,7 @@ export default function VideoDetail({ id, onBack }: Props): React.JSX.Element {
         </Banner>
       )}
 
-      <div className="mb-5 flex flex-wrap items-center gap-1 border-b border-zinc-800">
+      <div className="mb-5 flex flex-wrap items-center gap-1 border-b border-ink-800">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -127,8 +127,8 @@ export default function VideoDetail({ id, onBack }: Props): React.JSX.Element {
             onClick={() => setTab(t.id)}
             className={`-mb-px border-b-2 px-4 py-2 text-sm ${
               activeTab === t.id
-                ? 'border-emerald-500 text-white'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                ? 'border-brand-500 text-white'
+                : 'border-transparent text-ink-400 hover:text-ink-200'
             }`}
           >
             {t.label}
@@ -177,7 +177,7 @@ export default function VideoDetail({ id, onBack }: Props): React.JSX.Element {
 }
 
 function ScriptTab({ video, onSaved }: { video: Video; onSaved: () => void }): React.JSX.Element {
-  if (!video.script) return <p className="text-zinc-500">O roteiro ainda não foi gerado.</p>
+  if (!video.script) return <p className="text-ink-500">O roteiro ainda não foi gerado.</p>
   const produced = !['TOPIC_QUEUED', 'SCRIPT_GENERATING', 'SCRIPT_REVIEW'].includes(video.status)
   return (
     <Card className="p-5">
@@ -193,11 +193,11 @@ function ScriptTab({ video, onSaved }: { video: Video; onSaved: () => void }): R
 }
 
 function AudioTab({ video }: { video: Video }): React.JSX.Element {
-  if (!video.audio_path) return <p className="text-zinc-500">Áudio ainda não gerado.</p>
+  if (!video.audio_path) return <p className="text-ink-500">Áudio ainda não gerado.</p>
   return (
     <Card className="p-5">
       <audio controls src={mediaUrl(video.audio_path, video.updated_at)} className="w-full" />
-      <p className="mt-2 text-xs text-zinc-500">{video.audio_path}</p>
+      <p className="mt-2 text-xs text-ink-500">{video.audio_path}</p>
     </Card>
   )
 }
@@ -205,7 +205,7 @@ function AudioTab({ video }: { video: Video }): React.JSX.Element {
 function SceneThumb({ scene }: { scene: Scene }): React.JSX.Element {
   if (!scene.asset_path) {
     return (
-      <div className="flex aspect-video items-center justify-center bg-zinc-800 text-xs text-zinc-500">
+      <div className="flex aspect-video items-center justify-center bg-ink-800 text-xs text-ink-500">
         sem mídia
       </div>
     )
@@ -240,7 +240,7 @@ function ScenesTab({
     setBusy(null)
     setChanged(true)
   }
-  if (!data.scenes.length) return <p className="text-zinc-500">Sem cenas.</p>
+  if (!data.scenes.length) return <p className="text-ink-500">Sem cenas.</p>
   return (
     <div>
       {changed && data.video.video_path && (
@@ -263,7 +263,7 @@ function ScenesTab({
           <Card key={s.id} className="overflow-hidden" data-testid="scene-card">
             <SceneThumb scene={s} />
             <div className="p-3">
-              <div className="mb-1 flex items-center justify-between text-xs text-zinc-500">
+              <div className="mb-1 flex items-center justify-between text-xs text-ink-500">
                 <span>
                   Cena {s.index + 1}
                   {s.start_sec !== null &&
@@ -274,8 +274,8 @@ function ScenesTab({
                   {s.locked && ' · 🔒'}
                 </span>
               </div>
-              <p className="line-clamp-3 text-sm text-zinc-300">{s.narration}</p>
-              <p className="mt-1 truncate text-xs text-zinc-500">[{s.visual_keywords}]</p>
+              <p className="line-clamp-3 text-sm text-ink-300">{s.narration}</p>
+              <p className="mt-1 truncate text-xs text-ink-500">[{s.visual_keywords}]</p>
               <div className="mt-2 flex flex-wrap gap-1">
                 <Button
                   size="sm"
@@ -329,7 +329,7 @@ function VideoTab({
   act: (fn: () => Promise<unknown>, ok: string) => Promise<void>
   busy: boolean
 }): React.JSX.Element {
-  if (!video.video_path) return <p className="text-zinc-500">Vídeo ainda não renderizado.</p>
+  if (!video.video_path) return <p className="text-ink-500">Vídeo ainda não renderizado.</p>
   return (
     <Card className="p-5">
       <video
@@ -337,7 +337,7 @@ function VideoTab({
         src={mediaUrl(video.video_path, video.updated_at)}
         className="aspect-video w-full bg-black"
       />
-      <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
+      <div className="mt-3 flex items-center justify-between text-xs text-ink-500">
         <span>{video.video_path}</span>
         <Button
           size="sm"
@@ -374,11 +374,11 @@ function PublishTab({
 
   useEffect(() => {
     if (!video.scheduled_at)
-      api.videos.nextSlot().then(
+      api.videos.nextSlot(video.channel_id).then(
         (s) => setWhen(toLocalInput(s)),
         () => undefined
       )
-  }, [video.scheduled_at])
+  }, [video.scheduled_at, video.channel_id])
 
   const locked = ['SCHEDULED', 'PUBLISHED'].includes(video.status) && !!video.youtube_id
 
@@ -408,7 +408,7 @@ function PublishTab({
         </Banner>
       )}
       <Card className="p-5">
-        <div className="mb-2 text-sm font-medium text-zinc-300">Thumbnail</div>
+        <div className="mb-2 text-sm font-medium text-ink-300">Thumbnail</div>
         {video.thumbnail_paths.length ? (
           <div className="grid grid-cols-3 gap-3">
             {video.thumbnail_paths.map((p, i) => (
@@ -416,7 +416,7 @@ function PublishTab({
                 key={p}
                 data-testid="thumb-option"
                 onClick={() => setChosen(i)}
-                className={`overflow-hidden rounded-md border-2 ${chosen === i ? 'border-emerald-500' : 'border-transparent'}`}
+                className={`overflow-hidden rounded-md border-2 ${chosen === i ? 'border-brand-500' : 'border-transparent'}`}
               >
                 <img
                   src={mediaUrl(p, video.updated_at)}
@@ -426,7 +426,7 @@ function PublishTab({
             ))}
           </div>
         ) : (
-          <p className="text-sm text-zinc-500">Thumbnails ainda não geradas.</p>
+          <p className="text-sm text-ink-500">Thumbnails ainda não geradas.</p>
         )}
       </Card>
       <Card className="grid gap-4 p-5">
@@ -467,7 +467,7 @@ function PublishTab({
           <label className="flex items-center gap-2 self-end text-sm">
             <input
               type="checkbox"
-              className="h-4 w-4 accent-emerald-600"
+              className="h-4 w-4"
               checked={synthetic}
               onChange={(e) => setSynthetic(e.target.checked)}
             />
@@ -502,18 +502,18 @@ function LogTab({ data }: { data: Detail }): React.JSX.Element {
       <h2 className="mb-3 font-semibold">Tarefas</h2>
       <ul className="space-y-1 text-sm">
         {data.jobs.map((j) => (
-          <li key={j.id} className="flex justify-between text-zinc-300">
+          <li key={j.id} className="flex justify-between text-ink-300">
             <span>
               {JOB_LABELS[j.type]} · {j.status} · tentativa {j.attempts}/{j.max_attempts}
             </span>
-            <span className="text-zinc-500">
+            <span className="text-ink-500">
               {formatDate(j.finished_at ?? j.started_at ?? j.created_at)}
             </span>
           </li>
         ))}
       </ul>
       <h2 className="mb-2 mt-5 font-semibold">Logs</h2>
-      <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-xs text-zinc-400">
+      <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-xs text-ink-400">
         {data.logs
           .map(
             (l) => `${new Date(l.created_at).toLocaleTimeString('pt-BR')} [${l.level}] ${l.message}`

@@ -1,37 +1,53 @@
 import { useEffect, useRef, useState } from 'react'
 import { JOB_LABELS, type Job, type LogEntry, type Video } from '../../shared/types'
-import { Button, Card, PageHeader } from '../components/ui'
+import { Button, Card, ChannelAvatar, PageHeader } from '../components/ui'
+import { useChannel } from '../lib/channel'
 import { api, formatDate, useLive } from '../lib/api'
 
 function JobRow({
   job,
   video,
-  onCancel
+  onCancel,
+  onOpen
 }: {
   job: Job
   video?: Video
   onCancel?: () => void
+  onOpen?: (id: number) => void
 }): React.JSX.Element {
+  const { channels } = useChannel()
+  const channel = channels.find((c) => c.id === video?.channel_id)
   const waiting = job.run_after && new Date(job.run_after) > new Date()
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5 text-sm" data-testid={`job-${job.status}`}>
-      <span className="w-24 shrink-0 font-medium">{JOB_LABELS[job.type]}</span>
-      <span className="min-w-0 flex-1 truncate text-zinc-300">
+    <li
+      className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.02]"
+      data-testid={`job-${job.status}`}
+    >
+      <span className="w-24 shrink-0 font-medium text-ink-100">{JOB_LABELS[job.type]}</span>
+      {channel && (
+        <span title={channel.name}>
+          <ChannelAvatar name={channel.name} color={channel.color} size={20} />
+        </span>
+      )}
+      <button
+        className="min-w-0 flex-1 truncate text-left text-ink-300 transition-colors hover:text-brand-200"
+        onClick={() => onOpen?.(job.video_id)}
+      >
         {video?.title ?? video?.topic ?? `#${job.video_id}`}
-      </span>
+      </button>
       {job.status === 'running' && (
-        <div className="h-1.5 w-32 overflow-hidden rounded bg-zinc-800">
+        <div className="h-1.5 w-32 overflow-hidden rounded bg-ink-800">
           <div
-            className="h-full bg-emerald-500 transition-all"
+            className="h-full bg-brand-500 transition-all"
             style={{ width: `${Math.round((job.progress ?? 0) * 100)}%` }}
           />
         </div>
       )}
-      <span className="w-20 text-right text-xs text-zinc-500">{job.gpu ? 'GPU' : 'CPU'}</span>
-      <span className="w-24 text-right text-xs text-zinc-500">
+      <span className="w-20 text-right text-xs text-ink-500">{job.gpu ? 'GPU' : 'CPU'}</span>
+      <span className="w-24 text-right text-xs text-ink-500">
         {job.run_mode === 'night' ? 'madrugada' : 'agora'}
       </span>
-      <span className="w-40 text-right text-xs text-zinc-500">
+      <span className="w-40 text-right text-xs text-ink-500">
         {job.status === 'pending'
           ? waiting
             ? `nova tentativa ${formatDate(job.run_after)}`
@@ -51,7 +67,7 @@ function JobRow({
   )
 }
 
-export default function Queue(): React.JSX.Element {
+export default function Queue({ onOpen }: { onOpen: (id: number) => void }): React.JSX.Element {
   const { data: state } = useLive(() => api.queue.state(), ['jobs', 'settings'], [], 3000)
   const { data: videos = [] } = useLive(() => api.videos.list(), ['videos'])
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -78,7 +94,7 @@ export default function Queue(): React.JSX.Element {
     logBox.current?.scrollTo({ top: logBox.current.scrollHeight })
   }, [logs])
 
-  if (!state) return <p className="text-zinc-500">Carregando…</p>
+  if (!state) return <p className="text-ink-500">Carregando…</p>
   const byId = new Map(videos.map((v) => [v.id, v]))
   const vramPct = state.vram ? Math.round((state.vram.used / state.vram.total) * 100) : 0
 
@@ -117,38 +133,39 @@ export default function Queue(): React.JSX.Element {
 
       <div className="mb-6 grid gap-4 md:grid-cols-3">
         <Card className="p-4">
-          <div className="text-xs uppercase text-zinc-500">VRAM</div>
+          <div className="text-xs uppercase text-ink-500">VRAM</div>
           {state.vram ? (
             <>
               <div className="mt-1 text-xl font-semibold">
                 {(state.vram.used / 1024).toFixed(1)} / {(state.vram.total / 1024).toFixed(1)} GB
               </div>
-              <div className="mt-2 h-2 overflow-hidden rounded bg-zinc-800">
+              <div className="mt-2 h-2 overflow-hidden rounded bg-ink-800">
                 <div
-                  className={`h-full ${vramPct > 90 ? 'bg-red-500' : vramPct > 70 ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                  className={`h-full ${vramPct > 90 ? 'bg-red-500' : vramPct > 70 ? 'bg-amber-400' : 'bg-brand-500'}`}
                   style={{ width: `${vramPct}%` }}
                 />
               </div>
             </>
           ) : (
-            <div className="mt-1 text-zinc-500">nvidia-smi indisponível</div>
+            <div className="mt-1 text-ink-500">nvidia-smi indisponível</div>
           )}
         </Card>
         <Card className="p-4">
-          <div className="text-xs uppercase text-zinc-500">Rodando</div>
+          <div className="text-xs uppercase text-ink-500">Rodando</div>
           <div className="mt-1 text-xl font-semibold">{state.running.length}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs uppercase text-zinc-500">Na fila</div>
+          <div className="text-xs uppercase text-ink-500">Na fila</div>
           <div className="mt-1 text-xl font-semibold">{state.pending.length}</div>
         </Card>
       </div>
 
       <h2 className="mb-2 font-semibold">Em execução</h2>
       <Card className="mb-6">
-        <ul className="divide-y divide-zinc-800">
+        <ul className="divide-y divide-ink-800">
           {state.running.map((j) => (
             <JobRow
+              onOpen={onOpen}
               key={j.id}
               job={j}
               video={byId.get(j.video_id)}
@@ -156,25 +173,24 @@ export default function Queue(): React.JSX.Element {
             />
           ))}
           {!state.running.length && (
-            <li className="px-4 py-3 text-sm text-zinc-500">Nada rodando.</li>
+            <li className="px-4 py-3 text-sm text-ink-500">Nada rodando.</li>
           )}
         </ul>
       </Card>
 
       <h2 className="mb-2 font-semibold">Próximas</h2>
       <Card className="mb-6">
-        <ul className="divide-y divide-zinc-800">
+        <ul className="divide-y divide-ink-800">
           {state.pending.map((j) => (
             <JobRow
+              onOpen={onOpen}
               key={j.id}
               job={j}
               video={byId.get(j.video_id)}
               onCancel={() => api.queue.cancelJob(j.id)}
             />
           ))}
-          {!state.pending.length && (
-            <li className="px-4 py-3 text-sm text-zinc-500">Fila vazia.</li>
-          )}
+          {!state.pending.length && <li className="px-4 py-3 text-sm text-ink-500">Fila vazia.</li>}
         </ul>
       </Card>
 
@@ -189,7 +205,7 @@ export default function Queue(): React.JSX.Element {
                   ? 'text-red-400'
                   : l.level === 'warn'
                     ? 'text-amber-300'
-                    : 'text-zinc-400'
+                    : 'text-ink-400'
               }
             >
               {new Date(l.created_at).toLocaleTimeString('pt-BR')} {l.job_id ? `#${l.job_id} ` : ''}
@@ -201,9 +217,9 @@ export default function Queue(): React.JSX.Element {
 
       <h2 className="mb-2 font-semibold">Recentes</h2>
       <Card>
-        <ul className="divide-y divide-zinc-800">
+        <ul className="divide-y divide-ink-800">
           {state.recent.map((j) => (
-            <JobRow key={j.id} job={j} video={byId.get(j.video_id)} />
+            <JobRow onOpen={onOpen} key={j.id} job={j} video={byId.get(j.video_id)} />
           ))}
         </ul>
       </Card>

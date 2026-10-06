@@ -1,4 +1,4 @@
-import type { Settings } from '../../shared/types'
+import { CHANNEL_SETTING_KEYS, type Settings } from '../../shared/types'
 import { db } from './index'
 import { notify } from './repo'
 
@@ -53,34 +53,65 @@ export const DEFAULT_SETTINGS: Settings = {
   minimizeToTray: true
 }
 
-export function getSettings(): Settings {
-  const rows = db().prepare('SELECT key, value FROM settings').all() as {
-    key: string
-    value: string
-  }[]
-  const stored: Record<string, unknown> = {}
+const CHANNEL_KEYS = new Set<string>(CHANNEL_SETTING_KEYS)
+
+function readRows(prefix: string): Record<string, unknown> {
+  const rows = db()
+    .prepare("SELECT key, value FROM settings WHERE key LIKE ? || '%'")
+    .all(prefix) as { key: string; value: string }[]
+  const out: Record<string, unknown> = {}
   for (const { key, value } of rows) {
+    const name = key.slice(prefix.length)
+    if (!prefix && (name.startsWith('ch.') || name.startsWith('state.'))) continue
     try {
-      stored[key] = JSON.parse(value)
+      out[name] = JSON.parse(value)
     } catch {
       // ignore corrupt values; the default applies
     }
   }
-  return { ...DEFAULT_SETTINGS, ...stored } as Settings
+  return out
 }
 
-export function setSettings(patch: Partial<Settings>): Settings {
+/**
+ * Shared settings, plus the channel's own values for CHANNEL_SETTING_KEYS when a channel
+ * is given. A channel without its own value falls back to the shared one, then the default.
+ */
+export function getSettings(channelId?: number | null): Settings {
+  const merged: Record<string, unknown> = { ...DEFAULT_SETTINGS, ...readRows('') }
+  if (channelId) {
+    for (const [key, value] of Object.entries(readRows(`ch.${channelId}.`))) {
+      if (CHANNEL_KEYS.has(key)) merged[key] = value
+    }
+  }
+  return merged as unknown as Settings
+}
+
+/** Channel-specific keys go to the channel when one is given; the rest are shared. */
+export function setSettings(patch: Partial<Settings>, channelId?: number | null): Settings {
   const upsert = db().prepare(
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
   )
   db().transaction(() => {
     for (const [key, value] of Object.entries(patch)) {
       if (value === undefined || !(key in DEFAULT_SETTINGS)) continue
-      upsert.run(key, JSON.stringify(value))
+      const stored = channelId && CHANNEL_KEYS.has(key) ? `ch.${channelId}.${key}` : key
+      upsert.run(stored, JSON.stringify(value))
     }
   })()
   notify('settings')
-  return getSettings()
+  return getSettings(channelId)
+}
+
+/** New channel: start from another channel's settings (or the defaults). */
+export function copyChannelSettings(fromId: number | null, toId: number): void {
+  const source = fromId ? getSettings(fromId) : DEFAULT_SETTINGS
+  const patch = Object.fromEntries(CHANNEL_SETTING_KEYS.map((k) => [k, source[k]]))
+  setSettings(patch as Partial<Settings>, toId)
+}
+
+export function deleteChannelSettings(channelId: number): void {
+  db().prepare("DELETE FROM settings WHERE key LIKE ? || '%'").run(`ch.${channelId}.`)
+  db().prepare("DELETE FROM settings WHERE key LIKE ? || '%'").run(`state.ch.${channelId}.`)
 }
 
 /** Small key/value state that is not user-facing (queue flags, counters). */

@@ -1,4 +1,7 @@
 import Database from 'better-sqlite3'
+import { CHANNEL_SETTING_KEYS } from '../../shared/types'
+
+const CHANNEL_KEYS_SQL = CHANNEL_SETTING_KEYS.map((k) => `'${k}'`).join(', ')
 
 export type DB = Database.Database
 
@@ -99,6 +102,24 @@ const migrations: string[] = [
   `,
   `
   ALTER TABLE jobs ADD COLUMN chain INTEGER NOT NULL DEFAULT 1;
+  `,
+  // Multi-channel. Everything that existed becomes channel 1, and its channel-specific
+  // settings and YouTube login are copied to it, so nothing configured is lost.
+  `
+  CREATE TABLE channels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#9feaf9',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+  INSERT INTO channels (id, name) VALUES (1, 'Canal principal');
+  ALTER TABLE videos ADD COLUMN channel_id INTEGER NOT NULL DEFAULT 1;
+  CREATE INDEX idx_videos_channel ON videos(channel_id, status);
+  INSERT OR IGNORE INTO settings (key, value)
+    SELECT 'ch.1.' || key, value FROM settings WHERE key IN (${CHANNEL_KEYS_SQL});
+  UPDATE secrets SET key = 'youtube.refresh_token.1' WHERE key = 'youtube.refresh_token';
+  UPDATE settings SET key = 'state.ch.1.youtubeChannel' WHERE key = 'state.youtubeChannel';
+  UPDATE settings SET key = 'state.ch.1.statsUpdatedAt' WHERE key = 'state.statsUpdatedAt';
   `
 ]
 

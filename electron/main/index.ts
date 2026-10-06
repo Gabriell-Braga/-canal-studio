@@ -11,9 +11,10 @@ import {
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import windowIcon from '../../resources/icon.ico?asset'
 import type { Settings } from '../../shared/types'
 import { closeDb, openDb } from '../db'
-import { changes } from '../db/repo'
+import { changes, listChannels } from '../db/repo'
 import { getSettings } from '../db/settings'
 import { Pipeline } from '../pipeline'
 import { Scheduler, type QueueEvent } from '../queue/scheduler'
@@ -26,7 +27,7 @@ import { configureMusic } from '../steps/render'
 import { isConnected as isYoutubeConnected, readStats, refreshStats } from '../services/youtube'
 import { registerIpc } from './ipc'
 import { handleMedia, registerMediaScheme } from './media'
-import { appRoot, dataDir, musicDir, projectDir } from './paths'
+import { appRoot, channelMusicDir, dataDir, projectDir } from './paths'
 
 const isE2E = process.env.CANAL_E2E === '1'
 const startHidden = process.argv.includes('--hidden')
@@ -55,8 +56,11 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'Canal Studio',
-    icon,
-    backgroundColor: '#09090b',
+    // .ico carries hand-made 16-32 px sizes, which stay sharp in the title bar and taskbar.
+    icon: process.platform === 'win32' ? windowIcon : icon,
+    backgroundColor: '#15161d',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#15161d', symbolColor: '#9feaf9', height: 36 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -101,7 +105,11 @@ function quit(): void {
 
 function buildTray(): void {
   if (isE2E) return
-  tray = new Tray(nativeImage.createFromPath(icon).resize({ width: 16, height: 16 }))
+  tray = new Tray(
+    process.platform === 'win32'
+      ? windowIcon
+      : nativeImage.createFromPath(icon).resize({ width: 16, height: 16 })
+  )
   tray.setToolTip('Canal Studio')
   tray.on('click', showWindow)
   refreshTrayMenu()
@@ -190,10 +198,12 @@ function forwardChanges(): void {
 function scheduleStatsRefresh(): void {
   if (isE2E) return
   const check = (): void => {
-    if (!isYoutubeConnected()) return
-    const last = readStats().updatedAt
-    if (!last || Date.now() - new Date(last).getTime() > 24 * 3600_000) {
-      refreshStats().catch((e) => console.error('Analytics:', e.message))
+    for (const channel of listChannels()) {
+      if (!isYoutubeConnected(channel.id)) continue
+      const last = readStats(channel.id).updatedAt
+      if (!last || Date.now() - new Date(last).getTime() > 24 * 3600_000) {
+        refreshStats(channel.id).catch((e) => console.error('Analytics:', e.message))
+      }
     }
   }
   setTimeout(check, 60_000)
@@ -214,7 +224,7 @@ app.whenReady().then(async () => {
   openDb(join(dataDir(), 'canal.db'))
   handleMedia(() => [dataDir()])
   configureRemotion(appRoot())
-  configureMusic(musicDir())
+  configureMusic(channelMusicDir)
   configurePython({
     serverDir: join(appRoot(), 'python'),
     venvDir: app.isPackaged

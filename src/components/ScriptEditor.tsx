@@ -68,7 +68,7 @@ export default function ScriptEditor({ video, onDone, onCancel }: Props): React.
             <button
               key={t}
               onClick={() => setTitle(t)}
-              className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-300 hover:border-emerald-600"
+              className="rounded-full border border-ink-700 px-3 py-1 text-xs text-ink-300 hover:border-brand-600"
             >
               {t}
             </button>
@@ -83,13 +83,13 @@ export default function ScriptEditor({ video, onDone, onCancel }: Props): React.
         />
       </Field>
 
-      <div className="text-sm text-zinc-400">
+      <div className="text-sm text-ink-400">
         {script.scenes.length} cenas · {words} palavras · ~{(words / 150).toFixed(1)} min
       </div>
 
       {script.scenes.map((scene, i) => (
-        <div key={i} className="rounded-md border border-zinc-800 p-3">
-          <div className="mb-2 flex items-center justify-between text-xs text-zinc-500">
+        <div key={i} className="rounded-md border border-ink-800 p-3">
+          <div className="mb-2 flex items-center justify-between text-xs text-ink-500">
             <span>Cena {i + 1}</span>
             <span className="flex gap-1">
               <Button size="sm" variant="ghost" onClick={() => addScene(i)}>

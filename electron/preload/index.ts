@@ -8,6 +8,14 @@ const invoke =
     ipcRenderer.invoke(channel, ...args)
 
 const api: Api = {
+  channels: {
+    list: invoke('channels:list'),
+    create: invoke('channels:create'),
+    update: invoke('channels:update'),
+    remove: invoke('channels:remove'),
+    musicDir: invoke('channels:musicDir'),
+    openMusicDir: invoke('channels:openMusicDir')
+  },
   services: {
     check: invoke('services:check'),
     start: invoke('services:start'),

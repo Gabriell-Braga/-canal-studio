@@ -3,13 +3,14 @@ import type { ReviewAlert, Video } from '../../shared/types'
 import ScriptEditor from '../components/ScriptEditor'
 import { Banner, Button, Card, PageHeader } from '../components/ui'
 import { api, errorText, useLive } from '../lib/api'
+import { useChannel } from '../lib/channel'
 
 const ALERT_STYLE: Record<ReviewAlert['kind'], { label: string; className: string }> = {
   dubious_fact: { label: 'Checar fato', className: 'border-red-700 bg-red-950/50 text-red-200' },
   hook: { label: 'Gancho', className: 'border-amber-700 bg-amber-950/40 text-amber-200' },
   pacing: { label: 'Ritmo', className: 'border-amber-700 bg-amber-950/40 text-amber-200' },
-  repetition: { label: 'Repetição', className: 'border-zinc-600 bg-zinc-800/60 text-zinc-200' },
-  other: { label: 'Nota', className: 'border-zinc-600 bg-zinc-800/60 text-zinc-200' }
+  repetition: { label: 'Repetição', className: 'border-ink-600 bg-ink-800/60 text-ink-200' },
+  other: { label: 'Nota', className: 'border-ink-600 bg-ink-800/60 text-ink-200' }
 }
 
 function wordCount(v: Video): number {
@@ -21,9 +22,11 @@ function wordCount(v: Video): number {
 }
 
 export default function Review({ onOpen }: { onOpen: (id: number) => void }): React.JSX.Element {
+  const { channel } = useChannel()
   const { data: videos = [] } = useLive(
-    async () => (await api.videos.list()).filter((v) => v.status === 'SCRIPT_REVIEW'),
-    ['videos']
+    async () => (await api.videos.list(channel.id)).filter((v) => v.status === 'SCRIPT_REVIEW'),
+    ['videos'],
+    [channel.id]
   )
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [editing, setEditing] = useState<number | null>(null)
@@ -92,7 +95,7 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
         }
       />
       {message && <Banner kind={message.kind}>{message.text}</Banner>}
-      {!videos.length && <p className="text-zinc-500">Nenhum roteiro esperando revisão.</p>}
+      {!videos.length && <p className="text-ink-500">Nenhum roteiro esperando revisão.</p>}
 
       <div className="space-y-4">
         {videos.map((v) => {
@@ -103,7 +106,7 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
               <div className="flex items-start gap-3" data-testid="review-item">
                 <input
                   type="checkbox"
-                  className="mt-1.5 h-4 w-4 accent-emerald-600"
+                  className="mt-1.5 h-4 w-4"
                   checked={selected.has(v.id)}
                   onChange={() => toggle(v.id)}
                   data-testid="review-checkbox"
@@ -116,12 +119,12 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
                     >
                       {v.title ?? v.topic}
                     </button>
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-xs text-ink-500">
                       {v.script?.scenes.length ?? 0} cenas · {words} palavras · ~
                       {(words / 150).toFixed(1)} min (meta {v.duration_target_min})
                     </span>
                   </div>
-                  <div className="text-xs text-zinc-500">{v.topic}</div>
+                  <div className="text-xs text-ink-500">{v.topic}</div>
 
                   {editing === v.id ? (
                     <div className="mt-4">
@@ -133,22 +136,22 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
                     </div>
                   ) : (
                     <>
-                      <p className="mt-3 text-sm text-zinc-200">
-                        <span className="text-zinc-500">Gancho: </span>
+                      <p className="mt-3 text-sm text-ink-200">
+                        <span className="text-ink-500">Gancho: </span>
                         {v.script?.hook}
                       </p>
                       {isOpen && (
-                        <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-zinc-300">
+                        <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-ink-300">
                           {v.script?.scenes.map((s, i) => (
                             <li key={i}>
                               {s.narration}
-                              <span className="ml-2 text-xs text-zinc-500">
+                              <span className="ml-2 text-xs text-ink-500">
                                 [{s.visual_keywords}]
                               </span>
                             </li>
                           ))}
-                          <li className="list-none text-zinc-400">
-                            <span className="text-zinc-500">Encerramento: </span>
+                          <li className="list-none text-ink-400">
+                            <span className="text-ink-500">Encerramento: </span>
                             {v.script?.outro}
                           </li>
                         </ol>

@@ -18,7 +18,7 @@ export const uploadStep: Step = {
     const minTime = Date.now() + 15 * 60_000
     if (!video.scheduled_at || new Date(video.scheduled_at).getTime() < minTime) {
       const s = ctx.settings
-      const taken = listVideos()
+      const taken = listVideos(video.channel_id)
         .filter(
           (v) => v.id !== videoId && v.scheduled_at && ['SCHEDULED', 'PUBLISHED'].includes(v.status)
         )
@@ -37,6 +37,7 @@ export const uploadStep: Step = {
       )
       const id = await uploadVideo(
         {
+          channelId: video.channel_id,
           file: video.video_path as string,
           thumbnail: null,
           title: video.title ?? video.topic,
@@ -57,7 +58,7 @@ export const uploadStep: Step = {
       const jpeg = join(ctx.projectDir, 'thumbs', 'upload.jpg')
       await runTool('ffmpeg', ['-y', '-i', thumb, '-q:v', '3', jpeg], ctx.signal)
       try {
-        await setThumbnail(video.youtube_id as string, jpeg)
+        await setThumbnail(video.channel_id, video.youtube_id as string, jpeg)
         ctx.log('Thumbnail enviada')
       } catch (error) {
         // Custom thumbnails need a verified channel (phone verification).

@@ -29,6 +29,7 @@
     "@remotion/renderer": "^4.0.533",
     "better-sqlite3": "^13.0.3",
     "google-auth-library": "^11.1.0",
+    "lucide-react": "^1.52.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "remotion": "^4.0.533",

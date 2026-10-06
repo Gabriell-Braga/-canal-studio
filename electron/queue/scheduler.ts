@@ -245,7 +245,7 @@ export class Scheduler {
       if (!video) throw new Error('Vídeo removido')
       await step.run(job.video_id, {
         jobId: job.id,
-        settings: getSettings(),
+        settings: getSettings(video.channel_id),
         signal: controller.signal,
         projectDir: this.opts.projectDir(job.video_id),
         log,

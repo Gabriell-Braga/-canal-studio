@@ -18,9 +18,9 @@ import type { Step } from './types'
 
 const MUSIC_EXT = ['.mp3', '.wav', '.m4a', '.ogg']
 
-let musicFolder = ''
-export function configureMusic(dir: string): void {
-  musicFolder = dir
+let musicFolderFor: (channelId: number) => string = () => ''
+export function configureMusic(resolve: (channelId: number) => string): void {
+  musicFolderFor = resolve
 }
 
 /** File path inside the project → URL template the render worker resolves. */
@@ -29,7 +29,8 @@ function url(projectDir: string, file: string): string {
 }
 
 /** Copy one track from dados/musica into the project (stable per video). */
-function pickMusic(projectDir: string, videoId: number): string | null {
+function pickMusic(projectDir: string, videoId: number, channelId: number): string | null {
+  const musicFolder = musicFolderFor(channelId)
   const existing = readdirSync(projectDir).find((f) => f.startsWith('music.'))
   if (existing) return join(projectDir, existing)
   if (!musicFolder || !existsSync(musicFolder)) return null
@@ -55,8 +56,8 @@ export const renderStep: Step = {
     if (missing.length)
       throw new Error(`${missing.length} cena(s) sem mídia ou tempo; refaça as cenas`)
 
-    const music = pickMusic(pd, videoId)
-    if (!music) ctx.log('Sem música em dados/musica; vídeo sairá só com narração', 'warn')
+    const music = pickMusic(pd, videoId, video.channel_id)
+    if (!music) ctx.log('Sem música na pasta do canal; vídeo sairá só com narração', 'warn')
 
     const renderScenes = await Promise.all(
       scenes.map(async (s, i) => {

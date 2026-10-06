@@ -1,7 +1,13 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { JobType, Script, Settings, VideoPatch } from '../../shared/types'
 import {
+  countVideos,
+  createChannel,
+  deleteChannel,
   deleteVideo,
+  getVideo,
+  listChannels,
+  updateChannel,
   notify,
   findVideo,
   getScene,
@@ -15,11 +21,17 @@ import {
   updateVideo,
   cancelPendingJobs
 } from '../db/repo'
-import { getSettings, setSettings } from '../db/settings'
+import {
+  copyChannelSettings,
+  deleteChannelSettings,
+  getSettings,
+  setSettings
+} from '../db/settings'
 import type { Pipeline } from '../pipeline'
 import type { Scheduler } from '../queue/scheduler'
 import { checkAll, installService, startService } from '../services/checks'
-import { dataDir, projectDir, setDataDir } from './paths'
+import { channelMusicDir, dataDir, projectDir, setDataDir } from './paths'
+import { channelSummaries } from './channels'
 import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scenes'
 import { freeComfy } from '../services/comfy'
 import {
@@ -51,16 +63,18 @@ export function registerIpc(
   handle('services:start', (id: string) => startService(id))
   handle('services:install', (id: string) => installService(id))
 
-  handle('videos:list', () => listVideos())
+  handle('videos:list', (channelId?: number) => listVideos(channelId))
   handle('videos:get', (id: number) => {
     const video = findVideo(id)
     if (!video) return null
     return { video, scenes: listScenes(id), jobs: jobsForVideo(id), logs: logsForVideo(id) }
   })
-  handle('videos:addTopics', (topics: string[], durationMin?: number) =>
-    pipeline.addTopics(topics, durationMin)
+  handle('videos:addTopics', (channelId: number, topics: string[], durationMin?: number) =>
+    pipeline.addTopics(channelId, topics, durationMin)
   )
-  handle('videos:generateScripts', (ids?: number[]) => pipeline.generateScripts(ids))
+  handle('videos:generateScripts', (channelId: number, ids?: number[]) =>
+    pipeline.generateScripts(channelId, ids)
+  )
   handle('videos:approveScripts', (ids: number[]) => pipeline.approveScripts(ids))
   handle('videos:redoScript', (id: number) => pipeline.redoScript(id))
   handle('videos:update', (id: number, patch: VideoPatch) => {
@@ -92,14 +106,16 @@ export function registerIpc(
   handle('videos:retryFrom', (id: number, step: JobType) => pipeline.retryFrom(id, step))
   handle('videos:approveFinal', (id: number) => pipeline.approveFinal(id))
   handle('videos:rejectFinal', (id: number, step: JobType) => pipeline.rejectFinal(id, step))
-  handle('videos:nextSlot', () => pipeline.nextSlot())
+  handle('videos:nextSlot', (channelId: number) => pipeline.nextSlot(channelId))
   handle('videos:rerender', (id: number) => pipeline.rerender(id))
 
   // Scene actions on the detail screen. GPU ones refuse while the queue uses the GPU.
   const sceneDir = (sceneId: number): string =>
     join(projectDir(getScene(sceneId).video_id), 'scenes')
+  const sceneSettings = (sceneId: number): Settings =>
+    getSettings(getVideo(getScene(sceneId).video_id).channel_id)
   handle('scenes:nextStock', async (id: number) => {
-    const s = getSettings()
+    const s = sceneSettings(id)
     if (!s.pexelsApiKey) throw new Error('Configure a chave da Pexels em Configurações')
     const scene = getScene(id)
     const tried = scene.asset_source ? [scene.asset_source] : []
@@ -110,7 +126,7 @@ export function registerIpc(
   handle('scenes:generateAi', async (id: number) => {
     if (scheduler.gpuBusy())
       throw new Error('A GPU está ocupada com a fila. Pause a fila ou espere terminar.')
-    const s = getSettings()
+    const s = sceneSettings(id)
     await prepareComfy(s)
     try {
       await assignAi(getScene(id), sceneDir(id), s)
@@ -156,35 +172,63 @@ export function registerIpc(
   handle('queue:cancelJob', (id: number) => scheduler.cancel(id))
   handle('queue:logs', (afterId?: number) => logsAfter(afterId ?? 0))
 
-  handle('settings:get', () => getSettings())
-  handle('settings:set', (patch: Partial<Settings>) => {
-    const next = setSettings(patch)
+  handle('settings:get', (channelId?: number) => getSettings(channelId))
+  handle('settings:set', (patch: Partial<Settings>, channelId?: number) => {
+    const next = setSettings(patch, channelId)
     onSettingsChanged(next)
     scheduler.kick()
     return next
   })
-  handle('youtube:connect', async () => {
+  handle('youtube:connect', async (channelId: number) => {
     try {
-      const title = await connectYoutube()
+      const title = await connectYoutube(channelId)
       notify('channel')
       return { ok: true, message: `Conectado ao canal ${title}` }
     } catch (e) {
       return { ok: false, message: (e as Error).message }
     }
   })
-  handle('youtube:disconnect', () => {
-    disconnectYoutube()
+  handle('youtube:disconnect', (channelId: number) => {
+    disconnectYoutube(channelId)
     notify('channel')
   })
-  handle('youtube:stats', async (refresh?: boolean) => {
-    if (refresh) await refreshStats()
-    return readStats()
+  handle('youtube:stats', async (channelId: number, refresh?: boolean) => {
+    if (refresh) await refreshStats(channelId)
+    return readStats(channelId)
+  })
+
+  handle('channels:list', () => channelSummaries())
+  handle(
+    'channels:create',
+    (input: { name: string; color: string; copyFromId?: number | null }) => {
+      const name = input.name.trim()
+      if (!name) throw new Error('Dê um nome ao canal')
+      const channel = createChannel(name, input.color)
+      copyChannelSettings(input.copyFromId ?? null, channel.id)
+      channelMusicDir(channel.id)
+      return channel
+    }
+  )
+  handle('channels:update', (id: number, patch: { name?: string; color?: string }) =>
+    updateChannel(id, { ...patch, name: patch.name?.trim() || undefined })
+  )
+  handle('channels:remove', (id: number) => {
+    if (listChannels().length <= 1) throw new Error('O app precisa de pelo menos um canal')
+    const videos = countVideos(id)
+    if (videos) throw new Error(`Este canal tem ${videos} vídeo(s). Exclua os vídeos antes.`)
+    disconnectYoutube(id)
+    deleteChannelSettings(id)
+    deleteChannel(id)
+  })
+  handle('channels:musicDir', (id: number) => channelMusicDir(id))
+  handle('channels:openMusicDir', async (id: number) => {
+    await shell.openPath(channelMusicDir(id))
   })
 
   handle('settings:dataDir', () => dataDir())
   handle('settings:voices', async () => (await pythonGet<{ voices: string[] }>('/voices')).voices)
-  handle('settings:voiceSample', async () => {
-    const s = getSettings()
+  handle('settings:voiceSample', async (channelId: number) => {
+    const s = getSettings(channelId)
     const out = join(dataDir(), 'amostra-voz.wav')
     await pythonPost('/tts', {
       text: 'In 1872, a ship was found drifting in the Atlantic. Her crew had vanished without a trace.',

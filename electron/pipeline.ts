@@ -16,13 +16,14 @@ import type { Scheduler } from './queue/scheduler'
 export class Pipeline {
   constructor(private scheduler: Scheduler) {}
 
-  addTopics(topics: string[], durationMin?: number): Video[] {
-    const s = getSettings()
+  addTopics(channelId: number, topics: string[], durationMin?: number): Video[] {
+    const s = getSettings(channelId)
     const created = topics
       .map((t) => t.trim())
       .filter(Boolean)
       .map((topic) =>
         createVideo({
+          channelId,
           topic,
           niche: s.defaultNiche || null,
           durationMin: durationMin ?? s.defaultDurationMin,
@@ -33,10 +34,10 @@ export class Pipeline {
   }
 
   /** Script generation is light; it runs right away, outside the night window. */
-  generateScripts(ids?: number[]): number {
-    const targets = ids?.length
-      ? ids.map(getVideo).filter((v) => v.status === 'TOPIC_QUEUED')
-      : videosByStatus('TOPIC_QUEUED')
+  generateScripts(channelId: number, ids?: number[]): number {
+    const targets = (ids?.length ? ids.map(getVideo) : videosByStatus('TOPIC_QUEUED')).filter(
+      (v) => v.status === 'TOPIC_QUEUED' && v.channel_id === channelId
+    )
     for (const v of targets) {
       enqueueJob(v.id, 'script', 'now')
       updateVideo(v.id, { status: 'SCRIPT_GENERATING' })
@@ -50,7 +51,10 @@ export class Pipeline {
     for (const id of ids) {
       const v = getVideo(id)
       if (v.status !== 'SCRIPT_REVIEW') continue
-      updateVideo(id, { status: 'PRODUCTION_QUEUED', template: v.template ?? this.pickTemplate() })
+      updateVideo(id, {
+        status: 'PRODUCTION_QUEUED',
+        template: v.template ?? this.pickTemplate(v.channel_id)
+      })
       enqueueJob(id, 'audio', 'night')
       count++
     }
@@ -78,7 +82,7 @@ export class Pipeline {
     const v = getVideo(id)
     if (v.status !== 'FINAL_REVIEW') throw new Error('O vídeo não está em revisão final')
     if (!v.video_path) throw new Error('O vídeo ainda não foi renderizado')
-    const scheduledAt = v.scheduled_at ?? this.nextSlot()
+    const scheduledAt = v.scheduled_at ?? this.nextSlot(v.channel_id)
     const updated = updateVideo(id, { status: 'SCHEDULED', scheduled_at: scheduledAt })
     enqueueJob(id, 'upload', 'night')
     this.scheduler.kick()
@@ -97,18 +101,19 @@ export class Pipeline {
     this.scheduler.kick()
   }
 
-  nextSlot(): string {
-    const s = getSettings()
-    const taken = listVideos()
+  /** Slots are per channel: two channels can publish at the same time. */
+  nextSlot(channelId: number): string {
+    const s = getSettings(channelId)
+    const taken = listVideos(channelId)
       .filter((v) => v.scheduled_at && ['SCHEDULED', 'PUBLISHED'].includes(v.status))
       .map((v) => v.scheduled_at as string)
     return nextFreeSlot(s.publishSlots, s.publishTimezone, taken)
   }
 
   /** Rotate templates so consecutive videos do not look identical. */
-  private pickTemplate(): string {
-    const templates = getSettings().templates
-    const used = listVideos()
+  private pickTemplate(channelId: number): string {
+    const templates = getSettings(channelId).templates
+    const used = listVideos(channelId)
       .map((v) => v.template)
       .filter(Boolean)
     const last = used[0]

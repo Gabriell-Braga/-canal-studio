@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events'
 import type {
+  Channel,
   Job,
   JobStatus,
   JobType,
@@ -15,7 +16,9 @@ import { db, now } from './index'
 
 /** Main-process change feed; the IPC layer forwards it to the UI. */
 export const changes = new EventEmitter()
-export function notify(topic: 'videos' | 'jobs' | 'logs' | 'settings' | 'channel'): void {
+export function notify(
+  topic: 'videos' | 'jobs' | 'logs' | 'settings' | 'channel' | 'channels'
+): void {
   changes.emit('change', topic)
 }
 
@@ -35,6 +38,7 @@ function parse<T>(value: unknown, fallback: T): T {
 function toVideo(r: Row): Video {
   return {
     id: r.id as number,
+    channel_id: (r.channel_id as number) ?? 1,
     topic: r.topic as string,
     niche: (r.niche as string) ?? null,
     status: r.status as VideoStatus,
@@ -59,8 +63,51 @@ function toVideo(r: Row): Video {
   }
 }
 
-export function listVideos(): Video[] {
-  return (db().prepare('SELECT * FROM videos ORDER BY id DESC').all() as Row[]).map(toVideo)
+export function listVideos(channelId?: number): Video[] {
+  const rows = channelId
+    ? db().prepare('SELECT * FROM videos WHERE channel_id = ? ORDER BY id DESC').all(channelId)
+    : db().prepare('SELECT * FROM videos ORDER BY id DESC').all()
+  return (rows as Row[]).map(toVideo)
+}
+
+// ---------------------------------------------------------------- channels
+
+export function listChannels(): Channel[] {
+  return db().prepare('SELECT * FROM channels ORDER BY id').all() as Channel[]
+}
+
+export function getChannel(id: number): Channel {
+  const row = db().prepare('SELECT * FROM channels WHERE id = ?').get(id) as Channel | undefined
+  if (!row) throw new Error(`Canal ${id} não encontrado`)
+  return row
+}
+
+export function createChannel(name: string, color: string): Channel {
+  const info = db().prepare('INSERT INTO channels (name, color) VALUES (?, ?)').run(name, color)
+  notify('channels')
+  return getChannel(Number(info.lastInsertRowid))
+}
+
+export function updateChannel(id: number, patch: { name?: string; color?: string }): Channel {
+  if (patch.name !== undefined)
+    db().prepare('UPDATE channels SET name = ? WHERE id = ?').run(patch.name, id)
+  if (patch.color !== undefined)
+    db().prepare('UPDATE channels SET color = ? WHERE id = ?').run(patch.color, id)
+  notify('channels')
+  return getChannel(id)
+}
+
+export function deleteChannel(id: number): void {
+  db().prepare('DELETE FROM channels WHERE id = ?').run(id)
+  notify('channels')
+}
+
+export function countVideos(channelId: number): number {
+  return (
+    db().prepare('SELECT COUNT(*) AS n FROM videos WHERE channel_id = ?').get(channelId) as {
+      n: number
+    }
+  ).n
 }
 
 export function videosByStatus(status: VideoStatus): Video[] {
@@ -81,6 +128,7 @@ export function findVideo(id: number): Video | null {
 }
 
 export function createVideo(input: {
+  channelId?: number
   topic: string
   niche?: string | null
   durationMin: number
@@ -88,9 +136,15 @@ export function createVideo(input: {
 }): Video {
   const info = db()
     .prepare(
-      'INSERT INTO videos (topic, niche, duration_target_min, synthetic_content) VALUES (?, ?, ?, ?)'
+      'INSERT INTO videos (channel_id, topic, niche, duration_target_min, synthetic_content) VALUES (?, ?, ?, ?, ?)'
     )
-    .run(input.topic, input.niche ?? null, input.durationMin, input.synthetic ? 1 : 0)
+    .run(
+      input.channelId ?? 1,
+      input.topic,
+      input.niche ?? null,
+      input.durationMin,
+      input.synthetic ? 1 : 0
+    )
   notify('videos')
   return getVideo(Number(info.lastInsertRowid))
 }

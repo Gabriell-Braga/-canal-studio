@@ -79,8 +79,8 @@ const hhmm = (d) =>
  */
 async function phase2({ launch, api, shot, log, waitUntil }) {
   let { app, page } = await launch()
-  await api(page, 'videos.addTopics', ['Queue test A', 'Queue test B'], 1)
-  await api(page, 'videos.generateScripts')
+  await api(page, 'videos.addTopics', 1, ['Queue test A', 'Queue test B'], 1)
+  await api(page, 'videos.generateScripts', 1)
   await waitUntil(
     async () => (await api(page, 'videos.list')).every((v) => v.status === 'SCRIPT_REVIEW'),
     {
@@ -172,8 +172,8 @@ async function phase2({ launch, api, shot, log, waitUntil }) {
 /** Fase 3: an approved script becomes a normalized WAV with word timings and scene times. */
 async function phase3({ launch, api, shot, log, waitUntil, dataDir }) {
   const { app, page } = await launch()
-  await api(page, 'videos.addTopics', ['Why the Library of Alexandria really disappeared'], 1)
-  await api(page, 'videos.generateScripts')
+  await api(page, 'videos.addTopics', 1, ['Why the Library of Alexandria really disappeared'], 1)
+  await api(page, 'videos.generateScripts', 1)
   const [video] = await waitUntil(
     async () => {
       const vs = await api(page, 'videos.list')
@@ -254,8 +254,8 @@ async function phase4({ launch, api, shot, log, waitUntil, dataDir }) {
   const { app, page } = await launch()
   const t0 = Date.now()
   const elapsed = () => `${Math.round((Date.now() - t0) / 60000)} min`
-  await api(page, 'videos.addTopics', ['The ghost ship Octavius and the frozen crew'], minutes)
-  await api(page, 'videos.generateScripts')
+  await api(page, 'videos.addTopics', 1, ['The ghost ship Octavius and the frozen crew'], minutes)
+  await api(page, 'videos.generateScripts', 1)
   const [video] = await waitUntil(
     async () => {
       const vs = await api(page, 'videos.list')
@@ -402,10 +402,10 @@ async function phase6({ launch, api, shot, log }) {
   await page.getByText('Guia: configurar o Google Cloud').click()
   await page.getByText('App para computador').first().waitFor()
   await shot(page, 'channel')
-  const result = await api(page, 'youtube.connect')
+  const result = await api(page, 'youtube.connect', 1)
   log(`Conectar sem credenciais: ${result.message}`)
   assert(!result.ok && /Client ID/.test(result.message), 'asks for client id')
-  const stats = await api(page, 'youtube.stats')
+  const stats = await api(page, 'youtube.stats', 1)
   assert(stats.connected === false && stats.quotaLimit === 10000, 'stats shape')
   await app.close()
 }
@@ -416,8 +416,8 @@ scenarios.phase6 = phase6
 async function scriptLength({ launch, api, log, waitUntil }) {
   const minutes = Number(process.env.E2E_MINUTES) || 8
   const { app, page } = await launch()
-  await api(page, 'videos.addTopics', ['The ghost ship Octavius and the frozen crew'], minutes)
-  await api(page, 'videos.generateScripts')
+  await api(page, 'videos.addTopics', 1, ['The ghost ship Octavius and the frozen crew'], minutes)
+  await api(page, 'videos.generateScripts', 1)
   const [v] = await waitUntil(
     async () => {
       const vs = await api(page, 'videos.list')
@@ -464,3 +464,71 @@ async function packaged({ launch, api, shot, log, waitUntil }) {
 }
 
 scenarios.packaged = packaged
+
+/**
+ * Multi-channel tour (E2E_STAY_ON_PICKER=1): picker, create a second channel copying the
+ * first one's settings, change a channel setting there, check the first channel kept its
+ * value, switch back, and screenshot every screen.
+ */
+async function tour({ launch, api, shot, log }) {
+  const { app, page } = await launch()
+  await page.getByTestId('channel-card').first().waitFor()
+  await shot(page, 'picker')
+  const before = await api(page, 'settings.get', 1)
+
+  await page.getByTestId('add-channel').click()
+  await page.getByTestId('channel-name').fill('Dark History')
+  await shot(page, 'new-channel')
+  await page.getByTestId('create-channel').click()
+  await page.getByTestId('channel-switcher').waitFor()
+  const channels = await api(page, 'channels.list')
+  const second = channels.find((c) => c.name === 'Dark History')
+  assert(second, 'second channel created')
+  const copied = await api(page, 'settings.get', second.id)
+  assert(
+    copied.voice === before.voice && copied.scriptPrompt === before.scriptPrompt,
+    'settings copied'
+  )
+
+  await api(page, 'settings.set', { voice: 'bf_emma', defaultNiche: 'dark history' }, second.id)
+  const first = await api(page, 'settings.get', 1)
+  assert(first.voice === before.voice, 'channel 1 voice unchanged')
+  assert(first.defaultNiche === before.defaultNiche, 'channel 1 niche unchanged')
+  log('Canal 2 com voz própria; canal 1 manteve a configuração')
+
+  await shot(page, 'second-channel-production')
+  await page.getByTestId('channel-switcher').click()
+  await shot(page, 'switcher-open')
+  await page.getByText('Ver todos os canais').click()
+  await page.getByTestId('channel-card').first().waitFor()
+  await shot(page, 'picker-two-channels')
+  await page.getByTestId('channel-card').first().click()
+  await page.getByTestId('channel-switcher').waitFor()
+
+  for (const nav of [
+    'production',
+    'review',
+    'channel',
+    'channelSettings',
+    'queue',
+    'services',
+    'settings'
+  ]) {
+    await page.getByTestId('nav-' + nav).click()
+    await page.waitForTimeout(nav === 'services' ? 6000 : 700)
+    await shot(page, 'page-' + nav)
+  }
+  const video = (await api(page, 'videos.list', 1))[0]
+  if (video) {
+    await page.getByTestId('nav-production').click()
+    await page.getByTestId('video-card').first().click()
+    await page.waitForTimeout(800)
+    await shot(page, 'video-detail')
+    await page.getByTestId('tab-scenes').click()
+    await page.waitForTimeout(800)
+    await shot(page, 'video-scenes')
+  }
+  await app.close()
+}
+
+scenarios.tour = tour

@@ -80,12 +80,15 @@ function client(redirectUri?: string): OAuth2Client {
   })
 }
 
-export function isConnected(): boolean {
-  return readSecret('youtube.refresh_token') !== null
+const tokenKey = (channelId: number): string => `youtube.refresh_token.${channelId}`
+
+export function isConnected(channelId: number): boolean {
+  return readSecret(tokenKey(channelId)) !== null
 }
 
 /** OAuth with a loopback redirect: open the browser, catch the code on 127.0.0.1. */
-export async function connect(): Promise<string> {
+/** Each Canal Studio channel connects its own YouTube channel (Google account or brand account). */
+export async function connect(channelId: number): Promise<string> {
   const server = createServer()
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok))
   const port = (server.address() as { port: number }).port
@@ -120,7 +123,7 @@ export async function connect(): Promise<string> {
     throw new Error(
       'O Google não devolveu refresh token; remova o acesso do app na sua conta e tente de novo'
     )
-  saveSecret('youtube.refresh_token', tokens.refresh_token)
+  saveSecret(tokenKey(channelId), tokens.refresh_token)
   oauth.setCredentials(tokens)
   const yt = youtube({ version: 'v3', auth: oauth })
   const me = await yt.channels.list({ part: ['snippet'], mine: true })
@@ -130,16 +133,16 @@ export async function connect(): Promise<string> {
     .prepare(
       'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
     )
-    .run('state.youtubeChannel', JSON.stringify(title))
+    .run(`state.ch.${channelId}.youtubeChannel`, JSON.stringify(title))
   return title
 }
 
-export function disconnect(): void {
-  deleteSecret('youtube.refresh_token')
+export function disconnect(channelId: number): void {
+  deleteSecret(tokenKey(channelId))
 }
 
-function authed(): OAuth2Client {
-  const refresh = readSecret('youtube.refresh_token')
+function authed(channelId: number): OAuth2Client {
+  const refresh = readSecret(tokenKey(channelId))
   if (!refresh) throw new Error('YouTube não conectado. Conecte na tela Canal.')
   const oauth = client()
   oauth.setCredentials({ refresh_token: refresh })
@@ -149,6 +152,7 @@ function authed(): OAuth2Client {
 // ---------------------------------------------------------------- upload
 
 export interface UploadInput {
+  channelId: number
   file: string
   thumbnail: string | null
   title: string
@@ -166,7 +170,7 @@ export async function uploadVideo(
   if (quotaUsed() + COST.insert + COST.thumbnail > QUOTA_LIMIT) {
     throw new Error('Cota diária da API do YouTube esgotada; o upload fica para amanhã')
   }
-  const yt = youtube({ version: 'v3', auth: authed() })
+  const yt = youtube({ version: 'v3', auth: authed(input.channelId) })
   const size = statSync(input.file).size
   const requestBody: youtube_v3.Schema$Video = {
     snippet: {
@@ -200,8 +204,12 @@ export async function uploadVideo(
   return id
 }
 
-export async function setThumbnail(videoId: string, jpeg: string): Promise<void> {
-  const yt = youtube({ version: 'v3', auth: authed() })
+export async function setThumbnail(
+  channelId: number,
+  videoId: string,
+  jpeg: string
+): Promise<void> {
+  const yt = youtube({ version: 'v3', auth: authed(channelId) })
   await yt.thumbnails.set({
     videoId,
     media: { mimeType: 'image/jpeg', body: createReadStream(jpeg) }
@@ -211,14 +219,14 @@ export async function setThumbnail(videoId: string, jpeg: string): Promise<void>
 
 // ---------------------------------------------------------------- analytics
 
-export async function refreshStats(): Promise<void> {
-  const oauth = authed()
+export async function refreshStats(channelId: number): Promise<void> {
+  const oauth = authed(channelId)
   const analytics = youtubeAnalytics({ version: 'v2', auth: oauth })
   const today = new Date().toISOString().slice(0, 10)
   const save = db().prepare(
     'INSERT INTO analytics (video_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
   )
-  for (const v of listVideos().filter((x) => x.youtube_id)) {
+  for (const v of listVideos(channelId).filter((x) => x.youtube_id)) {
     const start = (v.scheduled_at ?? v.created_at).slice(0, 10)
     const res = await analytics.reports.query({
       ids: 'channel==MINE',
@@ -243,27 +251,34 @@ export async function refreshStats(): Promise<void> {
     .prepare(
       'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
     )
-    .run('state.statsUpdatedAt', JSON.stringify(now()))
+    .run(`state.ch.${channelId}.statsUpdatedAt`, JSON.stringify(now()))
 }
 
-export function readStats(): ChannelStats {
+function channelState(channelId: number, key: string): string | null {
+  const row = db()
+    .prepare('SELECT value FROM settings WHERE key = ?')
+    .get(`state.ch.${channelId}.${key}`) as { value: string } | undefined
+  return row ? (JSON.parse(row.value) as string) : null
+}
+
+export function youtubeChannelTitle(channelId: number): string | null {
+  return isConnected(channelId) ? channelState(channelId, 'youtubeChannel') : null
+}
+
+export function readStats(channelId: number): ChannelStats {
   const rows = db().prepare('SELECT video_id, data FROM analytics').all() as {
     video_id: number
     data: string
   }[]
   const byId = new Map(rows.map((r) => [r.video_id, JSON.parse(r.data)]))
-  const state = (key: string): string | null => {
-    const row = db().prepare('SELECT value FROM settings WHERE key = ?').get(`state.${key}`) as
-      { value: string } | undefined
-    return row ? (JSON.parse(row.value) as string) : null
-  }
+  const state = (key: string): string | null => channelState(channelId, key)
   return {
-    connected: isConnected(),
+    connected: isConnected(channelId),
     channelTitle: state('youtubeChannel') ?? undefined,
     quotaUsedToday: quotaUsed(),
     quotaLimit: QUOTA_LIMIT,
     updatedAt: state('statsUpdatedAt'),
-    videos: listVideos()
+    videos: listVideos(channelId)
       .filter((v) => v.youtube_id)
       .map((v) => ({
         video_id: v.id,

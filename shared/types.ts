@@ -109,8 +109,25 @@ export interface ReviewAlert {
   quote?: string
 }
 
+export interface Channel {
+  id: number
+  name: string
+  color: string
+  created_at: string
+}
+
+export interface ChannelSummary extends Channel {
+  videos: number
+  scriptReview: number
+  finalReview: number
+  errors: number
+  scheduled: number
+  youtubeTitle: string | null
+}
+
 export interface Video {
   id: number
+  channel_id: number
   topic: string
   niche: string | null
   status: VideoStatus
@@ -216,6 +233,26 @@ export interface Settings {
   minimizeToTray: boolean
 }
 
+/** Settings each channel keeps for itself; everything else is shared by the whole app. */
+export const CHANNEL_SETTING_KEYS = [
+  'scriptPrompt',
+  'reviewPrompt',
+  'defaultDurationMin',
+  'defaultNiche',
+  'voice',
+  'voiceSpeed',
+  'scenePauseSec',
+  'aiImageRatio',
+  'captionsEnabled',
+  'musicVolume',
+  'templates',
+  'publishSlots',
+  'publishTimezone',
+  'syntheticDefault'
+] as const satisfies readonly (keyof Settings)[]
+
+export type ChannelSettingKey = (typeof CHANNEL_SETTING_KEYS)[number]
+
 export interface QueueState {
   paused: boolean
   forceRun: boolean
@@ -272,16 +309,24 @@ export interface VideoDetail {
 }
 
 export interface Api {
+  channels: {
+    list: () => Promise<ChannelSummary[]>
+    create: (input: { name: string; color: string; copyFromId?: number | null }) => Promise<Channel>
+    update: (id: number, patch: { name?: string; color?: string }) => Promise<Channel>
+    remove: (id: number) => Promise<void>
+    musicDir: (id: number) => Promise<string>
+    openMusicDir: (id: number) => Promise<void>
+  }
   services: {
     check: () => Promise<ServiceStatus[]>
     start: (id: string) => Promise<StartResult>
     install: (id: string) => Promise<StartResult>
   }
   videos: {
-    list: () => Promise<Video[]>
+    list: (channelId?: number) => Promise<Video[]>
     get: (id: number) => Promise<VideoDetail | null>
-    addTopics: (topics: string[], durationMin?: number) => Promise<Video[]>
-    generateScripts: (ids?: number[]) => Promise<number>
+    addTopics: (channelId: number, topics: string[], durationMin?: number) => Promise<Video[]>
+    generateScripts: (channelId: number, ids?: number[]) => Promise<number>
     approveScripts: (ids: number[]) => Promise<number>
     redoScript: (id: number) => Promise<void>
     update: (id: number, patch: VideoPatch) => Promise<Video>
@@ -290,7 +335,7 @@ export interface Api {
     approveFinal: (id: number) => Promise<Video>
     rerender: (id: number) => Promise<void>
     rejectFinal: (id: number, fromStep: JobType) => Promise<void>
-    nextSlot: () => Promise<string>
+    nextSlot: (channelId: number) => Promise<string>
   }
   scenes: {
     update: (
@@ -311,17 +356,18 @@ export interface Api {
     logs: (afterId?: number) => Promise<LogEntry[]>
   }
   settings: {
-    get: () => Promise<Settings>
-    set: (patch: Partial<Settings>) => Promise<Settings>
-    voiceSample: () => Promise<string>
+    /** With a channel id: shared settings merged with that channel's own. */
+    get: (channelId?: number) => Promise<Settings>
+    set: (patch: Partial<Settings>, channelId?: number) => Promise<Settings>
+    voiceSample: (channelId: number) => Promise<string>
     voices: () => Promise<string[]>
     dataDir: () => Promise<string>
     chooseDataDir: () => Promise<string | null>
   }
   youtube: {
-    connect: () => Promise<StartResult>
-    disconnect: () => Promise<void>
-    stats: (refresh?: boolean) => Promise<ChannelStats>
+    connect: (channelId: number) => Promise<StartResult>
+    disconnect: (channelId: number) => Promise<void>
+    stats: (channelId: number, refresh?: boolean) => Promise<ChannelStats>
   }
   onChanged: (callback: (topic: string) => void) => () => void
 }

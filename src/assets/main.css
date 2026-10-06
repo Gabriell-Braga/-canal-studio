@@ -1,12 +1,119 @@
 @import 'tailwindcss';
 
-html,
-body,
-#root {
-  height: 100%;
+/* Palette taken from the logo: slate ink background and the cyan of the ring. */
+@theme {
+  --color-ink-50: #f4f5f8;
+  --color-ink-100: #e6e8ef;
+  --color-ink-200: #c9cdd9;
+  --color-ink-300: #a3a9bb;
+  --color-ink-400: #7f869b;
+  --color-ink-500: #5f667b;
+  --color-ink-600: #474d60;
+  --color-ink-700: #363a4b;
+  --color-ink-800: #2a2d3a;
+  --color-ink-850: #23252f;
+  --color-ink-900: #1c1e27;
+  --color-ink-950: #15161d;
+
+  --color-brand-50: #effdff;
+  --color-brand-100: #d6f8fe;
+  --color-brand-200: #bdf3fc;
+  --color-brand-300: #9feaf9;
+  --color-brand-400: #6fd9ef;
+  --color-brand-500: #3fc3de;
+  --color-brand-600: #26a2bd;
+  --color-brand-700: #20829a;
+  --color-brand-800: #1f697d;
+  --color-brand-900: #1d5869;
+  --color-brand-950: #0f3a47;
+
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+
+  --animate-fade-in: fade-in 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  --animate-pop-in: pop-in 160ms cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97) translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
 }
 
-body {
-  @apply bg-zinc-950 text-zinc-100 antialiased;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-ink-950 font-sans text-ink-100 antialiased;
+    font-feature-settings: 'ss01', 'tnum';
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+
+  /* Every interactive element shows the hand cursor; disabled ones say so. */
+  button:not(:disabled),
+  a,
+  select:not(:disabled),
+  summary,
+  [role='button'],
+  input[type='checkbox']:not(:disabled),
+  input[type='range']:not(:disabled),
+  label:has(> input[type='checkbox']) {
+    cursor: pointer;
+  }
+  button:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-brand-400) 35%, transparent);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-700) transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-400);
+    outline-offset: 2px;
+  }
+
+  input[type='checkbox'],
+  input[type='range'] {
+    accent-color: var(--color-brand-400);
+  }
+}
+
+/* Custom title bar: the strip can drag the window; controls inside must not. */
+.app-drag {
+  app-region: drag;
+}
+.app-no-drag {
+  app-region: no-drag;
 }

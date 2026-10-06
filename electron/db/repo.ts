@@ -39,6 +39,10 @@ function toVideo(r: Row): Video {
   return {
     id: r.id as number,
     channel_id: (r.channel_id as number) ?? 1,
+    kind: ((r.kind as string) ?? 'long') as Video['kind'],
+    parent_id: (r.parent_id as number) ?? null,
+    short_start: (r.short_start as number) ?? null,
+    short_end: (r.short_end as number) ?? null,
     topic: r.topic as string,
     niche: (r.niche as string) ?? null,
     status: r.status as VideoStatus,
@@ -68,6 +72,44 @@ export function listVideos(channelId?: number): Video[] {
     ? db().prepare('SELECT * FROM videos WHERE channel_id = ? ORDER BY id DESC').all(channelId)
     : db().prepare('SELECT * FROM videos ORDER BY id DESC').all()
   return (rows as Row[]).map(toVideo)
+}
+
+export function listShorts(parentId: number): Video[] {
+  return (
+    db().prepare('SELECT * FROM videos WHERE parent_id = ? ORDER BY id').all(parentId) as Row[]
+  ).map(toVideo)
+}
+
+/** A short is a video row of kind 'short' pointing at the video it was cut from. */
+export function createShort(
+  parent: Video,
+  start: number,
+  end: number,
+  title: string,
+  description: string
+): Video {
+  const info = db()
+    .prepare(
+      `INSERT INTO videos (channel_id, kind, parent_id, short_start, short_end, topic, niche, status, title,
+        description, tags, duration_target_min, template, synthetic_content)
+       VALUES (?, 'short', ?, ?, ?, ?, ?, 'RENDERING', ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      parent.channel_id,
+      parent.id,
+      start,
+      end,
+      parent.topic,
+      parent.niche,
+      title,
+      description,
+      JSON.stringify([...parent.tags.slice(0, 10), 'shorts']),
+      Math.round(((end - start) / 60) * 10) / 10,
+      parent.template,
+      parent.synthetic_content ? 1 : 0
+    )
+  notify('videos')
+  return getVideo(Number(info.lastInsertRowid))
 }
 
 // ---------------------------------------------------------------- channels
@@ -306,11 +348,13 @@ function toJob(r: Row): Job {
     started_at: (r.started_at as string) ?? null,
     finished_at: (r.finished_at as string) ?? null,
     progress: (r.progress as number) ?? null,
-    chain: r.chain === undefined ? true : Boolean(r.chain)
+    chain: r.chain === undefined ? true : Boolean(r.chain),
+    args: parse<Record<string, unknown> | null>(r.args, null)
   }
 }
 
 export const GPU_JOBS: ReadonlySet<JobType> = new Set([
+  'short',
   'script',
   'audio',
   'transcribe',
@@ -325,7 +369,8 @@ export function enqueueJob(
   type: JobType,
   runMode: RunMode,
   priority = 0,
-  chain = true
+  chain = true,
+  args: Record<string, unknown> | null = null
 ): Job {
   // Never two live jobs of the same type for one video.
   const existing = db()
@@ -336,9 +381,17 @@ export function enqueueJob(
   if (existing) return toJob(existing)
   const info = db()
     .prepare(
-      'INSERT INTO jobs (video_id, type, gpu, run_mode, priority, chain) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO jobs (video_id, type, gpu, run_mode, priority, chain, args) VALUES (?, ?, ?, ?, ?, ?, ?)'
     )
-    .run(videoId, type, GPU_JOBS.has(type) ? 1 : 0, runMode, priority, chain ? 1 : 0)
+    .run(
+      videoId,
+      type,
+      GPU_JOBS.has(type) ? 1 : 0,
+      runMode,
+      priority,
+      chain ? 1 : 0,
+      args ? JSON.stringify(args) : null
+    )
   notify('jobs')
   return getJob(Number(info.lastInsertRowid))
 }

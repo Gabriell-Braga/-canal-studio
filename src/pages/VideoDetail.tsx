@@ -10,14 +10,17 @@ import {
 import ScriptEditor from '../components/ScriptEditor'
 import { Banner, Button, Card, Field, inputClass, PageHeader } from '../components/ui'
 import { api, errorText, formatDate, mediaUrl, useLive } from '../lib/api'
+import { Smartphone, Sparkles } from 'lucide-react'
+import { Badge } from '../components/ui'
 
-type Tab = 'script' | 'audio' | 'scenes' | 'video' | 'publish' | 'log'
+type Tab = 'script' | 'audio' | 'scenes' | 'video' | 'shorts' | 'publish' | 'log'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'script', label: 'Roteiro' },
   { id: 'audio', label: 'Áudio' },
   { id: 'scenes', label: 'Cenas' },
   { id: 'video', label: 'Vídeo' },
+  { id: 'shorts', label: 'Shorts' },
   { id: 'publish', label: 'Publicação' },
   { id: 'log', label: 'Tarefas e logs' }
 ]
@@ -31,12 +34,16 @@ const ASSET_LABEL: Record<string, string> = {
   ai_video: 'Vídeo IA'
 }
 
+/** A short only has its video, publishing and logs; the rest belongs to the full video. */
+const SHORT_TABS: Tab[] = ['video', 'publish', 'log']
+
 interface Props {
   id: number
   onBack: () => void
+  onOpen?: (id: number) => void
 }
 
-export default function VideoDetail({ id, onBack }: Props): React.JSX.Element {
+export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.Element {
   const { data } = useLive(() => api.videos.get(id), ['videos', 'jobs', 'logs'], [id])
   const [tab, setTab] = useState<Tab | null>(null)
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
@@ -52,8 +59,11 @@ export default function VideoDetail({ id, onBack }: Props): React.JSX.Element {
     )
   }
   const { video } = data
-  const activeTab: Tab =
-    tab ?? (video.status === 'FINAL_REVIEW' ? 'publish' : video.video_path ? 'video' : 'script')
+  const isShort = video.kind === 'short'
+  const tabs = isShort ? TABS.filter((t) => SHORT_TABS.includes(t.id)) : TABS
+  const fallbackTab: Tab =
+    video.status === 'FINAL_REVIEW' ? 'publish' : video.video_path || isShort ? 'video' : 'script'
+  const activeTab: Tab = tab && tabs.some((t) => t.id === tab) ? tab : fallbackTab
   const running = data.jobs.find((j) => j.status === 'running')
 
   async function act(fn: () => Promise<unknown>, ok: string): Promise<void> {
@@ -98,6 +108,24 @@ export default function VideoDetail({ id, onBack }: Props): React.JSX.Element {
         }
       />
       {message && <Banner kind={message.kind}>{message.text}</Banner>}
+      {isShort && video.parent_id && (
+        <Banner>
+          <span className="inline-flex items-center gap-2">
+            <Smartphone size={15} /> Short vertical cortado do vídeo completo. No fim ele recomenda
+            o original, e a descrição leva o link.
+          </span>
+          {onOpen && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-3"
+              onClick={() => onOpen(video.parent_id!)}
+            >
+              Abrir vídeo completo
+            </Button>
+          )}
+        </Banner>
+      )}
       {video.status === 'ERROR' && (
         <Banner kind="error">
           Erro em {video.error_step ? JOB_LABELS[video.error_step] : 'etapa desconhecida'}:{' '}
@@ -120,7 +148,7 @@ export default function VideoDetail({ id, onBack }: Props): React.JSX.Element {
       )}
 
       <div className="mb-5 flex flex-wrap items-center gap-1 border-b border-ink-800">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             data-testid={`tab-${t.id}`}
@@ -134,7 +162,7 @@ export default function VideoDetail({ id, onBack }: Props): React.JSX.Element {
             {t.label}
           </button>
         ))}
-        <div className="ml-auto flex items-center gap-2 pb-1">
+        <div className={`ml-auto flex items-center gap-2 pb-1 ${isShort ? 'hidden' : ''}`}>
           <select
             className={`${inputClass} max-w-44 py-1`}
             value={redoStep}
@@ -170,6 +198,9 @@ export default function VideoDetail({ id, onBack }: Props): React.JSX.Element {
       {activeTab === 'audio' && <AudioTab video={video} />}
       {activeTab === 'scenes' && <ScenesTab data={data} act={act} />}
       {activeTab === 'video' && <VideoTab video={video} act={act} busy={!!running} />}
+      {activeTab === 'shorts' && (
+        <ShortsTab video={video} act={act} busy={!!running} onOpen={onOpen} />
+      )}
       {activeTab === 'publish' && <PublishTab video={video} act={act} />}
       {activeTab === 'log' && <LogTab data={data} />}
     </div>
@@ -335,7 +366,11 @@ function VideoTab({
       <video
         controls
         src={mediaUrl(video.video_path, video.updated_at)}
-        className="aspect-video w-full bg-black"
+        className={
+          video.kind === 'short'
+            ? 'mx-auto aspect-[9/16] max-h-[70vh] bg-black'
+            : 'aspect-video w-full bg-black'
+        }
       />
       <div className="mt-3 flex items-center justify-between text-xs text-ink-500">
         <span>{video.video_path}</span>
@@ -407,7 +442,14 @@ function PublishTab({
           Já enviado ao YouTube ({video.youtube_id}). Mudanças aqui não são reenviadas.
         </Banner>
       )}
-      <Card className="p-5">
+      {video.kind === 'short' && (
+        <Banner>
+          O link do vídeo completo e #shorts entram na descrição na hora do upload. O YouTube não
+          deixa definir thumbnail de short pela API. Depois do envio, no YouTube Studio, ligue o
+          short ao vídeo completo em “Vídeo relacionado” para aparecer um botão clicável.
+        </Banner>
+      )}
+      <Card className={`p-5 ${video.kind === 'short' ? 'hidden' : ''}`}>
         <div className="mb-2 text-sm font-medium text-ink-300">Thumbnail</div>
         {video.thumbnail_paths.length ? (
           <div className="grid grid-cols-3 gap-3">
@@ -521,5 +563,107 @@ function LogTab({ data }: { data: Detail }): React.JSX.Element {
           .join('\n')}
       </pre>
     </Card>
+  )
+}
+
+function ShortsTab({
+  video,
+  act,
+  busy,
+  onOpen
+}: {
+  video: Video
+  act: (fn: () => Promise<unknown>, ok: string) => Promise<void>
+  busy: boolean
+  onOpen?: (id: number) => void
+}): React.JSX.Element {
+  const { data: shorts = [] } = useLive(() => api.videos.shorts(video.id), ['videos'], [video.id])
+  const [count, setCount] = useState(2)
+  return (
+    <div className="space-y-5">
+      <Card className="flex flex-wrap items-center gap-4 p-5">
+        <div className="min-w-64 flex-1">
+          <div className="font-medium text-ink-100">Gerar shorts deste vídeo</div>
+          <p className="mt-1 text-sm text-ink-400">
+            A IA escolhe os trechos mais fortes (18–52 s), monta em vertical 9:16 com legendas e
+            fecha com uma tela “assista ao vídeo completo” narrada na voz do canal. Cada short é
+            publicado um dia depois do anterior, depois do vídeo completo.
+          </p>
+        </div>
+        <select
+          className={`${inputClass} max-w-28`}
+          value={count}
+          onChange={(e) => setCount(Number(e.target.value))}
+        >
+          {[1, 2, 3, 4, 5].map((n) => (
+            <option key={n} value={n}>
+              {n} short{n > 1 ? 's' : ''}
+            </option>
+          ))}
+        </select>
+        <Button
+          variant="primary"
+          data-testid="generate-shorts"
+          disabled={!video.video_path || busy}
+          onClick={() =>
+            act(() => api.videos.generateShorts(video.id, count), 'Shorts na fila (rodam agora).')
+          }
+        >
+          <Sparkles size={15} /> Gerar shorts
+        </Button>
+      </Card>
+      {shorts.length > 0 ? (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+          {shorts.map((s) => (
+            <Card key={s.id} className="overflow-hidden" data-testid="short-card">
+              {s.video_path ? (
+                <video
+                  src={mediaUrl(s.video_path, s.updated_at)}
+                  controls
+                  className="aspect-[9/16] w-full bg-black object-cover"
+                />
+              ) : (
+                <div className="flex aspect-[9/16] items-center justify-center bg-ink-950 text-xs text-ink-500">
+                  {s.status === 'ERROR' ? 'falhou' : 'renderizando…'}
+                </div>
+              )}
+              <div className="space-y-2 p-3">
+                <div className="line-clamp-2 text-sm font-medium text-ink-100">{s.title}</div>
+                <div className="flex items-center justify-between">
+                  <Badge
+                    tone={
+                      s.status === 'FINAL_REVIEW'
+                        ? 'warn'
+                        : s.status === 'ERROR'
+                          ? 'error'
+                          : s.status === 'SCHEDULED' || s.status === 'PUBLISHED'
+                            ? 'ok'
+                            : 'neutral'
+                    }
+                  >
+                    {STATUS_LABELS[s.status]}
+                  </Badge>
+                  <span className="text-xs text-ink-500">
+                    {Math.round((s.short_end ?? 0) - (s.short_start ?? 0))} s
+                  </span>
+                </div>
+                {onOpen && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => onOpen(s.id)}
+                  >
+                    Revisar e aprovar
+                  </Button>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-ink-500">Nenhum short gerado ainda.</p>
+      )}
+    </div>
   )
 }

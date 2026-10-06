@@ -119,6 +119,35 @@ async function main(): Promise<void> {
       })
     }
 
+    if (job.mode === 'short' && job.short) {
+      const inputProps = withBase(job.short, base)
+      const composition = await selectComposition({ serveUrl, id: 'Short', inputProps })
+      emit({
+        type: 'log',
+        message: `Renderizando short de ${composition.durationInFrames} quadros`
+      })
+      let last = -1
+      await renderMedia({
+        serveUrl,
+        composition,
+        inputProps,
+        codec: 'h264',
+        crf: 20,
+        audioCodec: 'aac',
+        audioBitrate: '192k',
+        outputLocation: job.out,
+        concurrency,
+        timeoutInMilliseconds: 120_000,
+        onProgress: ({ progress }) => {
+          const pct = Math.floor(progress * 100)
+          if (pct !== last) {
+            last = pct
+            emit({ type: 'progress', value: progress })
+          }
+        }
+      })
+    }
+
     if (job.mode === 'stills' && job.stills) {
       for (const [i, still] of job.stills.entries()) {
         const inputProps = withBase(still.props, base)

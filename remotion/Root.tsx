@@ -1,6 +1,7 @@
 import React from 'react'
 import { Composition, Still } from 'remotion'
-import type { ThumbnailProps, VideoProps } from '../shared/render'
+import type { ShortProps, ThumbnailProps, VideoProps } from '../shared/render'
+import { Short } from './Short'
 import { Thumbnail } from './Thumbnail'
 import { Video } from './Video'
 
@@ -14,6 +15,21 @@ const defaultVideo: VideoProps = {
   music: null,
   musicVolume: 0.12,
   template: 'documentary'
+}
+
+const defaultShort: ShortProps = {
+  fps: 30,
+  segmentStart: 0,
+  segmentDuration: 10,
+  narration: '',
+  scenes: [],
+  words: [],
+  captions: true,
+  music: null,
+  musicVolume: 0.1,
+  template: 'bold',
+  headline: 'Sample headline',
+  cta: { audio: '', duration: 3, text: 'Watch the full video', thumbnail: null, parentTitle: '' }
 }
 
 const defaultThumb: ThumbnailProps = {
@@ -36,6 +52,22 @@ export const Root: React.FC = () => (
       calculateMetadata={({ props }) => ({
         fps: props.fps,
         durationInFrames: Math.max(1, Math.ceil(props.durationSec * props.fps))
+      })}
+    />
+    <Composition
+      id="Short"
+      component={Short}
+      width={1080}
+      height={1920}
+      fps={30}
+      durationInFrames={300}
+      defaultProps={defaultShort}
+      calculateMetadata={({ props }) => ({
+        fps: props.fps,
+        durationInFrames: Math.max(
+          1,
+          Math.ceil((props.segmentDuration + props.cta.duration + 0.4) * props.fps)
+        )
       })}
     />
     <Still

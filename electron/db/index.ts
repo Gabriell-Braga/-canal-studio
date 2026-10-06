@@ -123,12 +123,21 @@ const migrations: string[] = [
   `,
   `
   ALTER TABLE scenes ADD COLUMN asset_credit TEXT;
+  `,
+  `
+  ALTER TABLE videos ADD COLUMN kind TEXT NOT NULL DEFAULT 'long';
+  ALTER TABLE videos ADD COLUMN parent_id INTEGER;
+  ALTER TABLE videos ADD COLUMN short_start REAL;
+  ALTER TABLE videos ADD COLUMN short_end REAL;
+  CREATE INDEX idx_videos_parent ON videos(parent_id);
+  ALTER TABLE jobs ADD COLUMN args TEXT;
   `
 ]
 
-function migrate(db: DB): void {
+/** Apply pending migrations (up to `upTo`, used by tests to build older databases). */
+export function migrate(db: DB, upTo = migrations.length): void {
   const version = db.pragma('user_version', { simple: true }) as number
-  for (let i = version; i < migrations.length; i++) {
+  for (let i = version; i < upTo; i++) {
     db.transaction(() => {
       db.exec(migrations[i])
       db.pragma(`user_version = ${i + 1}`)

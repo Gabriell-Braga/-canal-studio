@@ -33,6 +33,8 @@ const api: Api = {
     retryFrom: invoke('videos:retryFrom'),
     approveFinal: invoke('videos:approveFinal'),
     rerender: invoke('videos:rerender'),
+    generateShorts: invoke('videos:generateShorts'),
+    shorts: invoke('videos:shorts'),
     rejectFinal: invoke('videos:rejectFinal'),
     nextSlot: invoke('videos:nextSlot')
   },

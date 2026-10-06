@@ -244,7 +244,16 @@ function App(): React.JSX.Element {
   }
 
   function render(): React.JSX.Element {
-    if (videoId !== null) return <VideoDetail id={videoId} onBack={() => setVideoId(null)} />
+    if (videoId !== null) {
+      return (
+        <VideoDetail
+          key={videoId}
+          id={videoId}
+          onBack={() => setVideoId(null)}
+          onOpen={setVideoId}
+        />
+      )
+    }
     switch (page) {
       case 'production':
         return <Production onOpen={setVideoId} onReview={() => go('review')} />

@@ -32,6 +32,33 @@ export interface VideoProps {
   [key: string]: unknown
 }
 
+/** Vertical 9:16 cut of a finished video, ending with a card that points to the full video. */
+export interface ShortProps {
+  fps: number
+  /** Where the cut starts in the original narration, seconds */
+  segmentStart: number
+  segmentDuration: number
+  narration: string
+  /** Scenes with times relative to the start of the cut */
+  scenes: RenderScene[]
+  /** Words with times relative to the start of the cut */
+  words: RenderWord[]
+  captions: boolean
+  music: string | null
+  musicVolume: number
+  template: TemplateId
+  /** Hook text shown at the top for the whole short */
+  headline: string
+  cta: {
+    audio: string
+    duration: number
+    text: string
+    thumbnail: string | null
+    parentTitle: string
+  }
+  [key: string]: unknown
+}
+
 export interface ThumbnailProps {
   background: string
   text: string
@@ -41,12 +68,13 @@ export interface ThumbnailProps {
 }
 
 export interface RenderJob {
-  mode: 'video' | 'stills'
+  mode: 'video' | 'short' | 'stills'
   /** Root folder the file server exposes; props reference files as {{root}}/relative/path */
   root: string
   entry: string
   out: string
   video?: VideoProps
+  short?: ShortProps
   stills?: { props: ThumbnailProps; out: string }[]
   concurrency?: number
 }

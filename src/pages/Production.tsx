@@ -258,7 +258,14 @@ function VideoCard({
         />
       )}
       <div className="p-3">
-        <div className="line-clamp-2 font-medium text-ink-100">{video.title ?? video.topic}</div>
+        <div className="line-clamp-2 font-medium text-ink-100">
+          {video.kind === 'short' && (
+            <span className="mr-1.5 inline-flex -translate-y-px items-center rounded bg-brand-400/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-brand-200">
+              Short
+            </span>
+          )}
+          {video.title ?? video.topic}
+        </div>
         {video.title && (
           <div className="mt-0.5 line-clamp-1 text-xs text-ink-500">{video.topic}</div>
         )}

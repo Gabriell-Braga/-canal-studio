@@ -24,7 +24,14 @@ type Scope = 'channel' | 'global'
 const PROVIDERS: { id: StockProvider; name: string; note: string }[] = [
   { id: 'pixabay', name: 'Pixabay', note: 'vídeos e fotos modernos · precisa de chave grátis' },
   { id: 'wikimedia', name: 'Wikimedia Commons', note: 'fotos e pinturas históricas · sem chave' },
-  { id: 'pexels', name: 'Pexels', note: 'vídeos e fotos · chaves novas pausadas' }
+  { id: 'pexels', name: 'Pexels', note: 'vídeos e fotos · chaves novas pausadas' },
+  { id: 'nasa', name: 'NASA', note: 'vídeos e fotos do espaço e da Terra · sem chave' },
+  { id: 'met', name: 'The Met', note: 'arte e objetos históricos em domínio público · sem chave' },
+  {
+    id: 'archive',
+    name: 'Internet Archive (Prelinger)',
+    note: 'filmes antigos em domínio público, baixa resolução · sem chave'
+  }
 ]
 
 /** Enable, disable and reorder the stock sources of a channel. */
@@ -680,6 +687,44 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
             />
             Marcar novos vídeos como conteúdo alterado/sintético
           </label>
+        </Section>
+
+        <Section
+          title="Shorts"
+          scope="channel"
+          description="Cortes verticais do vídeo completo que terminam recomendando o original."
+        >
+          <Field label="Shorts por vídeo" hint="Sugestão do botão “Gerar shorts”.">
+            <input
+              className={inputClass}
+              type="number"
+              min={1}
+              max={5}
+              value={s.shortsCount}
+              onChange={(e) => set('shortsCount', Math.max(1, Math.min(5, num(e.target.value))))}
+            />
+          </Field>
+          <label className="flex items-center gap-2 self-end text-sm text-ink-200">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={s.shortsAuto}
+              onChange={(e) => set('shortsAuto', e.target.checked)}
+            />
+            Gerar shorts automaticamente quando o vídeo ficar pronto
+          </label>
+          <div className="md:col-span-2">
+            <Field
+              label="Frase final narrada (em inglês)"
+              hint="Tocada na tela final, que mostra a thumbnail do vídeo completo."
+            >
+              <input
+                className={inputClass}
+                value={s.shortsCta}
+                onChange={(e) => set('shortsCta', e.target.value)}
+              />
+            </Field>
+          </div>
         </Section>
 
         <Section

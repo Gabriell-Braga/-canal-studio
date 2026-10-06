@@ -5,6 +5,7 @@ import type { Settings, StockProvider } from '../../shared/types'
 import { searchStock as searchPexels, type StockCandidate } from './pexels'
 import { searchPixabay } from './pixabay'
 import { searchWikimedia } from './wikimedia'
+import { searchArchive, searchMet, searchNasa } from './archives'
 
 let cacheDir = ''
 
@@ -34,13 +35,15 @@ async function cached(
   return result
 }
 
+const KEYLESS = new Set<StockProvider>(['wikimedia', 'nasa', 'met', 'archive'])
+
 /** Providers the channel wants, in its order, that can run with the current keys. */
 export function usableProviders(s: Settings): StockProvider[] {
   return s.stockProviders.filter(
     (p) =>
       (p === 'pixabay' && !!s.pixabayApiKey) ||
       (p === 'pexels' && !!s.pexelsApiKey) ||
-      p === 'wikimedia'
+      KEYLESS.has(p)
   )
 }
 
@@ -67,10 +70,13 @@ export async function searchAll(
         all = await cached(`pexels|${query}`, () =>
           searchPexels(query, minDuration, s.pexelsApiKey, new Set(), signal)
         )
-      } else {
+      } else if (provider === 'wikimedia') {
         all = await cached(`wikimedia|${s.wikimediaAllowCcBy}|${query}`, () =>
           searchWikimedia(query, s.wikimediaAllowCcBy, new Set(), signal)
         )
+      } else {
+        const search = { nasa: searchNasa, met: searchMet, archive: searchArchive }[provider]
+        all = await cached(`${provider}|${query}`, () => search(query, new Set(), signal))
       }
       // Clips long enough for the scene first; the cache keeps the original order otherwise.
       const fresh = all
@@ -90,5 +96,8 @@ export async function searchAll(
 export const PROVIDER_LABELS: Record<StockProvider, string> = {
   pixabay: 'Pixabay',
   pexels: 'Pexels',
-  wikimedia: 'Wikimedia Commons'
+  wikimedia: 'Wikimedia Commons',
+  nasa: 'NASA',
+  met: 'The Met',
+  archive: 'Internet Archive (Prelinger)'
 }

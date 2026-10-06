@@ -7,6 +7,7 @@ import {
   deleteVideo,
   getVideo,
   listChannels,
+  listShorts,
   updateChannel,
   notify,
   findVideo,
@@ -109,6 +110,8 @@ export function registerIpc(
   handle('videos:rejectFinal', (id: number, step: JobType) => pipeline.rejectFinal(id, step))
   handle('videos:nextSlot', (channelId: number) => pipeline.nextSlot(channelId))
   handle('videos:rerender', (id: number) => pipeline.rerender(id))
+  handle('videos:generateShorts', (id: number, count: number) => pipeline.generateShorts(id, count))
+  handle('videos:shorts', (id: number) => listShorts(id))
 
   // Scene actions on the detail screen. GPU ones refuse while the queue uses the GPU.
   const sceneDir = (sceneId: number): string =>

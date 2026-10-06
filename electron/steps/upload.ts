@@ -14,13 +14,38 @@ export const uploadStep: Step = {
     if (video.status !== 'SCHEDULED') throw new Error('Upload só depois da aprovação final')
     if (!isValidFile(video.video_path, 100_000)) throw new Error('Arquivo de vídeo não encontrado')
 
+    // A short points to its full video, so that one has to be on YouTube first.
+    let description = video.description ?? ''
+    if (video.kind === 'short') {
+      const parent = video.parent_id ? getVideo(video.parent_id) : null
+      if (!parent?.youtube_id) {
+        throw new Error('O vídeo completo ainda não foi enviado; o short sobe depois dele')
+      }
+      const link = `https://youtu.be/${parent.youtube_id}`
+      description = `▶ Watch the full video: ${link}\n\n${description}\n\n#shorts`.trim()
+      if (parent.scheduled_at && video.scheduled_at && video.scheduled_at < parent.scheduled_at) {
+        video = updateVideo(videoId, {
+          scheduled_at: new Date(
+            new Date(parent.scheduled_at).getTime() + 24 * 3600_000
+          ).toISOString()
+        })
+      }
+    }
+
     // publishAt must be in the future. If the slot passed while waiting, take the next free one.
     const minTime = Date.now() + 15 * 60_000
-    if (!video.scheduled_at || new Date(video.scheduled_at).getTime() < minTime) {
+    if (
+      video.kind === 'long' &&
+      (!video.scheduled_at || new Date(video.scheduled_at).getTime() < minTime)
+    ) {
       const s = ctx.settings
       const taken = listVideos(video.channel_id)
         .filter(
-          (v) => v.id !== videoId && v.scheduled_at && ['SCHEDULED', 'PUBLISHED'].includes(v.status)
+          (v) =>
+            v.id !== videoId &&
+            v.kind === 'long' &&
+            v.scheduled_at &&
+            ['SCHEDULED', 'PUBLISHED'].includes(v.status)
         )
         .map((v) => v.scheduled_at as string)
       const slot = nextFreeSlot(s.publishSlots, s.publishTimezone, taken)
@@ -41,7 +66,7 @@ export const uploadStep: Step = {
           file: video.video_path as string,
           thumbnail: null,
           title: video.title ?? video.topic,
-          description: video.description ?? '',
+          description,
           tags: video.tags,
           publishAt: video.scheduled_at as string,
           synthetic: video.synthetic_content
@@ -52,7 +77,9 @@ export const uploadStep: Step = {
       ctx.log(`Enviado: https://youtu.be/${id}`)
     }
 
-    const thumb = video.thumbnail_paths[video.chosen_thumbnail ?? 0]
+    // Custom thumbnails cannot be set on shorts.
+    const thumb =
+      video.kind === 'short' ? undefined : video.thumbnail_paths[video.chosen_thumbnail ?? 0]
     if (thumb && isValidFile(thumb)) {
       // YouTube limits custom thumbnails to 2 MB; JPEG keeps 1280x720 well under it.
       const jpeg = join(ctx.projectDir, 'thumbs', 'upload.jpg')

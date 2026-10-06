@@ -2,8 +2,10 @@ import type { JobType, Video } from '../shared/types'
 import {
   cancelPendingJobs,
   createVideo,
+  deleteVideo,
   enqueueJob,
   getVideo,
+  listShorts,
   listVideos,
   updateVideo,
   videosByStatus
@@ -70,6 +72,13 @@ export class Pipeline {
   }
 
   retryFrom(id: number, step: JobType): void {
+    const video = getVideo(id)
+    // A failed short is cut again from its full video.
+    if (video.kind === 'short') {
+      if (!video.parent_id) throw new Error('Short sem vídeo de origem')
+      deleteVideo(id)
+      return this.generateShorts(video.parent_id, 1)
+    }
     cancelPendingJobs(id)
     updateVideo(id, { error_message: null, error_step: null })
     if (step === 'script') return this.redoScript(id)
@@ -82,7 +91,8 @@ export class Pipeline {
     const v = getVideo(id)
     if (v.status !== 'FINAL_REVIEW') throw new Error('O vídeo não está em revisão final')
     if (!v.video_path) throw new Error('O vídeo ainda não foi renderizado')
-    const scheduledAt = v.scheduled_at ?? this.nextSlot(v.channel_id)
+    const scheduledAt =
+      v.scheduled_at ?? (v.kind === 'short' ? this.shortSlot(v) : this.nextSlot(v.channel_id))
     const updated = updateVideo(id, { status: 'SCHEDULED', scheduled_at: scheduledAt })
     enqueueJob(id, 'upload', 'night')
     this.scheduler.kick()
@@ -91,6 +101,34 @@ export class Pipeline {
 
   rejectFinal(id: number, fromStep: JobType): void {
     this.retryFrom(id, fromStep)
+  }
+
+  /** Cut vertical shorts from a rendered video; they land in FINAL_REVIEW on their own. */
+  generateShorts(id: number, count: number): void {
+    const v = getVideo(id)
+    if (v.kind !== 'long') throw new Error('Gere shorts a partir do vídeo longo')
+    if (!v.video_path) throw new Error('Renderize o vídeo antes de gerar shorts')
+    enqueueJob(id, 'short', 'now', 5, true, { count })
+    this.scheduler.kick()
+  }
+
+  /**
+   * Shorts go out one per day after the full video, at the same time of day, so each one
+   * can link to a video that is already public.
+   */
+  shortSlot(short: Video): string {
+    const parent = short.parent_id ? getVideo(short.parent_id) : null
+    const base = new Date(parent?.scheduled_at ?? Date.now() + 3600_000)
+    const siblings = listShorts(short.parent_id ?? 0).filter(
+      (x) => x.id !== short.id && x.scheduled_at
+    )
+    const taken = new Set(siblings.map((x) => new Date(x.scheduled_at as string).getTime()))
+    for (let day = 1; day < 60; day++) {
+      const slot = new Date(base.getTime() + day * 24 * 3600_000)
+      if (slot.getTime() > Date.now() + 3600_000 && !taken.has(slot.getTime()))
+        return slot.toISOString()
+    }
+    return new Date(Date.now() + 24 * 3600_000).toISOString()
   }
 
   /** After swapping scenes: render again and come straight back to the final review. */
@@ -105,6 +143,7 @@ export class Pipeline {
   nextSlot(channelId: number): string {
     const s = getSettings(channelId)
     const taken = listVideos(channelId)
+      .filter((v) => v.kind === 'long')
       .filter((v) => v.scheduled_at && ['SCHEDULED', 'PUBLISHED'].includes(v.status))
       .map((v) => v.scheduled_at as string)
     return nextFreeSlot(s.publishSlots, s.publishTimezone, taken)

@@ -3,7 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { closeDb, openDb } from '../electron/db'
+import { closeDb, migrate, openDb } from '../electron/db'
 import { createChannel, createVideo, listChannels, listVideos } from '../electron/db/repo'
 import { copyChannelSettings, getSettings, setSettings } from '../electron/db/settings'
 import { freshDb } from './helpers'
@@ -37,14 +37,9 @@ describe('migration to multi-channel', () => {
   it('moves an existing single-channel database into channel 1 without losing settings', () => {
     closeDb()
     const file = join(mkdtempSync(join(tmpdir(), 'canal-mig-')), 'old.db')
-    // Build a version-3 database the way the previous app left it.
-    openDb(file)
-    closeDb()
+    // Build a version-3 database: what the app had before multi-channel support.
     const raw = new Database(file)
-    raw.exec('DELETE FROM channels; DROP INDEX idx_videos_channel;')
-    raw.exec('ALTER TABLE videos DROP COLUMN channel_id; DROP TABLE channels;')
-    raw.exec('ALTER TABLE scenes DROP COLUMN asset_credit')
-    raw.exec('DELETE FROM settings')
+    migrate(raw, 3)
     raw.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('voice', '"bm_george"')
     raw
       .prepare('INSERT INTO settings (key, value) VALUES (?, ?)')

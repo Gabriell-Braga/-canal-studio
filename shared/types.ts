@@ -68,7 +68,8 @@ export const JOB_TYPES = [
   'render',
   'thumbnail',
   'metadata',
-  'upload'
+  'upload',
+  'short'
 ] as const
 
 export type JobType = (typeof JOB_TYPES)[number]
@@ -81,7 +82,8 @@ export const JOB_LABELS: Record<JobType, string> = {
   render: 'Render',
   thumbnail: 'Thumbnail',
   metadata: 'Metadados',
-  upload: 'Upload'
+  upload: 'Upload',
+  short: 'Shorts'
 }
 
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
@@ -125,9 +127,16 @@ export interface ChannelSummary extends Channel {
   youtubeTitle: string | null
 }
 
+export type VideoKind = 'long' | 'short'
+
 export interface Video {
   id: number
   channel_id: number
+  /** 'short': a vertical cut of another video (parent_id) that recommends it at the end. */
+  kind: VideoKind
+  parent_id: number | null
+  short_start: number | null
+  short_end: number | null
   topic: string
   niche: string | null
   status: VideoStatus
@@ -186,6 +195,8 @@ export interface Job {
   progress: number | null
   /** false: stop after this step instead of queueing the next one */
   chain: boolean
+  /** Step options, e.g. { count: 2 } for shorts */
+  args: Record<string, unknown> | null
 }
 
 export interface LogEntry {
@@ -203,7 +214,7 @@ export interface PublishSlot {
   time: string
 }
 
-export type StockProvider = 'pixabay' | 'pexels' | 'wikimedia'
+export type StockProvider = 'pixabay' | 'pexels' | 'wikimedia' | 'nasa' | 'met' | 'archive'
 
 export interface Settings {
   ollamaUrl: string
@@ -236,6 +247,9 @@ export interface Settings {
   publishSlots: PublishSlot[]
   publishTimezone: string
   syntheticDefault: boolean
+  shortsCount: number
+  shortsCta: string
+  shortsAuto: boolean
   googleClientId: string
   googleClientSecret: string
   startWithWindows: boolean
@@ -258,7 +272,10 @@ export const CHANNEL_SETTING_KEYS = [
   'templates',
   'publishSlots',
   'publishTimezone',
-  'syntheticDefault'
+  'syntheticDefault',
+  'shortsCount',
+  'shortsCta',
+  'shortsAuto'
 ] as const satisfies readonly (keyof Settings)[]
 
 export type ChannelSettingKey = (typeof CHANNEL_SETTING_KEYS)[number]
@@ -344,6 +361,8 @@ export interface Api {
     retryFrom: (id: number, step: JobType) => Promise<void>
     approveFinal: (id: number) => Promise<Video>
     rerender: (id: number) => Promise<void>
+    generateShorts: (id: number, count: number) => Promise<void>
+    shorts: (id: number) => Promise<Video[]>
     rejectFinal: (id: number, fromStep: JobType) => Promise<void>
     nextSlot: (channelId: number) => Promise<string>
   }

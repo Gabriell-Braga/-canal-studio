@@ -81,6 +81,31 @@ The app runs several YouTube channels side by side. It opens on the channel pick
 - A new channel can start from another channel's settings. Changing it never touches the original.
 - The first channel keeps everything that existed before multi-channel support (videos, settings, YouTube login) and its music stays in `dados\musica`. Other channels use `dados\canais\<id>\musica` (Configurações do canal → Abrir).
 
+## Shorts
+
+Open a finished video → **Shorts** tab → choose how many → **Gerar shorts**. The local model picks the strongest stretches of consecutive scenes (18–52 s) that open with a surprising line and stop on a cliffhanger. Each short:
+
+- is vertical 1080x1920: blurred background, the scene media cropped tall in the middle, a headline on top and big word-by-word captions;
+- reuses the video's narration, scene media and music, so no new GPU images are needed;
+- ends with a card "Watch the full video" with the video's thumbnail and title, an arrow to the description, and a narrated line in the channel's voice (Configurações do canal → Shorts);
+- uploads only after the full video is on YouTube, with `▶ Watch the full video: https://youtu.be/…` at the top of the description and `#shorts` at the end;
+- is scheduled one day after the full video (one short per day).
+
+The YouTube API cannot set a short's **Related video** link (the clickable pill under shorts). Set it once per short in YouTube Studio → the short → Related video. Shorts can also be generated automatically when a video reaches the final review (Configurações do canal → Shorts).
+
+## Media sources
+
+| Source | Best for | Key | License |
+|---|---|---|---|
+| Pixabay | Modern stock videos and photos | Free | Pixabay Content License |
+| Wikimedia Commons | Historical photos, paintings, maps | None | Public domain / CC0 (CC BY optional, credited) |
+| NASA Image and Video Library | Space, rockets, Earth from orbit (video and photo) | None | NASA media, generally not copyrighted |
+| The Met Open Access | Art, objects and history in public domain | None | CC0 |
+| Internet Archive (Prelinger) | Vintage public-domain films (low resolution, archive look) | None | Public domain |
+| Pexels | Stock videos and photos | Existing keys only | Pexels License |
+
+Each channel picks its sources and their order (Configurações do canal → Imagens). Long archive and NASA clips are trimmed to a stretch from the middle of the file before use. Checked and left out: Art Institute of Chicago (image server blocks automated downloads), Library of Congress (bot protection), Openverse (5 anonymous requests per hour), Unsplash (requires hotlinking).
+
 ## Daily use
 
 1. **Produção** → paste topics, one per line → **Adicionar** → **Gerar roteiros**. Scripts run right away (about 1 minute per 10 minutes of video).

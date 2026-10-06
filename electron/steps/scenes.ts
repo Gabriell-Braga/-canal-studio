@@ -1,9 +1,9 @@
-import { copyFileSync, mkdirSync } from 'fs'
+import { copyFileSync, mkdirSync, renameSync, rmSync } from 'fs'
 import { extname, join } from 'path'
 import type { Scene, Settings } from '../../shared/types'
 import { getScene, listScenes, updateScene } from '../db/repo'
 import { ensureComfy, freeComfy, generateImage } from '../services/comfy'
-import { isValidFile } from '../services/ffmpeg'
+import { isValidFile, probeDuration, runTool } from '../services/ffmpeg'
 import { unloadAll } from '../services/ollama'
 import { download } from '../services/pexels'
 import { PROVIDER_LABELS, searchAll, usableProviders } from '../services/stock'
@@ -51,7 +51,10 @@ export async function assignStock(
     dir,
     `scene_${String(scene.index).padStart(3, '0')}_${pick.source.replace(/\W+/g, '_')}${ext}`
   )
-  if (!isValidFile(out)) await download(pick.url, out, signal)
+  if (!isValidFile(out)) {
+    await download(pick.url, out, signal)
+    if (pick.kind === 'stock_video') await trimLongClip(out, sceneDuration(scene), signal)
+  }
   updateScene(scene.id, {
     asset_type: pick.kind,
     asset_path: out,
@@ -59,6 +62,41 @@ export async function assignStock(
     asset_credit: pick.credit ?? null
   })
   return true
+}
+
+/**
+ * Archive films and NASA videos run for minutes and often open with title cards. Keep only
+ * a stretch from the middle (scene length + margin), re-encoded to 1080p-friendly H.264.
+ */
+async function trimLongClip(file: string, sceneSec: number, signal?: AbortSignal): Promise<void> {
+  const total = await probeDuration(file)
+  const keep = Math.min(total, sceneSec + 4)
+  if (total <= Math.max(60, keep * 3)) return
+  const start = Math.min(total * 0.25, total - keep)
+  const tmp = file.replace(/\.mp4$/i, '.cut.mp4')
+  await runTool(
+    'ffmpeg',
+    [
+      '-y',
+      '-ss',
+      start.toFixed(2),
+      '-i',
+      file,
+      '-t',
+      keep.toFixed(2),
+      '-an',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-crf',
+      '20',
+      tmp
+    ],
+    signal
+  )
+  rmSync(file, { force: true })
+  renameSync(tmp, file)
 }
 
 /** Free VRAM held by Ollama and Whisper, then make sure ComfyUI is up. */

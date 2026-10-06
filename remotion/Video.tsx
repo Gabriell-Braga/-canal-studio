@@ -15,7 +15,7 @@ import { template, type TemplateStyle } from './templates'
 
 const FADE_SEC = 0.5
 
-function KenBurns({
+export function KenBurns({
   src,
   motion,
   frames
@@ -49,7 +49,7 @@ function KenBurns({
   )
 }
 
-function SceneLayer({
+export function SceneLayer({
   scene,
   frames,
   fadeIn,
@@ -176,7 +176,7 @@ function Captions({
   )
 }
 
-function Vignette({ strength }: { strength: number }): React.JSX.Element {
+export function Vignette({ strength }: { strength: number }): React.JSX.Element {
   return (
     <AbsoluteFill
       style={{

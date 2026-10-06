@@ -233,7 +233,7 @@ export class Scheduler {
     this.setBusy(true)
     const attempt = job.attempts + 1
     updateJob(job.id, { status: 'running', started_at: now(), attempts: attempt, progress: 0 })
-    if (step.status !== 'SCHEDULED') {
+    if (step.status && step.status !== 'SCHEDULED') {
       updateVideo(job.video_id, { status: step.status, error_message: null, error_step: null })
     }
     const log = (message: string, level: 'info' | 'warn' | 'error' = 'info'): void =>
@@ -245,6 +245,7 @@ export class Scheduler {
       if (!video) throw new Error('Vídeo removido')
       await step.run(job.video_id, {
         jobId: job.id,
+        jobArgs: job.args,
         settings: getSettings(video.channel_id),
         signal: controller.signal,
         projectDir: this.opts.projectDir(job.video_id),
@@ -270,6 +271,11 @@ export class Scheduler {
         const retryAt = new Date(this.clock().getTime() + backoffMs(attempt))
         updateJob(job.id, { status: 'pending', run_after: retryAt.toISOString() })
         log(`Falhou: ${message}. Nova tentativa às ${retryAt.toLocaleTimeString('pt-BR')}`, 'warn')
+      } else if (job.type === 'short') {
+        // Shorts are extra: a failure must not put the finished video in ERROR.
+        updateJob(job.id, { status: 'failed', finished_at: now(), log: message })
+        log(`Shorts falharam: ${message}`, 'error')
+        this.opts.onEvent?.({ type: 'error', videoId: job.video_id, message: `Shorts: ${message}` })
       } else {
         updateJob(job.id, { status: 'failed', finished_at: now(), log: message })
         log(`Falhou de vez: ${message}`, 'error')
@@ -300,8 +306,17 @@ export class Scheduler {
       }
       return
     }
+    if (job.type === 'short') {
+      this.opts.onEvent?.({
+        type: 'final-ready',
+        videoId: video.id,
+        title: `Shorts de ${video.title ?? video.topic}`
+      })
+      return
+    }
     if (job.type === 'metadata') {
       updateVideo(video.id, { status: 'FINAL_REVIEW' })
+      if (getSettings(video.channel_id).shortsAuto) enqueueJob(video.id, 'short', job.run_mode)
       this.opts.onEvent?.({
         type: 'final-ready',
         videoId: video.id,

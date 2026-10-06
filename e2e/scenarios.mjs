@@ -553,3 +553,62 @@ async function stock({ launch, api, log }) {
 }
 
 scenarios.stock = stock
+
+/** Shorts: cut 2 vertical shorts from a finished video, approve one. */
+async function shorts({ launch, api, shot, log, waitUntil }) {
+  const { execFileSync } = await import('child_process')
+  const { app, page } = await launch()
+  await api(page, 'settings.set', { nightStart: '12:00', nightEnd: '12:01' })
+  const video = (await api(page, 'videos.list', 1)).find((v) => v.kind === 'long' && v.video_path)
+  assert(video, 'a rendered long video')
+  await page.getByTestId('video-card').filter({ hasText: video.title }).first().click()
+  await page.getByTestId('tab-shorts').click()
+  await page.getByTestId('generate-shorts').click()
+  log('Gerando 2 shorts…')
+  const t0 = Date.now()
+  const done = await waitUntil(
+    async () => {
+      const list = await api(page, 'videos.shorts', video.id)
+      const failed = list.find((s) => s.status === 'ERROR')
+      if (failed) throw new Error(failed.error_message)
+      const state = await api(page, 'queue.state')
+      const job = [...state.running, ...state.pending].find((j) => j.type === 'short')
+      return !job && list.filter((s) => s.status === 'FINAL_REVIEW').length >= 2 && list
+    },
+    { label: 'shorts', timeoutMs: 30 * 60_000, everyMs: 5000 }
+  )
+  log(`Shorts prontos em ${Math.round((Date.now() - t0) / 1000)} s`)
+  for (const s of done) {
+    const probe = JSON.parse(
+      execFileSync('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'stream=codec_type,width,height:format=duration',
+        '-of',
+        'json',
+        s.video_path
+      ]).toString()
+    )
+    const v = probe.streams.find((x) => x.codec_type === 'video')
+    log(
+      `  "${s.title}" ${v.width}x${v.height} ${Number(probe.format.duration).toFixed(1)} s (${s.short_start.toFixed(0)}–${s.short_end.toFixed(0)} s do original)`
+    )
+    assert(v.width === 1080 && v.height === 1920, 'vertical 1080x1920')
+    assert(Number(probe.format.duration) <= 60, 'at most 60 s')
+  }
+  await page.waitForTimeout(1500)
+  await shot(page, 'shorts-tab')
+  await page.getByText('Revisar e aprovar').first().click()
+  await page.getByTestId('tab-publish').waitFor()
+  await shot(page, 'short-detail')
+  await page.getByTestId('approve-final').click()
+  await page.getByText('Aprovado e agendado').waitFor()
+  const approved = await api(page, 'videos.get', done[0].id)
+  log(`Short agendado para ${new Date(approved.video.scheduled_at).toLocaleString('pt-BR')}`)
+  assert(approved.video.status === 'SCHEDULED', 'short scheduled')
+  await app.close()
+  return done
+}
+
+scenarios.shorts = shorts

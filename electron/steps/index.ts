@@ -4,6 +4,7 @@ import { audioStep } from './audio'
 import { metadataStep } from './metadata'
 import { renderStep } from './render'
 import { scenesStep } from './scenes'
+import { shortsStep } from './shorts'
 import { thumbnailStep } from './thumbnail'
 import { uploadStep } from './upload'
 import { scriptStep } from './script'
@@ -18,10 +19,11 @@ const realSteps: Partial<Record<JobType, Step>> = {
   render: renderStep,
   thumbnail: thumbnailStep,
   metadata: metadataStep,
-  upload: uploadStep
+  upload: uploadStep,
+  short: shortsStep
 }
 
-const STATUS: Record<JobType, VideoStatus> = {
+const STATUS: Record<JobType, VideoStatus | undefined> = {
   script: 'SCRIPT_GENERATING',
   audio: 'AUDIO',
   transcribe: 'AUDIO',
@@ -29,7 +31,8 @@ const STATUS: Record<JobType, VideoStatus> = {
   render: 'RENDERING',
   thumbnail: 'THUMBNAIL',
   metadata: 'THUMBNAIL',
-  upload: 'SCHEDULED'
+  upload: 'SCHEDULED',
+  short: undefined
 }
 
 /**

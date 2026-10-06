@@ -18,7 +18,8 @@
     "check-setup": "powershell -ExecutionPolicy Bypass -File scripts/check-setup.ps1",
     "test": "vitest run",
     "test:e2e": "npm run build && node e2e/run.mjs",
-    "typecheck:remotion": "tsc --noEmit -p tsconfig.remotion.json --composite false"
+    "typecheck:remotion": "tsc --noEmit -p tsconfig.remotion.json --composite false",
+    "test:live": "vitest run --config vitest.live.config.ts"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",

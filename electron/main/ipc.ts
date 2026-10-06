@@ -18,6 +18,8 @@ import type { Pipeline } from '../pipeline'
 import type { Scheduler } from '../queue/scheduler'
 import { checkAll, installService, startService } from '../services/checks'
 import { dataDir, setDataDir } from './paths'
+import { pythonGet, pythonPost } from '../services/python'
+import { join } from 'path'
 
 type Handler = (...args: never[]) => unknown
 
@@ -108,6 +110,18 @@ export function registerIpc(
     return next
   })
   handle('settings:dataDir', () => dataDir())
+  handle('settings:voices', async () => (await pythonGet<{ voices: string[] }>('/voices')).voices)
+  handle('settings:voiceSample', async () => {
+    const s = getSettings()
+    const out = join(dataDir(), 'amostra-voz.wav')
+    await pythonPost('/tts', {
+      text: 'In 1872, a ship was found drifting in the Atlantic. Her crew had vanished without a trace.',
+      voice: s.voice,
+      speed: s.voiceSpeed,
+      out_path: out
+    })
+    return out
+  })
   handle('settings:chooseDataDir', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const options = {

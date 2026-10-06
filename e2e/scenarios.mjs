@@ -169,4 +169,48 @@ async function phase2({ launch, api, shot, log, waitUntil }) {
   await app.close()
 }
 
-export const scenarios = { phase1, phase2 }
+/** Fase 3: an approved script becomes a normalized WAV with word timings and scene times. */
+async function phase3({ launch, api, shot, log, waitUntil, dataDir }) {
+  const { app, page } = await launch()
+  await api(page, 'videos.addTopics', ['Why the Library of Alexandria really disappeared'], 1)
+  await api(page, 'videos.generateScripts')
+  const [video] = await waitUntil(
+    async () => {
+      const vs = await api(page, 'videos.list')
+      if (vs[0].status === 'ERROR') throw new Error(vs[0].error_message)
+      return vs[0].status === 'SCRIPT_REVIEW' && vs
+    },
+    { label: 'script', timeoutMs: 10 * 60_000, everyMs: 3000 }
+  )
+  log(`Roteiro: "${video.title}"`)
+  await api(page, 'videos.approveScripts', [video.id])
+  await api(page, 'queue.runNow')
+  const t0 = Date.now()
+  await waitUntil(
+    async () => {
+      const d = await api(page, 'videos.get', video.id)
+      if (d.video.status === 'ERROR')
+        throw new Error(`${d.video.error_step}: ${d.video.error_message}`)
+      return d.jobs.some((j) => j.type === 'transcribe' && j.status === 'done')
+    },
+    { label: 'audio + transcribe', timeoutMs: 15 * 60_000, everyMs: 3000 }
+  )
+  log(`Áudio e transcrição em ${Math.round((Date.now() - t0) / 1000)} s`)
+  const d = await api(page, 'videos.get', video.id)
+  assert(d.video.audio_path?.endsWith('narration.wav'), 'audio_path set')
+  assert(
+    d.scenes.every((s) => s.start_sec !== null && s.end_sec > s.start_sec),
+    'scene times'
+  )
+  for (const s of d.scenes)
+    log(`  cena ${s.index}: ${s.start_sec.toFixed(2)}–${s.end_sec.toFixed(2)} s`)
+  await page.getByTestId('nav-queue').click()
+  await shot(page, 'queue-after-audio')
+  await app.close()
+  return {
+    audio: d.video.audio_path,
+    projectDir: d.video.audio_path.replace(/[\/]narration.wav$/, '')
+  }
+}
+
+export const scenarios = { phase1, phase2, phase3 }

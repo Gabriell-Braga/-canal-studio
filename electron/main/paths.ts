@@ -1,10 +1,18 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { dirname, join } from 'path'
 
 /** Folder with python/, remotion/ and scripts/. In a packaged app they ship as extra resources. */
 export function appRoot(): string {
-  return app.isPackaged ? process.resourcesPath : app.getAppPath()
+  if (app.isPackaged) return process.resourcesPath
+  // `electron out/main/index.js` reports out/main as the app path; walk up to the project.
+  let dir = app.getAppPath()
+  while (!existsSync(join(dir, 'package.json'))) {
+    const parent = dirname(dir)
+    if (parent === dir) return app.getAppPath()
+    dir = parent
+  }
+  return dir
 }
 
 function pointerFile(): string {
@@ -12,9 +20,7 @@ function pointerFile(): string {
 }
 
 function defaultDataDir(): string {
-  return app.isPackaged
-    ? join(app.getPath('documents'), 'Canal Studio')
-    : join(app.getAppPath(), 'dados')
+  return app.isPackaged ? join(app.getPath('documents'), 'Canal Studio') : join(appRoot(), 'dados')
 }
 
 /**

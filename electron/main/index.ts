@@ -17,10 +17,13 @@ import { changes } from '../db/repo'
 import { getSettings } from '../db/settings'
 import { Pipeline } from '../pipeline'
 import { Scheduler, type QueueEvent } from '../queue/scheduler'
+import { refreshPath } from '../services/exec'
 import { readVram } from '../services/gpu'
 import { steps } from '../steps'
+import { configurePython, ensurePython, hasVenv, stopPython } from '../services/python'
 import { registerIpc } from './ipc'
-import { dataDir, projectDir } from './paths'
+import { handleMedia, registerMediaScheme } from './media'
+import { appRoot, dataDir, projectDir } from './paths'
 
 const isE2E = process.env.CANAL_E2E === '1'
 const startHidden = process.argv.includes('--hidden')
@@ -33,6 +36,11 @@ let scheduler: Scheduler
 
 if (!isE2E && !app.requestSingleInstanceLock()) {
   app.quit()
+}
+registerMediaScheme()
+if (isE2E && process.env.CANAL_DATA_DIR) {
+  // Keep test runs away from the real profile (and from a running dev instance).
+  app.setPath('userData', join(process.env.CANAL_DATA_DIR, 'electron-profile'))
 }
 
 function createWindow(): void {
@@ -177,14 +185,27 @@ function forwardChanges(): void {
 
 app.on('second-instance', showWindow)
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('app.canalstudio')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // Tools installed after Windows started this process (winget) are only on the registry PATH.
+  await refreshPath()
   openDb(join(dataDir(), 'canal.db'))
+  handleMedia(() => [dataDir()])
+  configurePython({
+    serverDir: join(appRoot(), 'python'),
+    venvDir: app.isPackaged
+      ? join(app.getPath('userData'), 'python-venv')
+      : join(appRoot(), 'python', 'venv')
+  })
+  // The sidecar starts with the app and stops with it.
+  if (hasVenv() && process.env.CANAL_FAKE_STEPS !== '1') {
+    ensurePython().catch((e) => console.error('Python sidecar:', e.message))
+  }
   scheduler = new Scheduler({
     steps,
     projectDir,
@@ -213,6 +234,7 @@ app.on('before-quit', () => {
 })
 
 app.on('will-quit', () => {
+  stopPython()
   closeDb()
 })
 

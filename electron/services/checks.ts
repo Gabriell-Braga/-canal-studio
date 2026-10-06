@@ -3,8 +3,10 @@ import { join } from 'path'
 import type { ServiceStatus, StartResult } from '../../shared/types'
 import { config } from './config'
 import { fetchJson, refreshPath, run, startDetached } from './exec'
+import { addLog } from '../db/repo'
+import { ensurePython, hasVenv, installPython, pythonLastError, venvPython } from './python'
 
-const projectRoot = process.cwd()
+let installing: string | null = null
 
 async function firstLine(file: string, args: string[]): Promise<string> {
   const { stdout, stderr } = await run(file, args)
@@ -155,25 +157,43 @@ async function checkPythonServer(): Promise<ServiceStatus> {
     await fetchJson(`${config.pythonServerUrl}/health`)
     return { ...base, state: 'ok', detail: `Rodando em ${config.pythonServerUrl}` }
   } catch {
-    const hasVenv = existsSync(join(projectRoot, 'python', 'venv', 'Scripts', 'python.exe'))
+    if (installing) {
+      return { ...base, state: 'warning', detail: `Instalando… ${installing}` }
+    }
+    if (hasVenv()) {
+      const err = pythonLastError()
+      return {
+        ...base,
+        state: 'warning',
+        detail: err
+          ? `Parado. Último erro: ${err.slice(-200)}`
+          : 'Instalado, parado. Inicia sozinho quando precisar.',
+        canStart: true
+      }
+    }
     return {
       ...base,
-      state: 'warning',
-      detail: hasVenv ? 'venv criado, servidor parado.' : 'Será configurado na Fase 3.'
+      state: 'missing',
+      detail: 'venv não criado. Instalar baixa ~1,5 GB (Kokoro, faster-whisper, CUDA).',
+      canInstall: true
     }
   }
 }
 
+/** Kokoro ships eSpeak NG through the espeakng-loader wheel, so a system install is optional. */
 async function checkEspeak(): Promise<ServiceStatus> {
   const base = { id: 'espeak', name: 'eSpeak NG' } as const
+  if (
+    hasVenv() &&
+    existsSync(join(venvPython(), '..', '..', 'Lib', 'site-packages', 'espeakng_loader'))
+  ) {
+    return { ...base, state: 'ok', detail: 'Embutido no Kokoro (espeakng-loader)' }
+  }
   try {
     const line = await firstLine('espeak-ng', ['--version'])
-    return { ...base, state: 'ok', version: line.match(/(\d+\.\d+[\w.-]*)/)?.[1] }
+    return { ...base, state: 'ok', version: line.match(/(d+.d+[w.-]*)/)?.[1] }
   } catch {
-    if (existsSync('C:\\Program Files\\eSpeak NG\\espeak-ng.exe')) {
-      return { ...base, state: 'ok', detail: 'C:\\Program Files\\eSpeak NG' }
-    }
-    return { ...base, state: 'warning', detail: 'Necessário para o Kokoro (Fase 3).' }
+    return { ...base, state: 'warning', detail: 'Vem junto com o servidor Python (Kokoro).' }
   }
 }
 
@@ -211,9 +231,35 @@ export async function startService(id: string): Promise<StartResult> {
     )
     return { ok: true, message: 'Iniciando ComfyUI (pode levar ~30 s)…' }
   }
+  if (id === 'pythonServer') {
+    try {
+      await ensurePython()
+      return { ok: true, message: 'Servidor Python rodando.' }
+    } catch (e) {
+      return { ok: false, message: (e as Error).message }
+    }
+  }
   return { ok: false, message: 'Este serviço não pode ser iniciado por aqui.' }
 }
 
 export async function installService(id: string): Promise<StartResult> {
+  await refreshPath()
+  if (id === 'pythonServer') {
+    if (installing) return { ok: false, message: 'Instalação já em andamento.' }
+    installing = 'iniciando'
+    addLog(null, 'info', 'Instalando servidor Python (veja o progresso aqui)…')
+    installPython((line) => {
+      installing = line.slice(0, 120)
+      if (/^(Collecting|Successfully|Criando|Baixando|Kokoro|Whisper|ERROR)/.test(line))
+        addLog(null, 'info', line)
+    })
+      .then(() => addLog(null, 'info', 'Servidor Python instalado.'))
+      .catch((e) => addLog(null, 'error', `Instalação do Python falhou: ${e.message}`))
+      .finally(() => (installing = null))
+    return {
+      ok: true,
+      message: 'Instalação iniciada. Acompanhe em Fila e Worker → Logs (leva alguns minutos).'
+    }
+  }
   return { ok: false, message: `Instalação automática de "${id}" não disponível.` }
 }

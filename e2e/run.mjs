@@ -2,7 +2,7 @@
 // The window opens without focus (CANAL_E2E=1) so it does not interrupt other work.
 // Usage: node e2e/run.mjs <scenario> [--keep-data]
 import { _electron as electron } from 'playwright'
-import { mkdirSync, mkdtempSync } from 'fs'
+import { createWriteStream, mkdirSync, mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
 import { scenarios } from './scenarios.mjs'
@@ -25,6 +25,14 @@ async function launch() {
     cwd: root,
     env: { ...process.env, CANAL_E2E: '1', CANAL_DATA_DIR: dataDir, CANAL_TICK_MS: '1000' }
   })
+  const out = createWriteStream(join(dataDir, 'main-process.log'), { flags: 'a' })
+  app.process().stdout?.pipe(out)
+  app.process().stderr?.pipe(out)
+  app.process().on('exit', (code, signal) =>
+    out.write(`
+[exit code=${code} signal=${signal}]
+`)
+  )
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   return { app, page }

@@ -35,6 +35,12 @@ export default function Services(): React.JSX.Element {
     if (result.ok) setTimeout(refresh, id === 'comfyui' ? 30000 : 4000)
   }
 
+  async function install(id: string): Promise<void> {
+    const result = await window.api.services.install(id)
+    setMessage(result.message)
+    setTimeout(refresh, 3000)
+  }
+
   const okCount = services.filter((s) => s.state === 'ok').length
 
   return (
@@ -80,6 +86,14 @@ export default function Services(): React.JSX.Element {
                 className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs hover:bg-emerald-600"
               >
                 Iniciar
+              </button>
+            )}
+            {s.canInstall && (
+              <button
+                onClick={() => install(s.id)}
+                className="rounded-md bg-sky-700 px-3 py-1.5 text-xs hover:bg-sky-600"
+              >
+                Instalar
               </button>
             )}
           </li>

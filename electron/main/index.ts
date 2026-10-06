@@ -26,6 +26,7 @@ import { configurePython, ensurePython, hasVenv, stopPython } from '../services/
 import { configureRemotion } from '../services/remotion'
 import { configureMusic } from '../steps/render'
 import { configureStockCache } from '../services/stock'
+import { configureLlm } from '../services/llm'
 import {
   configureYoutube,
   isConnected as isYoutubeConnected,
@@ -256,6 +257,9 @@ app.whenReady().then(async () => {
   configureMusic(channelMusicDir)
   configureStockCache(join(dataDir(), 'cache', 'stock'))
   configureYoutube({ channelDir })
+  configureLlm({
+    skillFile: join(appRoot(), '.claude', 'skills', 'documentary-scriptwriter', 'SKILL.md')
+  })
   configurePython({
     serverDir: join(appRoot(), 'python'),
     venvDir: app.isPackaged

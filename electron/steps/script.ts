@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { Script } from '../../shared/types'
 import { getVideo, replaceScenes, updateVideo } from '../db/repo'
-import { generateJson } from '../services/ollama'
+import { generateStructured, llmLabel, type LlmCall } from '../services/llm'
 import type { Step, StepContext } from './types'
 
 export const scriptSchema = z.object({
@@ -25,7 +25,9 @@ export const reviewSchema = z.object({
       z.object({
         kind: z.enum(['hook', 'pacing', 'repetition', 'dubious_fact', 'other']),
         message: z.string(),
-        quote: z.string().optional()
+        quote: z.string().optional(),
+        correction: z.string().optional(),
+        source: z.string().optional()
       })
     )
     .max(12)
@@ -58,7 +60,7 @@ export async function expandScript(
   script: Script,
   targetWords: number,
   topic: string,
-  ollama: Parameters<typeof generateJson>[2],
+  call: LlmCall,
   ctx: Pick<StepContext, 'log' | 'signal'>
 ): Promise<void> {
   const BATCH = 6
@@ -83,7 +85,7 @@ export async function expandScript(
       const batch = script.scenes.slice(start, start + BATCH)
       const numbered = batch.map((sc, i) => `SCENE ${start + i + 1}: ${sc.narration}`).join('\n')
       try {
-        const { narrations } = await generateJson(
+        const { narrations } = await generateStructured(
           `You are expanding the narration of a YouTube documentary script about: ${topic}.
 Full outline (for context, do not repeat other scenes):
 ${outline}
@@ -93,7 +95,7 @@ ${numbered}
 
 Return ONLY JSON: {"narrations": ["scene ${start + 1} text", ...]} with exactly ${batch.length} items.`,
           expandSchema,
-          ollama
+          call
         )
         if (narrations.length === batch.length) {
           narrations.forEach((n, i) => {
@@ -121,36 +123,38 @@ export const scriptStep: Step = {
     const minutes = video.duration_target_min
     const words = Math.round(minutes * 150)
     const topic = video.niche ? `${video.topic} (channel niche: ${video.niche})` : video.topic
-    const ollama = {
-      url: settings.ollamaUrl,
-      model: settings.ollamaModel,
-      // ~1.4 tokens per word of output plus prompt and JSON overhead.
-      numCtx: Math.min(32768, Math.max(8192, Math.round(words * 2.2) + 2048)),
-      signal: ctx.signal
+    const call: LlmCall = {
+      settings,
+      signal: ctx.signal,
+      effort: 'high',
+      // Ollama: ~1.4 tokens per word of output plus prompt and JSON overhead.
+      numCtx: Math.min(32768, Math.max(8192, Math.round(words * 2.2) + 2048))
     }
 
-    ctx.log(`Gerando roteiro com ${settings.ollamaModel} (~${words} palavras)`)
+    ctx.log(`Gerando roteiro com ${llmLabel(settings)} (~${words} palavras)`)
     const prompt = fillPrompt(settings.scriptPrompt, {
       topic,
       minutes,
       words,
       scenes: Math.max(3, Math.round((minutes * 60) / 15))
     })
-    const script = await generateJson(prompt, scriptSchema, ollama)
+    const script = await generateStructured(prompt, scriptSchema, call)
     ctx.log(`Primeira versão: ${script.scenes.length} cenas e ${scriptWordCount(script)} palavras`)
     ctx.progress(0.4)
-    await expandScript(script, words, video.topic, ollama, ctx)
+    await expandScript(script, words, video.topic, call, ctx)
     ctx.progress(0.7)
     const count = scriptWordCount(script)
     ctx.log(`Roteiro com ${script.scenes.length} cenas e ${count} palavras`)
 
-    ctx.log('Rodando auto-revisão')
+    // Claude can check the facts on the web; Ollama only flags what looks doubtful.
+    const webCheck = settings.llmProvider !== 'ollama' && settings.factCheckWeb
+    ctx.log(webCheck ? 'Checando fatos na web' : 'Rodando auto-revisão')
     let alerts: z.infer<typeof reviewSchema>['alerts'] = []
     try {
-      const review = await generateJson(
+      const review = await generateStructured(
         fillPrompt(settings.reviewPrompt, { topic: video.topic, script: scriptAsText(script) }),
         reviewSchema,
-        { ...ollama, temperature: 0.2 }
+        { ...call, temperature: 0.2, webSearch: webCheck, effort: 'medium' }
       )
       alerts = review.alerts
     } catch (error) {

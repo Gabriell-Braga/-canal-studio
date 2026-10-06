@@ -612,3 +612,57 @@ async function shorts({ launch, api, shot, log, waitUntil }) {
 }
 
 scenarios.shorts = shorts
+
+/** Claude through the user's Claude Code login: script, web fact-check, AI fix. */
+async function claude({ launch, api, shot, log, waitUntil }) {
+  const { app, page } = await launch()
+  const test = await api(page, 'settings.testLlm', {
+    llmProvider: 'claude-code',
+    claudeModel: 'opus'
+  })
+  log(test)
+  await api(page, 'settings.set', {
+    llmProvider: 'claude-code',
+    claudeModel: 'opus',
+    factCheckWeb: true
+  })
+  await api(
+    page,
+    'videos.addTopics',
+    1,
+    ['Blockbuster: the $5 billion giant that laughed at Netflix'],
+    3
+  )
+  await api(page, 'videos.generateScripts', 1)
+  const t0 = Date.now()
+  const [v] = await waitUntil(
+    async () => {
+      const vs = await api(page, 'videos.list', 1)
+      if (vs[0].status === 'ERROR') throw new Error(vs[0].error_message)
+      return vs[0].status === 'SCRIPT_REVIEW' && vs
+    },
+    { label: 'claude script', timeoutMs: 20 * 60_000, everyMs: 5000 }
+  )
+  const words = [v.script.hook, ...v.script.scenes.map((s) => s.narration), v.script.outro]
+    .join(' ')
+    .split(/\s+/).length
+  log(
+    `Roteiro em ${Math.round((Date.now() - t0) / 1000)} s: "${v.title}" · ${v.script.scenes.length} cenas · ${words} palavras`
+  )
+  log(`Gancho: ${v.script.hook}`)
+  for (const a of v.review_alerts)
+    log(
+      `  [${a.kind}] ${a.message}${a.correction ? ` → ${a.correction}` : ''}${a.source ? ` (${a.source})` : ''}`
+    )
+  await page.getByTestId('nav-review').click()
+  await page.getByTestId('review-item').first().waitFor()
+  await shot(page, 'claude-review')
+  if (v.review_alerts.some((a) => a.kind !== 'other')) {
+    const t1 = Date.now()
+    const fixed = await api(page, 'videos.fixScript', v.id)
+    log(`Corrigido em ${Math.round((Date.now() - t1) / 1000)} s; gancho novo: ${fixed.script.hook}`)
+  }
+  await app.close()
+}
+
+scenarios.claude = claude

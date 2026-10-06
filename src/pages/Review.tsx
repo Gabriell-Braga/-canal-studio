@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Wand2 } from 'lucide-react'
 import type { ReviewAlert, Video } from '../../shared/types'
 import ScriptEditor from '../components/ScriptEditor'
 import { Banner, Button, Card, PageHeader } from '../components/ui'
@@ -31,6 +32,7 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [editing, setEditing] = useState<number | null>(null)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [fixing, setFixing] = useState<number | null>(null)
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
 
   const visibleSelected = [...selected].filter((id) => videos.some((v) => v.id === id))
@@ -55,6 +57,18 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
       })
     } catch (e) {
       setMessage({ kind: 'error', text: errorText(e) })
+    }
+  }
+
+  async function fix(id: number): Promise<void> {
+    setFixing(id)
+    try {
+      await api.videos.fixScript(id)
+      setMessage({ kind: 'info', text: 'Roteiro corrigido pela IA. Releia antes de aprovar.' })
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) })
+    } finally {
+      setFixing(null)
     }
   }
 
@@ -170,6 +184,22 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
                               {a.quote && (
                                 <span className="mt-0.5 block italic opacity-80">“{a.quote}”</span>
                               )}
+                              {a.correction && (
+                                <span className="mt-1 block text-emerald-200">
+                                  <span className="font-semibold">Correção: </span>
+                                  {a.correction}
+                                </span>
+                              )}
+                              {a.source && /^https?:\/\//.test(a.source) && (
+                                <a
+                                  href={a.source}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="mt-0.5 block truncate text-brand-200 underline-offset-2 hover:underline"
+                                >
+                                  Fonte: {a.source}
+                                </a>
+                              )}
                             </li>
                           ))}
                         </ul>
@@ -195,6 +225,18 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
                         <Button size="sm" onClick={() => redo(v.id)}>
                           Refazer
                         </Button>
+                        {v.review_alerts.some((a) => a.kind !== 'other') && (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            data-testid="fix-script"
+                            disabled={fixing !== null}
+                            onClick={() => fix(v.id)}
+                          >
+                            <Wand2 size={14} />
+                            {fixing === v.id ? 'Corrigindo…' : 'Corrigir com IA'}
+                          </Button>
+                        )}
                       </div>
                     </>
                   )}

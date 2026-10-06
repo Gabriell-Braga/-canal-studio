@@ -23,6 +23,7 @@
     "deploy:desktop": "powershell -ExecutionPolicy Bypass -File scripts/deploy-desktop.ps1"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@googleapis/youtube": "^40.0.0",

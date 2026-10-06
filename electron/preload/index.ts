@@ -28,6 +28,7 @@ const api: Api = {
     generateScripts: invoke('videos:generateScripts'),
     approveScripts: invoke('videos:approveScripts'),
     redoScript: invoke('videos:redoScript'),
+    fixScript: invoke('videos:fixScript'),
     update: invoke('videos:update'),
     remove: invoke('videos:remove'),
     retryFrom: invoke('videos:retryFrom'),
@@ -59,6 +60,7 @@ const api: Api = {
     voiceSample: invoke('settings:voiceSample'),
     voices: invoke('settings:voices'),
     dataDir: invoke('settings:dataDir'),
+    testLlm: invoke('settings:testLlm'),
     chooseDataDir: invoke('settings:chooseDataDir')
   },
   youtube: {

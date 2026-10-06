@@ -10,14 +10,18 @@ Return ONLY valid JSON matching the schema.`
 
 export const DEFAULT_REVIEW_PROMPT = `You are a demanding YouTube script editor and fact-checker. Review the script below about "{topic}".
 Check: hook strength in the first 15 seconds, pacing, repetition, filler, and any factual claim (names, numbers, dates, quotes) that may be wrong or unverifiable.
-Return a short list of alerts (max 8). Each alert has: kind ("hook", "pacing", "repetition", "dubious_fact" or "other"), message (one sentence, in Brazilian Portuguese, telling the creator what to check or fix) and quote (the exact phrase from the script, in English, when relevant).
-Every claim that a creator should double-check before publishing must be a "dubious_fact" alert.
+Return a short list of alerts (max 10). Each alert has: kind ("hook", "pacing", "repetition", "dubious_fact" or "other"), message (one sentence, in Brazilian Portuguese, telling the creator what is wrong or doubtful), quote (the exact phrase from the script, in English, when relevant), correction (the corrected English sentence, when you know it) and source (a URL backing the correction, when you verified it on the web).
+Every claim that a creator should double-check before publishing must be a "dubious_fact" alert. Do not report claims you verified as correct.
 Return ONLY valid JSON: {"alerts": [...]}.
 
 SCRIPT:
 {script}`
 
 export const DEFAULT_SETTINGS: Settings = {
+  llmProvider: 'ollama',
+  claudeModel: 'opus',
+  anthropicApiKey: '',
+  factCheckWeb: true,
   ollamaUrl: 'http://localhost:11434',
   ollamaModel: 'qwen3:14b',
   scriptPrompt: DEFAULT_SCRIPT_PROMPT,
@@ -82,6 +86,26 @@ function readRows(prefix: string): Record<string, unknown> {
  * Shared settings, plus the channel's own values for CHANNEL_SETTING_KEYS when a channel
  * is given. A channel without its own value falls back to the shared one, then the default.
  */
+/** Prompts shipped by older versions; a stored copy equal to one of these is upgraded. */
+const OLD_DEFAULTS: Partial<Record<keyof Settings, string[]>> = {
+  reviewPrompt: [
+    `You are a demanding YouTube script editor and fact-checker. Review the script below about "{topic}".
+Check: hook strength in the first 15 seconds, pacing, repetition, filler, and any factual claim (names, numbers, dates, quotes) that may be wrong or unverifiable.
+Return a short list of alerts (max 8). Each alert has: kind ("hook", "pacing", "repetition", "dubious_fact" or "other"), message (one sentence, in Brazilian Portuguese, telling the creator what to check or fix) and quote (the exact phrase from the script, in English, when relevant).
+Every claim that a creator should double-check before publishing must be a "dubious_fact" alert.
+Return ONLY valid JSON: {"alerts": [...]}.
+
+SCRIPT:
+{script}`
+  ]
+}
+
+function upgradeDefaults(merged: Record<string, unknown>): void {
+  for (const [key, olds] of Object.entries(OLD_DEFAULTS)) {
+    if (olds?.includes(merged[key] as string)) merged[key] = DEFAULT_SETTINGS[key as keyof Settings]
+  }
+}
+
 export function getSettings(channelId?: number | null): Settings {
   const merged: Record<string, unknown> = { ...DEFAULT_SETTINGS, ...readRows('') }
   if (channelId) {
@@ -89,6 +113,7 @@ export function getSettings(channelId?: number | null): Settings {
       if (CHANNEL_KEYS.has(key)) merged[key] = value
     }
   }
+  upgradeDefaults(merged)
   return merged as unknown as Settings
 }
 

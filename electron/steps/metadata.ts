@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { Scene } from '../../shared/types'
 import { getVideo, listScenes, updateVideo } from '../db/repo'
-import { generateJson } from '../services/ollama'
+import { generateStructured } from '../services/llm'
 import type { Step } from './types'
 
 const metaSchema = z.object({
@@ -66,7 +66,7 @@ export const metadataStep: Step = {
       .join('\n')
 
     ctx.log('Gerando título, descrição e tags')
-    const meta = await generateJson(
+    const meta = await generateStructured(
       `You write YouTube metadata for a faceless documentary channel.
 Topic: ${video.topic}
 Title ideas from the script: ${(video.script?.title_options ?? [video.title]).join(' | ')}
@@ -79,7 +79,7 @@ Return JSON with:
 - tags: 10 to 15 search tags, lowercase, most specific first
 ${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter titles (2–6 words), in order` : ''}`,
       metaSchema,
-      { url: s.ollamaUrl, model: s.ollamaModel, signal: ctx.signal, temperature: 0.6 }
+      { settings: s, signal: ctx.signal, temperature: 0.6 }
     )
 
     let title = meta.title.replace(/^["']|["']$/g, '').trim()

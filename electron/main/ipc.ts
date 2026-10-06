@@ -36,6 +36,8 @@ import { channelSummaries } from './channels'
 import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scenes'
 import { freeComfy } from '../services/comfy'
 import { usableProviders } from '../services/stock'
+import { generateStructured, llmLabel } from '../services/llm'
+import { z } from 'zod'
 import {
   connect as connectYoutube,
   disconnect as disconnectYoutube,
@@ -79,6 +81,17 @@ export function registerIpc(
   )
   handle('videos:approveScripts', (ids: number[]) => pipeline.approveScripts(ids))
   handle('videos:redoScript', (id: number) => pipeline.redoScript(id))
+  handle('videos:fixScript', (id: number) => pipeline.fixScript(id))
+  handle('settings:testLlm', async (patch: Partial<Settings>) => {
+    const s = { ...getSettings(), ...patch }
+    const started = Date.now()
+    const { reply } = await generateStructured(
+      'Reply with a JSON object whose "reply" field is a five-word hook about the Library of Alexandria.',
+      z.object({ reply: z.string() }),
+      { settings: s, effort: 'low' }
+    )
+    return `${llmLabel(s)} respondeu em ${((Date.now() - started) / 1000).toFixed(1)} s: “${reply}”`
+  })
   handle('videos:update', (id: number, patch: VideoPatch) => {
     const allowed: (keyof VideoPatch)[] = [
       'title',

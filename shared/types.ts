@@ -109,7 +109,12 @@ export interface ReviewAlert {
   kind: ReviewAlertKind
   message: string
   quote?: string
+  /** Suggested fix (fact-checked with web search when Claude is the model) */
+  correction?: string
+  source?: string
 }
+
+export type LlmProvider = 'ollama' | 'claude-code' | 'claude-api'
 
 export interface Channel {
   id: number
@@ -219,6 +224,13 @@ export interface PublishSlot {
 export type StockProvider = 'pixabay' | 'pexels' | 'wikimedia' | 'nasa' | 'met' | 'archive'
 
 export interface Settings {
+  /** Who writes scripts, reviews, titles and picks shorts */
+  llmProvider: LlmProvider
+  /** Claude model alias: opus | sonnet */
+  claudeModel: string
+  anthropicApiKey: string
+  /** Fact-check scripts with web search (Claude only) */
+  factCheckWeb: boolean
   ollamaUrl: string
   ollamaModel: string
   scriptPrompt: string
@@ -358,6 +370,8 @@ export interface Api {
     generateScripts: (channelId: number, ids?: number[]) => Promise<number>
     approveScripts: (ids: number[]) => Promise<number>
     redoScript: (id: number) => Promise<void>
+    /** Rewrite the flagged passages using the review alerts */
+    fixScript: (id: number) => Promise<Video>
     update: (id: number, patch: VideoPatch) => Promise<Video>
     remove: (id: number) => Promise<void>
     retryFrom: (id: number, step: JobType) => Promise<void>
@@ -393,6 +407,8 @@ export interface Api {
     voiceSample: (channelId: number) => Promise<string>
     voices: () => Promise<string[]>
     dataDir: () => Promise<string>
+    /** Quick call to the chosen model with unsaved settings; returns a status line */
+    testLlm: (patch: Partial<Settings>) => Promise<string>
     chooseDataDir: () => Promise<string | null>
   }
   youtube: {

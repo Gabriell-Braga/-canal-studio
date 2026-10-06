@@ -6,11 +6,14 @@ import {
   enqueueJob,
   getVideo,
   listShorts,
+  replaceScenes,
   listVideos,
   updateVideo,
   videosByStatus
 } from './db/repo'
 import { getSettings } from './db/settings'
+import { generateStructured } from './services/llm'
+import { scriptSchema } from './steps/script'
 import { nextFreeSlot } from './queue/slots'
 import type { Scheduler } from './queue/scheduler'
 
@@ -101,6 +104,51 @@ export class Pipeline {
 
   rejectFinal(id: number, fromStep: JobType): void {
     this.retryFrom(id, fromStep)
+  }
+
+  /**
+   * Rewrite the passages the review flagged (facts, hook, pacing) and keep the rest.
+   * Runs right away; with the local model it waits for the GPU to be free.
+   */
+  async fixScript(id: number): Promise<Video> {
+    const v = getVideo(id)
+    if (!v.script) throw new Error('Vídeo sem roteiro')
+    if (!v.review_alerts.length) throw new Error('Nenhum alerta para corrigir')
+    const s = getSettings(v.channel_id)
+    if (s.llmProvider === 'ollama' && this.scheduler.gpuBusy()) {
+      throw new Error('A GPU está ocupada com a fila. Pause a fila ou espere terminar.')
+    }
+    const alerts = v.review_alerts
+      .map(
+        (a, i) =>
+          `${i + 1}. [${a.kind}] ${a.message}${a.quote ? `\n   Phrase: "${a.quote}"` : ''}${
+            a.correction ? `\n   Suggested correction: ${a.correction}` : ''
+          }${a.source ? `\n   Source: ${a.source}` : ''}`
+      )
+      .join('\n')
+    const fixed = await generateStructured(
+      `Here is a YouTube documentary script as JSON and the editor's review alerts.
+Rewrite the script fixing every alert: correct or soften wrong and unverifiable facts, strengthen the hook if flagged, fix pacing and repetition. Keep everything else, the scene structure and the length about the same. Keep visual_keywords and image_prompt unless the scene's content changed.
+
+ALERTS:
+${alerts}
+
+SCRIPT JSON:
+${JSON.stringify(v.script)}`,
+      scriptSchema,
+      { settings: s, effort: 'high', webSearch: s.llmProvider !== 'ollama' && s.factCheckWeb }
+    )
+    replaceScenes(id, fixed)
+    return updateVideo(id, {
+      script: fixed,
+      title_options: fixed.title_options,
+      review_alerts: [
+        {
+          kind: 'other',
+          message: `${v.review_alerts.length} alerta(s) corrigido(s) pela IA. Releia o roteiro antes de aprovar.`
+        }
+      ]
+    })
   }
 
   /** Cut vertical shorts from a rendered video; they land in FINAL_REVIEW on their own. */

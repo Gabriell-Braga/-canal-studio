@@ -251,6 +251,8 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
   const [sample, setSample] = useState<string | null>(null)
   const [sampling, setSampling] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<string | null>(null)
 
   useEffect(() => {
     api.settings.get(channelId).then(setS)
@@ -274,6 +276,26 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
       setMessage({ kind: 'info', text: 'Configurações salvas.' })
     } catch (e) {
       setMessage({ kind: 'error', text: errorText(e) })
+    }
+  }
+
+  async function testLlm(): Promise<void> {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      setTestResult(
+        await api.settings.testLlm({
+          llmProvider: s!.llmProvider,
+          claudeModel: s!.claudeModel,
+          anthropicApiKey: s!.anthropicApiKey,
+          ollamaModel: s!.ollamaModel,
+          ollamaUrl: s!.ollamaUrl
+        })
+      )
+    } catch (e) {
+      setTestResult(`Falhou: ${errorText(e)}`)
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -326,7 +348,103 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
 
         {scope === 'channel' && <ChannelManagement key={channel.id} />}
 
-        <Section title="Modelo de linguagem" scope="global">
+        <Section
+          title="Inteligência artificial"
+          scope="global"
+          description="Quem escreve roteiros, revisa fatos, cria títulos e escolhe os trechos dos shorts. Voz, imagens e render continuam locais."
+        >
+          <div className="space-y-2 md:col-span-2">
+            {(
+              [
+                {
+                  id: 'claude-code',
+                  name: 'Claude pela sua assinatura (Claude Code)',
+                  note: 'Usa o login do Claude Code deste PC. Melhor qualidade e checagem de fatos na web, sem custo extra além do plano.'
+                },
+                {
+                  id: 'claude-api',
+                  name: 'Claude pela API da Anthropic',
+                  note: 'Cobrado por uso na sua conta da API (créditos do console.anthropic.com). Precisa de chave.'
+                },
+                {
+                  id: 'ollama',
+                  name: 'Ollama local',
+                  note: 'Grátis e offline, qualidade menor; inventa fatos com mais frequência.'
+                }
+              ] as const
+            ).map((p) => (
+              <label
+                key={p.id}
+                className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+                  s.llmProvider === p.id
+                    ? 'border-brand-400/50 bg-brand-400/[0.06]'
+                    : 'border-ink-700 hover:border-ink-600'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="llmProvider"
+                  className="mt-1 h-4 w-4 accent-[var(--color-brand-400)]"
+                  checked={s.llmProvider === p.id}
+                  onChange={() => set('llmProvider', p.id)}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-ink-100">{p.name}</span>
+                  <span className="block text-xs text-ink-400">{p.note}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          {s.llmProvider !== 'ollama' && (
+            <>
+              <Field
+                label="Modelo do Claude"
+                hint="Opus escreve melhor; Sonnet é mais rápido e gasta menos do limite."
+              >
+                <select
+                  className={inputClass}
+                  value={s.claudeModel}
+                  onChange={(e) => set('claudeModel', e.target.value)}
+                >
+                  <option value="opus">Claude Opus 5.5</option>
+                  <option value="sonnet">Claude Sonnet 5.5</option>
+                </select>
+              </Field>
+              <label className="flex items-center gap-2 self-end text-sm text-ink-200">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={s.factCheckWeb}
+                  onChange={(e) => set('factCheckWeb', e.target.checked)}
+                />
+                Checar fatos na web (alertas com correção e fonte)
+              </label>
+            </>
+          )}
+          {s.llmProvider === 'claude-api' && (
+            <div className="md:col-span-2">
+              <Field
+                label="Chave da API da Anthropic"
+                hint="console.anthropic.com → API Keys → Create Key. Fica só neste PC."
+              >
+                <input
+                  className={inputClass}
+                  type="password"
+                  value={s.anthropicApiKey}
+                  onChange={(e) => set('anthropicApiKey', e.target.value)}
+                />
+              </Field>
+            </div>
+          )}
+          <div className="flex items-center gap-3 md:col-span-2">
+            <Button onClick={testLlm} disabled={testing}>
+              {testing ? 'Testando…' : 'Testar modelo'}
+            </Button>
+            {testResult && <span className="text-sm text-ink-300">{testResult}</span>}
+          </div>
+        </Section>
+
+        <Section title="Ollama (local)" scope="global">
           <Field label="Modelo do Ollama" hint="Padrão: qwen3:14b. Alternativa: gemma3:12b.">
             <input
               className={inputClass}

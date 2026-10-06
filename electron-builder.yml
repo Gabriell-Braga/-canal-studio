@@ -15,6 +15,7 @@ files:
   - python/warmup.py
   - python/requirements.txt
   - scripts/check-setup.ps1
+  - .claude/skills/**
   - resources/**
   - '!**/.vscode/*'
   - '!**/*.map'

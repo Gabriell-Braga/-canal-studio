@@ -5,7 +5,7 @@ import type { TemplateId, ThumbnailProps } from '../../shared/render'
 import { getVideo, listScenes, updateVideo } from '../db/repo'
 import { freeComfy, generateImage } from '../services/comfy'
 import { isValidFile, probeDuration, runTool } from '../services/ffmpeg'
-import { generateJson } from '../services/ollama'
+import { generateStructured } from '../services/llm'
 import { runRender } from '../services/remotion'
 import { prepareComfy } from './scenes'
 import type { Step } from './types'
@@ -54,12 +54,12 @@ export const thumbnailStep: Step = {
     if (!isValidFile(video.video_path, 100_000)) throw new Error('Vídeo não renderizado')
 
     ctx.log('Gerando textos da thumbnail')
-    const { texts } = await generateJson(
+    const { texts } = await generateStructured(
       `Write 3 different YouTube thumbnail headlines for a documentary video titled "${video.title ?? video.topic}" about: ${video.topic}.
 Each headline: 2 to 4 words, punchy, creates curiosity, no clickbait lies, no emojis, no quotes. Use different angles (mystery, number/fact, emotion).
 Return ONLY JSON: {"texts": ["...", "...", "..."]}`,
       textsSchema,
-      { url: s.ollamaUrl, model: s.ollamaModel, signal: ctx.signal, temperature: 0.9 }
+      { settings: s, signal: ctx.signal, temperature: 0.9 }
     )
     ctx.progress(0.2)
 

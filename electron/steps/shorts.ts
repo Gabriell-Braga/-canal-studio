@@ -6,7 +6,7 @@ import type { ShortProps, TemplateId } from '../../shared/render'
 import type { Scene } from '../../shared/types'
 import { createShort, deleteVideo, getVideo, listScenes, listShorts, updateVideo } from '../db/repo'
 import { isValidFile, probeDuration } from '../services/ffmpeg'
-import { generateJson } from '../services/ollama'
+import { generateStructured } from '../services/llm'
 import { pythonPost } from '../services/python'
 import { runRender } from '../services/remotion'
 import { readWords } from './transcribe'
@@ -136,7 +136,7 @@ export const shortsStep: Step = {
       .join('\n')
     let segments: Segment[] = []
     try {
-      const { segments: picks } = await generateJson(
+      const { segments: picks } = await generateStructured(
         `You pick YouTube Shorts from a documentary narration about "${video.topic}" (video title: "${video.title}").
 Scenes with their times:
 ${list}
@@ -145,7 +145,7 @@ Choose ${count} different segments of CONSECUTIVE scenes, each ${MIN_SEGMENT}–
 For each give: first_scene and last_scene (the # numbers), headline (2–6 words shown on screen, curiosity, no hashtags), title (YouTube Shorts title, max 70 characters, no hashtags) and description (one sentence).
 Return ONLY JSON: {"segments": [...]}`,
         segmentsSchema,
-        { url: s.ollamaUrl, model: s.ollamaModel, signal: ctx.signal, temperature: 0.5 }
+        { settings: s, signal: ctx.signal, temperature: 0.5 }
       )
       segments = normalizeSegments(scenes, picks, count)
     } catch (error) {

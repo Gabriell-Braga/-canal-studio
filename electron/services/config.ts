@@ -1,8 +1,18 @@
-// Phase 0 defaults. These move to the `settings` table in Phase 1.
+import { getSettings } from '../db/settings'
+
+/** Live view of the service settings; values change when the user edits Configurações. */
 export const config = {
-  ollamaUrl: 'http://localhost:11434',
-  ollamaModel: 'qwen3:14b',
-  comfyUrl: 'http://127.0.0.1:8188',
-  comfyPath: 'D:\\ComfyUI_windows_portable',
+  get ollamaUrl(): string {
+    return getSettings().ollamaUrl
+  },
+  get ollamaModel(): string {
+    return getSettings().ollamaModel
+  },
+  get comfyUrl(): string {
+    return getSettings().comfyUrl
+  },
+  get comfyPath(): string {
+    return getSettings().comfyPath
+  },
   pythonServerUrl: 'http://127.0.0.1:8765'
 }

@@ -213,3 +213,7 @@ export async function startService(id: string): Promise<StartResult> {
   }
   return { ok: false, message: 'Este serviço não pode ser iniciado por aqui.' }
 }
+
+export async function installService(id: string): Promise<StartResult> {
+  return { ok: false, message: `Instalação automática de "${id}" não disponível.` }
+}

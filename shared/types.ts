@@ -20,6 +20,7 @@ export interface ServiceStatus {
   detail?: string
   hint?: string
   canStart?: boolean
+  canInstall?: boolean
 }
 
 export interface StartResult {
@@ -27,9 +28,297 @@ export interface StartResult {
   message: string
 }
 
+export const VIDEO_STATUSES = [
+  'TOPIC_QUEUED',
+  'SCRIPT_GENERATING',
+  'SCRIPT_REVIEW',
+  'PRODUCTION_QUEUED',
+  'AUDIO',
+  'SCENES',
+  'RENDERING',
+  'THUMBNAIL',
+  'FINAL_REVIEW',
+  'SCHEDULED',
+  'PUBLISHED',
+  'ERROR'
+] as const
+
+export type VideoStatus = (typeof VIDEO_STATUSES)[number]
+
+export const STATUS_LABELS: Record<VideoStatus, string> = {
+  TOPIC_QUEUED: 'Temas',
+  SCRIPT_GENERATING: 'Gerando roteiro',
+  SCRIPT_REVIEW: 'Revisar roteiro',
+  PRODUCTION_QUEUED: 'Na fila de produção',
+  AUDIO: 'Áudio',
+  SCENES: 'Cenas',
+  RENDERING: 'Renderizando',
+  THUMBNAIL: 'Thumbnail',
+  FINAL_REVIEW: 'Revisão final',
+  SCHEDULED: 'Agendado',
+  PUBLISHED: 'Publicado',
+  ERROR: 'Erro'
+}
+
+export const JOB_TYPES = [
+  'script',
+  'audio',
+  'transcribe',
+  'scenes',
+  'render',
+  'thumbnail',
+  'metadata',
+  'upload'
+] as const
+
+export type JobType = (typeof JOB_TYPES)[number]
+
+export const JOB_LABELS: Record<JobType, string> = {
+  script: 'Roteiro',
+  audio: 'Áudio',
+  transcribe: 'Transcrição',
+  scenes: 'Cenas',
+  render: 'Render',
+  thumbnail: 'Thumbnail',
+  metadata: 'Metadados',
+  upload: 'Upload'
+}
+
+export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+export type RunMode = 'now' | 'night'
+export type AssetType = 'stock_video' | 'stock_photo' | 'ai_image' | 'ai_video'
+
+export interface ScriptScene {
+  narration: string
+  visual_keywords: string
+  image_prompt: string
+}
+
+export interface Script {
+  title_options: string[]
+  hook: string
+  scenes: ScriptScene[]
+  outro: string
+}
+
+export type ReviewAlertKind = 'hook' | 'pacing' | 'repetition' | 'dubious_fact' | 'other'
+
+export interface ReviewAlert {
+  kind: ReviewAlertKind
+  message: string
+  quote?: string
+}
+
+export interface Video {
+  id: number
+  topic: string
+  niche: string | null
+  status: VideoStatus
+  title: string | null
+  description: string | null
+  tags: string[]
+  script: Script | null
+  review_alerts: ReviewAlert[]
+  duration_target_min: number
+  template: string | null
+  audio_path: string | null
+  video_path: string | null
+  thumbnail_paths: string[]
+  chosen_thumbnail: number | null
+  scheduled_at: string | null
+  youtube_id: string | null
+  synthetic_content: boolean
+  error_message: string | null
+  error_step: JobType | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Scene {
+  id: number
+  video_id: number
+  index: number
+  narration: string
+  visual_keywords: string
+  image_prompt: string
+  asset_type: AssetType | null
+  asset_path: string | null
+  asset_source: string | null
+  start_sec: number | null
+  end_sec: number | null
+  locked: boolean
+}
+
+export interface Job {
+  id: number
+  video_id: number
+  type: JobType
+  status: JobStatus
+  priority: number
+  gpu: boolean
+  run_mode: RunMode
+  attempts: number
+  max_attempts: number
+  run_after: string | null
+  log: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  progress: number | null
+}
+
+export interface LogEntry {
+  id: number
+  job_id: number | null
+  level: 'info' | 'warn' | 'error'
+  message: string
+  created_at: string
+}
+
+export interface PublishSlot {
+  /** 0 = Sunday … 6 = Saturday */
+  weekday: number
+  /** HH:MM */
+  time: string
+}
+
+export interface Settings {
+  ollamaUrl: string
+  ollamaModel: string
+  scriptPrompt: string
+  reviewPrompt: string
+  defaultDurationMin: number
+  defaultNiche: string
+  nightStart: string
+  nightEnd: string
+  maxVideosPerNight: number
+  voice: string
+  voiceSpeed: number
+  scenePauseSec: number
+  whisperModel: string
+  whisperDevice: 'auto' | 'cuda' | 'cpu'
+  comfyUrl: string
+  comfyPath: string
+  comfyCheckpoint: string
+  pexelsApiKey: string
+  aiImageRatio: number
+  captionsEnabled: boolean
+  musicVolume: number
+  templates: string[]
+  publishSlots: PublishSlot[]
+  publishTimezone: string
+  syntheticDefault: boolean
+  googleClientId: string
+  googleClientSecret: string
+  startWithWindows: boolean
+  minimizeToTray: boolean
+}
+
+export interface QueueState {
+  paused: boolean
+  forceRun: boolean
+  inNightWindow: boolean
+  nightWindow: string
+  videosStartedTonight: number
+  maxVideosPerNight: number
+  running: Job[]
+  pending: Job[]
+  recent: Job[]
+  vram: { used: number; total: number } | null
+}
+
+export interface ChannelStats {
+  connected: boolean
+  channelTitle?: string
+  quotaUsedToday: number
+  quotaLimit: number
+  videos: {
+    video_id: number
+    youtube_id: string
+    title: string
+    views: number
+    watchMinutes: number
+    avgViewDurationSec: number
+    impressionsCtr: number | null
+    subscribersGained: number
+  }[]
+  updatedAt: string | null
+  error?: string
+}
+
+export type VideoPatch = Partial<
+  Pick<
+    Video,
+    | 'title'
+    | 'description'
+    | 'tags'
+    | 'script'
+    | 'scheduled_at'
+    | 'synthetic_content'
+    | 'chosen_thumbnail'
+    | 'template'
+    | 'niche'
+    | 'duration_target_min'
+  >
+>
+
+export interface VideoDetail {
+  video: Video
+  scenes: Scene[]
+  jobs: Job[]
+  logs: LogEntry[]
+}
+
 export interface Api {
   services: {
     check: () => Promise<ServiceStatus[]>
     start: (id: string) => Promise<StartResult>
+    install: (id: string) => Promise<StartResult>
   }
+  videos: {
+    list: () => Promise<Video[]>
+    get: (id: number) => Promise<VideoDetail | null>
+    addTopics: (topics: string[], durationMin?: number) => Promise<Video[]>
+    generateScripts: (ids?: number[]) => Promise<number>
+    approveScripts: (ids: number[]) => Promise<number>
+    redoScript: (id: number) => Promise<void>
+    update: (id: number, patch: VideoPatch) => Promise<Video>
+    remove: (id: number) => Promise<void>
+    retryFrom: (id: number, step: JobType) => Promise<void>
+    approveFinal: (id: number) => Promise<Video>
+    rejectFinal: (id: number, fromStep: JobType) => Promise<void>
+    nextSlot: () => Promise<string>
+  }
+  scenes: {
+    update: (
+      id: number,
+      patch: Partial<Pick<Scene, 'narration' | 'visual_keywords' | 'image_prompt'>>
+    ) => Promise<Scene>
+    nextStock: (id: number) => Promise<Scene>
+    generateAi: (id: number) => Promise<Scene>
+    pickFile: (id: number) => Promise<Scene | null>
+    unlock: (id: number) => Promise<Scene>
+  }
+  queue: {
+    state: () => Promise<QueueState>
+    runNow: () => Promise<void>
+    pause: () => Promise<void>
+    resume: () => Promise<void>
+    cancelJob: (id: number) => Promise<void>
+    logs: (afterId?: number) => Promise<LogEntry[]>
+  }
+  settings: {
+    get: () => Promise<Settings>
+    set: (patch: Partial<Settings>) => Promise<Settings>
+    voiceSample: () => Promise<string>
+    voices: () => Promise<string[]>
+    dataDir: () => Promise<string>
+    chooseDataDir: () => Promise<string | null>
+  }
+  youtube: {
+    connect: () => Promise<StartResult>
+    disconnect: () => Promise<void>
+    stats: (refresh?: boolean) => Promise<ChannelStats>
+  }
+  onChanged: (callback: (topic: string) => void) => () => void
 }

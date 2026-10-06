@@ -1,19 +1,51 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  Menu,
+  Notification,
+  Tray,
+  nativeImage,
+  powerSaveBlocker
+} from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { checkAll, startService } from '../services/checks'
+import type { Settings } from '../../shared/types'
+import { closeDb, openDb } from '../db'
+import { changes } from '../db/repo'
+import { getSettings } from '../db/settings'
+import { Pipeline } from '../pipeline'
+import { Scheduler, type QueueEvent } from '../queue/scheduler'
+import { readVram } from '../services/gpu'
+import { steps } from '../steps'
+import { registerIpc } from './ipc'
+import { dataDir, projectDir } from './paths'
+
+const isE2E = process.env.CANAL_E2E === '1'
+const startHidden = process.argv.includes('--hidden')
+
+let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let quitting = false
+let powerBlockId: number | null = null
+let scheduler: Scheduler
+
+if (!isE2E && !app.requestSingleInstanceLock()) {
+  app.quit()
+}
 
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 960,
-    minHeight: 600,
+  mainWindow = new BrowserWindow({
+    width: 1360,
+    height: 860,
+    minWidth: 1024,
+    minHeight: 640,
     show: false,
     autoHideMenuBar: true,
     title: 'Canal Studio',
     icon,
+    backgroundColor: '#09090b',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -21,7 +53,16 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    // E2E runs must not steal focus from whatever the user is doing.
+    if (isE2E) mainWindow?.showInactive()
+    else if (!startHidden) mainWindow?.show()
+  })
+
+  mainWindow.on('close', (event) => {
+    if (!quitting && !isE2E && getSettings().minimizeToTray) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -36,10 +77,105 @@ function createWindow(): void {
   }
 }
 
-function registerIpc(): void {
-  ipcMain.handle('services:check', () => checkAll())
-  ipcMain.handle('services:start', (_, id: string) => startService(id))
+function showWindow(): void {
+  if (!mainWindow) createWindow()
+  mainWindow?.show()
+  mainWindow?.focus()
 }
+
+function quit(): void {
+  quitting = true
+  app.quit()
+}
+
+function buildTray(): void {
+  if (isE2E) return
+  tray = new Tray(nativeImage.createFromPath(icon).resize({ width: 16, height: 16 }))
+  tray.setToolTip('Canal Studio')
+  tray.on('click', showWindow)
+  refreshTrayMenu()
+}
+
+function refreshTrayMenu(): void {
+  if (!tray) return
+  const paused = scheduler?.paused ?? false
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Abrir Canal Studio', click: showWindow },
+      { type: 'separator' },
+      paused
+        ? { label: 'Retomar fila', click: () => (scheduler.resume(), refreshTrayMenu()) }
+        : { label: 'Pausar fila', click: () => (scheduler.pause(), refreshTrayMenu()) },
+      { label: 'Rodar agora', click: () => scheduler.runNow() },
+      { type: 'separator' },
+      { label: 'Sair', click: quit }
+    ])
+  )
+}
+
+function notify(title: string, body: string): void {
+  if (isE2E || !Notification.isSupported()) return
+  const n = new Notification({ title, body, icon })
+  n.on('click', showWindow)
+  n.show()
+}
+
+function onQueueEvent(event: QueueEvent): void {
+  switch (event.type) {
+    case 'scripts-ready':
+      notify('Roteiros prontos', `${event.count} roteiro(s) esperando revisão.`)
+      break
+    case 'final-ready':
+      notify('Vídeo pronto', `"${event.title}" está pronto para a revisão final.`)
+      break
+    case 'error':
+      notify('Erro na produção', event.message.slice(0, 200))
+      break
+    case 'night-summary':
+      if (event.finalReady || event.errors) {
+        notify(
+          'Resumo da madrugada',
+          `${event.finalReady} vídeo(s) prontos para revisão final` +
+            (event.errors ? `, ${event.errors} com erro.` : '.')
+        )
+      }
+      break
+  }
+}
+
+function onBusyChange(busy: boolean): void {
+  if (busy && powerBlockId === null) {
+    powerBlockId = powerSaveBlocker.start('prevent-app-suspension')
+  } else if (!busy && powerBlockId !== null) {
+    powerSaveBlocker.stop(powerBlockId)
+    powerBlockId = null
+  }
+}
+
+function applySettings(s: Settings): void {
+  if (app.isPackaged) {
+    app.setLoginItemSettings({ openAtLogin: s.startWithWindows, args: ['--hidden'] })
+  }
+  refreshTrayMenu()
+}
+
+/** Coalesce DB change bursts into one message per topic for the UI. */
+function forwardChanges(): void {
+  const pending = new Set<string>()
+  let timer: NodeJS.Timeout | null = null
+  changes.on('change', (topic: string) => {
+    pending.add(topic)
+    timer ??= setTimeout(() => {
+      timer = null
+      for (const t of pending) {
+        for (const w of BrowserWindow.getAllWindows()) w.webContents.send('changed', t)
+      }
+      pending.clear()
+    }, 150)
+  })
+}
+
+app.on('second-instance', showWindow)
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('app.canalstudio')
@@ -48,12 +184,36 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  registerIpc()
+  openDb(join(dataDir(), 'canal.db'))
+  scheduler = new Scheduler({
+    steps,
+    projectDir,
+    onBusyChange,
+    onEvent: onQueueEvent,
+    getVram: readVram,
+    tickMs: Number(process.env.CANAL_TICK_MS) || 5000
+  })
+  const pipeline = new Pipeline(scheduler)
+  registerIpc(pipeline, scheduler, applySettings)
+  forwardChanges()
+
   createWindow()
+  buildTray()
+  applySettings(getSettings())
+  scheduler.start()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('before-quit', () => {
+  quitting = true
+  scheduler?.stop()
+})
+
+app.on('will-quit', () => {
+  closeDb()
 })
 
 app.on('window-all-closed', () => {

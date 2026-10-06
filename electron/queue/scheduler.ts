@@ -49,6 +49,7 @@ export class Scheduler {
   private ticking = false
   private wasInWindow: boolean | null = null
   private busy = false
+  private stopping = false
 
   constructor(private opts: SchedulerOptions) {}
 
@@ -64,7 +65,12 @@ export class Scheduler {
     this.kick()
   }
 
+  /**
+   * App shutdown. Running steps are aborted (so child processes die) but their jobs stay
+   * `running` in the database; start() puts them back in the queue on the next launch.
+   */
   stop(): void {
+    this.stopping = true
     if (this.timer) clearInterval(this.timer)
     this.timer = null
     for (const controller of this.running.values()) controller.abort()
@@ -129,7 +135,7 @@ export class Scheduler {
   }
 
   async tick(): Promise<void> {
-    if (this.ticking) return
+    if (this.ticking || this.stopping) return
     this.ticking = true
     try {
       this.checkWindowTransition()
@@ -245,6 +251,7 @@ export class Scheduler {
       log(`Concluído: ${job.type}`)
       this.advance(job)
     } catch (error) {
+      if (this.stopping) return
       const message = error instanceof Error ? error.message : String(error)
       if (controller.signal.aborted) {
         updateJob(job.id, { status: 'cancelled', finished_at: now() })

@@ -339,7 +339,9 @@ export function updateJob(
 /** Crash recovery: jobs left `running` by a previous session go back to the queue. */
 export function resetRunningJobs(): number {
   const info = db()
-    .prepare("UPDATE jobs SET status = 'pending', started_at = NULL WHERE status = 'running'")
+    .prepare(
+      "UPDATE jobs SET status = 'pending', started_at = NULL, attempts = MAX(attempts - 1, 0) WHERE status = 'running'"
+    )
     .run()
   return info.changes
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api, useLive } from './lib/api'
 import Placeholder from './pages/Placeholder'
+import Queue from './pages/Queue'
 import Production from './pages/Production'
 import Review from './pages/Review'
 import Services from './pages/Services'
@@ -44,7 +45,7 @@ function App(): React.JSX.Element {
       case 'settings':
         return <Settings />
       case 'queue':
-        return <Placeholder title="Fila e Worker" phase={2} />
+        return <Queue />
       case 'channel':
         return <Placeholder title="Canal" phase={6} />
     }

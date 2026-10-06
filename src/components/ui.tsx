@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost'
 
@@ -29,13 +29,16 @@ export function Button({
 
 export function Card({
   children,
-  className = ''
+  className = '',
+  ...rest
 }: {
   children: ReactNode
   className?: string
-}): React.JSX.Element {
+} & HTMLAttributes<HTMLDivElement>): React.JSX.Element {
   return (
-    <div className={`rounded-lg border border-zinc-800 bg-zinc-900 ${className}`}>{children}</div>
+    <div {...rest} className={`rounded-lg border border-zinc-800 bg-zinc-900 ${className}`}>
+      {children}
+    </div>
   )
 }
 

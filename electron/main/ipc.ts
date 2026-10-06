@@ -2,7 +2,9 @@ import { BrowserWindow, dialog, ipcMain } from 'electron'
 import type { JobType, Script, Settings, VideoPatch } from '../../shared/types'
 import {
   deleteVideo,
+  notify,
   findVideo,
+  getScene,
   jobsForVideo,
   listScenes,
   listVideos,
@@ -17,7 +19,15 @@ import { getSettings, setSettings } from '../db/settings'
 import type { Pipeline } from '../pipeline'
 import type { Scheduler } from '../queue/scheduler'
 import { checkAll, installService, startService } from '../services/checks'
-import { dataDir, setDataDir } from './paths'
+import { dataDir, projectDir, setDataDir } from './paths'
+import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scenes'
+import { freeComfy } from '../services/comfy'
+import {
+  connect as connectYoutube,
+  disconnect as disconnectYoutube,
+  readStats,
+  refreshStats
+} from '../services/youtube'
 import { pythonGet, pythonPost } from '../services/python'
 import { join } from 'path'
 
@@ -83,6 +93,50 @@ export function registerIpc(
   handle('videos:approveFinal', (id: number) => pipeline.approveFinal(id))
   handle('videos:rejectFinal', (id: number, step: JobType) => pipeline.rejectFinal(id, step))
   handle('videos:nextSlot', () => pipeline.nextSlot())
+  handle('videos:rerender', (id: number) => pipeline.rerender(id))
+
+  // Scene actions on the detail screen. GPU ones refuse while the queue uses the GPU.
+  const sceneDir = (sceneId: number): string =>
+    join(projectDir(getScene(sceneId).video_id), 'scenes')
+  handle('scenes:nextStock', async (id: number) => {
+    const s = getSettings()
+    if (!s.pexelsApiKey) throw new Error('Configure a chave da Pexels em Configurações')
+    const scene = getScene(id)
+    const tried = scene.asset_source ? [scene.asset_source] : []
+    const ok = await assignStock(scene, sceneDir(id), s, tried)
+    if (!ok) throw new Error('Nenhum outro resultado na Pexels para estas palavras-chave')
+    return getScene(id)
+  })
+  handle('scenes:generateAi', async (id: number) => {
+    if (scheduler.gpuBusy())
+      throw new Error('A GPU está ocupada com a fila. Pause a fila ou espere terminar.')
+    const s = getSettings()
+    await prepareComfy(s)
+    try {
+      await assignAi(getScene(id), sceneDir(id), s)
+    } finally {
+      await freeComfy(s.comfyUrl)
+    }
+    return getScene(id)
+  })
+  handle('scenes:pickFile', async (id: number) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const options = {
+      title: 'Escolha uma imagem ou vídeo para a cena',
+      properties: ['openFile'] as 'openFile'[],
+      filters: [
+        {
+          name: 'Imagens e vídeos',
+          extensions: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'webm']
+        }
+      ]
+    }
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled || !result.filePaths[0]) return null
+    return useLocalFile(id, result.filePaths[0], projectDir(getScene(id).video_id))
+  })
 
   handle(
     'scenes:update',
@@ -109,6 +163,24 @@ export function registerIpc(
     scheduler.kick()
     return next
   })
+  handle('youtube:connect', async () => {
+    try {
+      const title = await connectYoutube()
+      notify('channel')
+      return { ok: true, message: `Conectado ao canal ${title}` }
+    } catch (e) {
+      return { ok: false, message: (e as Error).message }
+    }
+  })
+  handle('youtube:disconnect', () => {
+    disconnectYoutube()
+    notify('channel')
+  })
+  handle('youtube:stats', async (refresh?: boolean) => {
+    if (refresh) await refreshStats()
+    return readStats()
+  })
+
   handle('settings:dataDir', () => dataDir())
   handle('settings:voices', async () => (await pythonGet<{ voices: string[] }>('/voices')).voices)
   handle('settings:voiceSample', async () => {

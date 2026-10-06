@@ -9,7 +9,7 @@
     "lint": "eslint --cache .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:remotion",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
@@ -17,15 +17,18 @@
     "build:win": "npm run build && electron-builder --win",
     "check-setup": "powershell -ExecutionPolicy Bypass -File scripts/check-setup.ps1",
     "test": "vitest run",
-    "test:e2e": "npm run build && node e2e/run.mjs"
+    "test:e2e": "npm run build && node e2e/run.mjs",
+    "typecheck:remotion": "tsc --noEmit -p tsconfig.remotion.json --composite false"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@googleapis/youtube": "^40.0.0",
+    "@googleapis/youtubeanalytics": "^11.0.1",
     "@remotion/bundler": "^4.0.533",
-    "@remotion/google-fonts": "^4.0.533",
     "@remotion/renderer": "^4.0.533",
     "better-sqlite3": "^13.0.3",
+    "google-auth-library": "^11.1.0",
     "remotion": "^4.0.533",
     "zod": "^4.6.5"
   },

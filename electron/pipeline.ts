@@ -89,6 +89,14 @@ export class Pipeline {
     this.retryFrom(id, fromStep)
   }
 
+  /** After swapping scenes: render again and come straight back to the final review. */
+  rerender(id: number): void {
+    cancelPendingJobs(id)
+    updateVideo(id, { error_message: null, error_step: null })
+    enqueueJob(id, 'render', 'now', 10, false)
+    this.scheduler.kick()
+  }
+
   nextSlot(): string {
     const s = getSettings()
     const taken = listVideos()

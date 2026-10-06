@@ -213,4 +213,117 @@ async function phase3({ launch, api, shot, log, waitUntil, dataDir }) {
   }
 }
 
-export const scenarios = { phase1, phase2, phase3 }
+/**
+ * Fase 4: full production of one video with real services (Ollama, Kokoro, Whisper, ComfyUI,
+ * Remotion). Minutes come from E2E_MINUTES (default 2). Uses "Rodar agora" unless E2E_NIGHT=1.
+ */
+async function phase4({ launch, api, shot, log, waitUntil, dataDir }) {
+  const { execFileSync } = await import('child_process')
+  const { mkdirSync, existsSync } = await import('fs')
+  const { join } = await import('path')
+  const minutes = Number(process.env.E2E_MINUTES) || 2
+  const musicDir = join(dataDir, 'musica')
+  mkdirSync(musicDir, { recursive: true })
+  const track = join(musicDir, 'test-pad.mp3')
+  if (!existsSync(track)) {
+    // A soft synthetic chord as stand-in background music.
+    execFileSync(
+      'ffmpeg',
+      [
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=f=220:d=60',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=f=277:d=60',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=f=330:d=60',
+        '-filter_complex',
+        'amix=inputs=3,volume=0.5',
+        track
+      ],
+      { stdio: 'ignore' }
+    )
+  }
+
+  const { app, page } = await launch()
+  const t0 = Date.now()
+  const elapsed = () => `${Math.round((Date.now() - t0) / 60000)} min`
+  await api(page, 'videos.addTopics', ['The ghost ship Octavius and the frozen crew'], minutes)
+  await api(page, 'videos.generateScripts')
+  const [video] = await waitUntil(
+    async () => {
+      const vs = await api(page, 'videos.list')
+      if (vs[0].status === 'ERROR') throw new Error(vs[0].error_message)
+      return vs[0].status === 'SCRIPT_REVIEW' && vs
+    },
+    { label: 'script', timeoutMs: 15 * 60_000, everyMs: 5000 }
+  )
+  log(`Roteiro pronto (${elapsed()}): "${video.title}", ${video.script.scenes.length + 2} cenas`)
+  if (process.env.E2E_NIGHT === '1') {
+    const d = new Date(Date.now() + 60_000)
+    const hh = (x) =>
+      `${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`
+    await api(page, 'settings.set', {
+      nightStart: hh(d),
+      nightEnd: hh(new Date(d.getTime() + 6 * 3600_000))
+    })
+    log(`Janela noturna às ${hh(d)}`)
+  }
+  await api(page, 'videos.approveScripts', [video.id])
+  if (process.env.E2E_NIGHT !== '1') await api(page, 'queue.runNow')
+
+  let lastStatus = ''
+  await waitUntil(
+    async () => {
+      const d = await api(page, 'videos.get', video.id)
+      if (d.video.status !== lastStatus) {
+        lastStatus = d.video.status
+        log(`  status: ${lastStatus} (${elapsed()})`)
+      }
+      if (d.video.status === 'ERROR')
+        throw new Error(`${d.video.error_step}: ${d.video.error_message}`)
+      return d.video.status === 'FINAL_REVIEW'
+    },
+    { label: 'FINAL_REVIEW', timeoutMs: 180 * 60_000, everyMs: 10_000 }
+  )
+  const d = await api(page, 'videos.get', video.id)
+  log(`Pronto em ${elapsed()}: ${d.video.video_path}`)
+  log(`Título: ${d.video.title}`)
+  log(`Tags: ${d.video.tags.join(', ')}`)
+  log(`Thumbnails: ${d.video.thumbnail_paths.length}`)
+  const probe = JSON.parse(
+    execFileSync('ffprobe', [
+      '-v',
+      'error',
+      '-show_entries',
+      'stream=codec_type,width,height:format=duration',
+      '-of',
+      'json',
+      d.video.video_path
+    ]).toString()
+  )
+  log(`ffprobe: ${JSON.stringify(probe)}`)
+  const vstream = probe.streams.find((x) => x.codec_type === 'video')
+  assert(vstream.width === 1920 && vstream.height === 1080, '1920x1080')
+  assert(
+    probe.streams.some((x) => x.codec_type === 'audio'),
+    'has audio'
+  )
+  assert(d.video.thumbnail_paths.length === 3, '3 thumbnails')
+  const kinds = d.scenes.reduce(
+    (m, sc) => ((m[sc.asset_type] = (m[sc.asset_type] ?? 0) + 1), m),
+    {}
+  )
+  log(`Cenas por tipo: ${JSON.stringify(kinds)}`)
+  await page.getByTestId('nav-queue').click()
+  await shot(page, 'queue-done')
+  await app.close()
+}
+
+export const scenarios = { phase1, phase2, phase3, phase4 }

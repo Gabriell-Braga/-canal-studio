@@ -21,9 +21,12 @@ import { refreshPath } from '../services/exec'
 import { readVram } from '../services/gpu'
 import { steps } from '../steps'
 import { configurePython, ensurePython, hasVenv, stopPython } from '../services/python'
+import { configureRemotion } from '../services/remotion'
+import { configureMusic } from '../steps/render'
+import { isConnected as isYoutubeConnected, readStats, refreshStats } from '../services/youtube'
 import { registerIpc } from './ipc'
 import { handleMedia, registerMediaScheme } from './media'
-import { appRoot, dataDir, projectDir } from './paths'
+import { appRoot, dataDir, musicDir, projectDir } from './paths'
 
 const isE2E = process.env.CANAL_E2E === '1'
 const startHidden = process.argv.includes('--hidden')
@@ -183,6 +186,20 @@ function forwardChanges(): void {
   })
 }
 
+/** Channel analytics once a day (checked hourly) while the app is open. */
+function scheduleStatsRefresh(): void {
+  if (isE2E) return
+  const check = (): void => {
+    if (!isYoutubeConnected()) return
+    const last = readStats().updatedAt
+    if (!last || Date.now() - new Date(last).getTime() > 24 * 3600_000) {
+      refreshStats().catch((e) => console.error('Analytics:', e.message))
+    }
+  }
+  setTimeout(check, 60_000)
+  setInterval(check, 3600_000)
+}
+
 app.on('second-instance', showWindow)
 
 app.whenReady().then(async () => {
@@ -196,6 +213,8 @@ app.whenReady().then(async () => {
   await refreshPath()
   openDb(join(dataDir(), 'canal.db'))
   handleMedia(() => [dataDir()])
+  configureRemotion(appRoot())
+  configureMusic(musicDir())
   configurePython({
     serverDir: join(appRoot(), 'python'),
     venvDir: app.isPackaged
@@ -222,6 +241,7 @@ app.whenReady().then(async () => {
   buildTray()
   applySettings(getSettings())
   scheduler.start()
+  scheduleStatsRefresh()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

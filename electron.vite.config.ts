@@ -7,7 +7,10 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        input: { index: resolve('electron/main/index.ts') }
+        input: {
+          index: resolve('electron/main/index.ts'),
+          render: resolve('remotion/render.ts')
+        }
       }
     }
   },

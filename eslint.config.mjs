@@ -28,5 +28,10 @@ export default defineConfig(
       ...eslintPluginReactRefresh.configs.vite.rules
     }
   },
+  {
+    // Remotion compositions are not part of the Vite renderer (no fast refresh) and type their props with TS.
+    files: ['remotion/**/*.{ts,tsx}'],
+    rules: { 'react/prop-types': 'off', 'react-refresh/only-export-components': 'off' }
+  },
   eslintConfigPrettier
 )

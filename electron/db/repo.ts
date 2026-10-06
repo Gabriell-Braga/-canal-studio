@@ -250,7 +250,8 @@ function toJob(r: Row): Job {
     created_at: r.created_at as string,
     started_at: (r.started_at as string) ?? null,
     finished_at: (r.finished_at as string) ?? null,
-    progress: (r.progress as number) ?? null
+    progress: (r.progress as number) ?? null,
+    chain: r.chain === undefined ? true : Boolean(r.chain)
   }
 }
 
@@ -264,7 +265,13 @@ export const GPU_JOBS: ReadonlySet<JobType> = new Set([
   'metadata'
 ])
 
-export function enqueueJob(videoId: number, type: JobType, runMode: RunMode, priority = 0): Job {
+export function enqueueJob(
+  videoId: number,
+  type: JobType,
+  runMode: RunMode,
+  priority = 0,
+  chain = true
+): Job {
   // Never two live jobs of the same type for one video.
   const existing = db()
     .prepare(
@@ -273,8 +280,10 @@ export function enqueueJob(videoId: number, type: JobType, runMode: RunMode, pri
     .get(videoId, type) as Row | undefined
   if (existing) return toJob(existing)
   const info = db()
-    .prepare('INSERT INTO jobs (video_id, type, gpu, run_mode, priority) VALUES (?, ?, ?, ?, ?)')
-    .run(videoId, type, GPU_JOBS.has(type) ? 1 : 0, runMode, priority)
+    .prepare(
+      'INSERT INTO jobs (video_id, type, gpu, run_mode, priority, chain) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .run(videoId, type, GPU_JOBS.has(type) ? 1 : 0, runMode, priority, chain ? 1 : 0)
   notify('jobs')
   return getJob(Number(info.lastInsertRowid))
 }

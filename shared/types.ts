@@ -165,6 +165,8 @@ export interface Job {
   started_at: string | null
   finished_at: string | null
   progress: number | null
+  /** false: stop after this step instead of queueing the next one */
+  chain: boolean
 }
 
 export interface LogEntry {
@@ -286,6 +288,7 @@ export interface Api {
     remove: (id: number) => Promise<void>
     retryFrom: (id: number, step: JobType) => Promise<void>
     approveFinal: (id: number) => Promise<Video>
+    rerender: (id: number) => Promise<void>
     rejectFinal: (id: number, fromStep: JobType) => Promise<void>
     nextSlot: () => Promise<string>
   }

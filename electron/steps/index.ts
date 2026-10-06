@@ -1,6 +1,11 @@
 import { JOB_TYPES, type JobType, type VideoStatus } from '../../shared/types'
 import { replaceScenes, updateVideo } from '../db/repo'
 import { audioStep } from './audio'
+import { metadataStep } from './metadata'
+import { renderStep } from './render'
+import { scenesStep } from './scenes'
+import { thumbnailStep } from './thumbnail'
+import { uploadStep } from './upload'
 import { scriptStep } from './script'
 import { transcribeStep } from './transcribe'
 import type { Step } from './types'
@@ -8,7 +13,12 @@ import type { Step } from './types'
 const realSteps: Partial<Record<JobType, Step>> = {
   script: scriptStep,
   audio: audioStep,
-  transcribe: transcribeStep
+  transcribe: transcribeStep,
+  scenes: scenesStep,
+  render: renderStep,
+  thumbnail: thumbnailStep,
+  metadata: metadataStep,
+  upload: uploadStep
 }
 
 const STATUS: Record<JobType, VideoStatus> = {

@@ -24,6 +24,7 @@ const api: Api = {
     remove: invoke('videos:remove'),
     retryFrom: invoke('videos:retryFrom'),
     approveFinal: invoke('videos:approveFinal'),
+    rerender: invoke('videos:rerender'),
     rejectFinal: invoke('videos:rejectFinal'),
     nextSlot: invoke('videos:nextSlot')
   },

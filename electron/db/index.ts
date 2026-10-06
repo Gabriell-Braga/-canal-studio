@@ -96,6 +96,9 @@ const migrations: string[] = [
     day TEXT PRIMARY KEY,
     units INTEGER NOT NULL DEFAULT 0
   );
+  `,
+  `
+  ALTER TABLE jobs ADD COLUMN chain INTEGER NOT NULL DEFAULT 1;
   `
 ]
 

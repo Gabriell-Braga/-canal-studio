@@ -81,6 +81,11 @@ export class Scheduler {
     setImmediate(() => this.tick())
   }
 
+  /** True while a GPU job runs; on-demand GPU work from the UI must wait. */
+  gpuBusy(): boolean {
+    return [...this.running.keys()].some((id) => getJob(id).gpu)
+  }
+
   get paused(): boolean {
     return getState('paused', false)
   }
@@ -305,6 +310,11 @@ export class Scheduler {
       return
     }
     if (job.type === 'upload') {
+      return
+    }
+    if (!job.chain && video.thumbnail_paths.length) {
+      // Re-render requested from the final review: go straight back to it.
+      updateVideo(video.id, { status: 'FINAL_REVIEW' })
       return
     }
     const next = NEXT[job.type]

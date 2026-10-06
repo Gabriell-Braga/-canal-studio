@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Wand2 } from 'lucide-react'
+import { Trash2, Wand2 } from 'lucide-react'
+import DeleteVideoModal from '../components/DeleteVideoModal'
 import type { ReviewAlert, Video } from '../../shared/types'
 import ScriptEditor from '../components/ScriptEditor'
 import { Banner, Button, Card, PageHeader } from '../components/ui'
@@ -33,6 +34,7 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
   const [editing, setEditing] = useState<number | null>(null)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [fixing, setFixing] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState<Video | null>(null)
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
 
   const visibleSelected = [...selected].filter((id) => videos.some((v) => v.id === id))
@@ -225,6 +227,9 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
                         <Button size="sm" onClick={() => redo(v.id)}>
                           Refazer
                         </Button>
+                        <Button size="sm" variant="danger" onClick={() => setDeleting(v)}>
+                          <Trash2 size={14} /> Excluir
+                        </Button>
                         {v.review_alerts.some((a) => a.kind !== 'other') && (
                           <Button
                             size="sm"
@@ -246,6 +251,13 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
           )
         })}
       </div>
+      {deleting && (
+        <DeleteVideoModal
+          video={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => setDeleting(null)}
+        />
+      )}
     </div>
   )
 }

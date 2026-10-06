@@ -47,6 +47,7 @@ import {
 } from '../services/youtube'
 import { pythonGet, pythonPost } from '../services/python'
 import { join } from 'path'
+import { existsSync } from 'fs'
 
 type Handler = (...args: never[]) => unknown
 
@@ -114,10 +115,29 @@ export function registerIpc(
     if (clean.script) replaceScenes(id, clean.script as Script)
     return video
   })
-  handle('videos:remove', (id: number) => {
-    for (const job of jobsForVideo(id)) if (job.status === 'running') scheduler.cancel(job.id)
-    cancelPendingJobs(id)
-    deleteVideo(id)
+  /**
+   * Delete a video and its shorts. Their files go to the Windows Recycle Bin, so a mistake
+   * can be undone there. Nothing is removed from YouTube.
+   */
+  handle('videos:remove', async (id: number) => {
+    const ids = [...listShorts(id).map((s) => s.id), id]
+    for (const vid of ids) {
+      for (const job of jobsForVideo(vid)) if (job.status === 'running') scheduler.cancel(job.id)
+      cancelPendingJobs(vid)
+    }
+    for (const vid of ids) deleteVideo(vid)
+    const dir = join(dataDir(), 'projetos', String(id))
+    if (existsSync(dir)) {
+      // A render or download may still hold a file for a moment after cancelling.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          await shell.trashItem(dir)
+          break
+        } catch {
+          await new Promise((r) => setTimeout(r, 1000))
+        }
+      }
+    }
   })
   handle('videos:retryFrom', (id: number, step: JobType) => pipeline.retryFrom(id, step))
   handle('videos:approveFinal', (id: number) => pipeline.approveFinal(id))

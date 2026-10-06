@@ -10,7 +10,8 @@ import {
 import ScriptEditor from '../components/ScriptEditor'
 import { Banner, Button, Card, Field, inputClass, PageHeader } from '../components/ui'
 import { api, errorText, formatDate, mediaUrl, useLive } from '../lib/api'
-import { Smartphone, Sparkles } from 'lucide-react'
+import { Smartphone, Sparkles, Trash2 } from 'lucide-react'
+import DeleteVideoModal from '../components/DeleteVideoModal'
 import { Badge } from '../components/ui'
 
 type Tab = 'script' | 'audio' | 'scenes' | 'video' | 'shorts' | 'publish' | 'log'
@@ -48,6 +49,7 @@ export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.El
   const [tab, setTab] = useState<Tab | null>(null)
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
   const [redoStep, setRedoStep] = useState<JobType>('render')
+  const [deleting, setDeleting] = useState(false)
 
   if (data === undefined) return <p className="text-ink-500">Carregando…</p>
   if (data === null) {
@@ -90,6 +92,9 @@ export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.El
         actions={
           <>
             <Button onClick={onBack}>Voltar</Button>
+            <Button variant="danger" onClick={() => setDeleting(true)} data-testid="delete-video">
+              <Trash2 size={15} /> Excluir
+            </Button>
             {video.status === 'FINAL_REVIEW' && (
               <Button
                 variant="primary"
@@ -107,6 +112,9 @@ export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.El
           </>
         }
       />
+      {deleting && (
+        <DeleteVideoModal video={video} onClose={() => setDeleting(false)} onDeleted={onBack} />
+      )}
       {message && <Banner kind={message.kind}>{message.text}</Banner>}
       {isShort && video.parent_id && (
         <Banner>

@@ -5,8 +5,10 @@ import {
   Clapperboard,
   FileCheck2,
   Plus,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react'
+import DeleteVideoModal from '../components/DeleteVideoModal'
 import { STATUS_LABELS, type Video, type VideoStatus } from '../../shared/types'
 import { Banner, Button, Card, inputClass, PageHeader } from '../components/ui'
 import { api, errorText, formatDate, mediaUrl, useLive } from '../lib/api'
@@ -238,48 +240,67 @@ function VideoCard({
 }): React.JSX.Element {
   const isError = video.status === 'ERROR'
   const thumb = video.thumbnail_paths[video.chosen_thumbnail ?? 0]
+  const [deleting, setDeleting] = useState(false)
   return (
-    <button
-      data-testid="video-card"
-      onClick={onOpen}
-      className={`group overflow-hidden rounded-lg border text-left text-sm transition-all duration-150 hover:-translate-y-px hover:shadow-lg ${
-        isError
-          ? 'border-red-500/30 bg-red-500/[0.06] hover:border-red-400/50'
-          : attention
-            ? 'border-amber-400/30 bg-ink-850 hover:border-amber-300/60'
-            : 'border-white/[0.06] bg-ink-850 hover:border-brand-400/40'
-      }`}
-    >
-      {thumb && (
-        <img
-          src={mediaUrl(thumb)}
-          alt=""
-          className="aspect-video w-full object-cover opacity-90 transition-opacity group-hover:opacity-100"
+    <div className="group/card relative">
+      <button
+        data-testid="video-card"
+        onClick={onOpen}
+        className={`group overflow-hidden rounded-lg border text-left text-sm transition-all duration-150 hover:-translate-y-px hover:shadow-lg ${
+          isError
+            ? 'border-red-500/30 bg-red-500/[0.06] hover:border-red-400/50'
+            : attention
+              ? 'border-amber-400/30 bg-ink-850 hover:border-amber-300/60'
+              : 'border-white/[0.06] bg-ink-850 hover:border-brand-400/40'
+        }`}
+      >
+        {thumb && (
+          <img
+            src={mediaUrl(thumb)}
+            alt=""
+            className="aspect-video w-full object-cover opacity-90 transition-opacity group-hover:opacity-100"
+          />
+        )}
+        <div className="p-3">
+          <div className="line-clamp-2 font-medium text-ink-100">
+            {video.kind === 'short' && (
+              <span className="mr-1.5 inline-flex -translate-y-px items-center rounded bg-brand-400/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-brand-200">
+                Short
+              </span>
+            )}
+            {video.title ?? video.topic}
+          </div>
+          {video.title && (
+            <div className="mt-0.5 line-clamp-1 text-xs text-ink-500">{video.topic}</div>
+          )}
+          <div className="mt-2 flex items-center justify-between text-xs text-ink-400">
+            <span>{STATUS_LABELS[video.status]}</span>
+            <span>{video.duration_target_min} min</span>
+          </div>
+          {video.scheduled_at && (
+            <div className="mt-1 text-xs text-brand-300">{formatDate(video.scheduled_at)}</div>
+          )}
+          {isError && video.error_message && (
+            <div className="mt-1 line-clamp-2 text-xs text-red-300">{video.error_message}</div>
+          )}
+        </div>
+      </button>
+      <button
+        aria-label="Excluir vídeo"
+        title="Excluir"
+        data-testid="delete-video-card"
+        onClick={() => setDeleting(true)}
+        className="absolute right-1.5 top-1.5 rounded-md bg-ink-950/80 p-1.5 text-ink-400 opacity-0 backdrop-blur transition-all duration-150 hover:bg-red-500/20 hover:text-red-300 focus-visible:opacity-100 group-hover/card:opacity-100"
+      >
+        <Trash2 size={14} />
+      </button>
+      {deleting && (
+        <DeleteVideoModal
+          video={video}
+          onClose={() => setDeleting(false)}
+          onDeleted={() => setDeleting(false)}
         />
       )}
-      <div className="p-3">
-        <div className="line-clamp-2 font-medium text-ink-100">
-          {video.kind === 'short' && (
-            <span className="mr-1.5 inline-flex -translate-y-px items-center rounded bg-brand-400/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-brand-200">
-              Short
-            </span>
-          )}
-          {video.title ?? video.topic}
-        </div>
-        {video.title && (
-          <div className="mt-0.5 line-clamp-1 text-xs text-ink-500">{video.topic}</div>
-        )}
-        <div className="mt-2 flex items-center justify-between text-xs text-ink-400">
-          <span>{STATUS_LABELS[video.status]}</span>
-          <span>{video.duration_target_min} min</span>
-        </div>
-        {video.scheduled_at && (
-          <div className="mt-1 text-xs text-brand-300">{formatDate(video.scheduled_at)}</div>
-        )}
-        {isError && video.error_message && (
-          <div className="mt-1 line-clamp-2 text-xs text-red-300">{video.error_message}</div>
-        )}
-      </div>
-    </button>
+    </div>
   )
 }

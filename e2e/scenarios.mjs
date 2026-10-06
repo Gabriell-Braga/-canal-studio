@@ -669,3 +669,41 @@ async function claude({ launch, api, shot, log, waitUntil }) {
 }
 
 scenarios.claude = claude
+
+/** Delete: from the board card (with confirmation), video row and project folder go away. */
+async function deleteVideo({ launch, api, shot, log, waitUntil, dataDir }) {
+  const { existsSync } = await import('fs')
+  const { join } = await import('path')
+  const { app, page } = await launch()
+  await api(page, 'videos.addTopics', 1, ['Video to delete'], 1)
+  await api(page, 'videos.generateScripts', 1)
+  const [v] = await waitUntil(
+    async () => {
+      const vs = await api(page, 'videos.list', 1)
+      return vs[0]?.status === 'SCRIPT_REVIEW' && vs
+    },
+    { label: 'fake script', timeoutMs: 60_000 }
+  )
+  const dir = join(dataDir, 'projetos', String(v.id))
+  assert(existsSync(dir), 'project folder exists before delete')
+  await page.getByTestId('nav-production').click()
+  const card = page.getByTestId('video-card').first()
+  await card.hover()
+  await page.getByTestId('delete-video-card').first().click()
+  await shot(page, 'delete-confirm')
+  await page.getByTestId('confirm-delete').click()
+  await waitUntil(async () => (await api(page, 'videos.list', 1)).length === 0, {
+    label: 'row deleted',
+    timeoutMs: 15_000,
+    everyMs: 500
+  })
+  await waitUntil(async () => !existsSync(dir), {
+    label: 'folder to Recycle Bin',
+    timeoutMs: 15_000,
+    everyMs: 500
+  })
+  log('Vídeo excluído e pasta enviada para a Lixeira')
+  await app.close()
+}
+
+scenarios.deleteVideo = deleteVideo

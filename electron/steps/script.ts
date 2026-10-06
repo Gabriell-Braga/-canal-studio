@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { Script } from '../../shared/types'
 import { getVideo, replaceScenes, updateVideo } from '../db/repo'
 import { generateJson } from '../services/ollama'
-import type { Step } from './types'
+import type { Step, StepContext } from './types'
 
 export const scriptSchema = z.object({
   title_options: z.array(z.string().min(1)).min(1).max(5),
@@ -48,6 +48,70 @@ export function scriptAsText(script: Script): string {
   ].join('\n')
 }
 
+const expandSchema = z.object({ narrations: z.array(z.string().min(1)) })
+
+/**
+ * Local models write far shorter scripts than asked (e.g. 377 words for an 8-minute target).
+ * Rewrite scene narrations in batches until the script reaches ~90% of the target length.
+ */
+export async function expandScript(
+  script: Script,
+  targetWords: number,
+  topic: string,
+  ollama: Parameters<typeof generateJson>[2],
+  ctx: Pick<StepContext, 'log' | 'signal'>
+): Promise<void> {
+  const BATCH = 6
+  for (let round = 0; round < 3; round++) {
+    const total = scriptWordCount(script)
+    if (total >= targetWords * 0.85 || !script.scenes.length) return
+    const fixed = scriptWordCount({ ...script, scenes: [] })
+    const perScene = Math.min(
+      60,
+      Math.max(25, Math.round((targetWords - fixed) / script.scenes.length))
+    )
+    // The model writes ~60% of the words it is asked for, so ask for more and keep the longer text.
+    const ask = Math.min(90, Math.round(perScene * 1.6))
+    ctx.log(
+      `Roteiro curto (${total}/${targetWords} palavras); expandindo cenas para ~${perScene} palavras`
+    )
+    const outline = script.scenes
+      .map((sc, i) => `${i + 1}. ${sc.narration.slice(0, 120)}`)
+      .join('\n')
+    for (let start = 0; start < script.scenes.length; start += BATCH) {
+      if (ctx.signal.aborted) throw new Error('Cancelado')
+      const batch = script.scenes.slice(start, start + BATCH)
+      const numbered = batch.map((sc, i) => `SCENE ${start + i + 1}: ${sc.narration}`).join('\n')
+      try {
+        const { narrations } = await generateJson(
+          `You are expanding the narration of a YouTube documentary script about: ${topic}.
+Full outline (for context, do not repeat other scenes):
+${outline}
+
+Rewrite EACH of the following scenes so its narration is about ${ask} words (at least ${perScene}). Keep the same facts, order and meaning; add concrete details, context and tension in short spoken sentences. Do not add greetings or "in this video". Do not invent precise numbers or quotes you are unsure about.
+${numbered}
+
+Return ONLY JSON: {"narrations": ["scene ${start + 1} text", ...]} with exactly ${batch.length} items.`,
+          expandSchema,
+          ollama
+        )
+        if (narrations.length === batch.length) {
+          narrations.forEach((n, i) => {
+            if (n.split(/\s+/).length > batch[i].narration.split(/\s+/).length) {
+              batch[i].narration = n.trim()
+            }
+          })
+        }
+      } catch (error) {
+        ctx.log(
+          `Expansão das cenas ${start + 1}–${start + batch.length} falhou: ${(error as Error).message}`,
+          'warn'
+        )
+      }
+    }
+  }
+}
+
 export const scriptStep: Step = {
   type: 'script',
   status: 'SCRIPT_GENERATING',
@@ -73,6 +137,9 @@ export const scriptStep: Step = {
       scenes: Math.max(3, Math.round((minutes * 60) / 15))
     })
     const script = await generateJson(prompt, scriptSchema, ollama)
+    ctx.log(`Primeira versão: ${script.scenes.length} cenas e ${scriptWordCount(script)} palavras`)
+    ctx.progress(0.4)
+    await expandScript(script, words, video.topic, ollama, ctx)
     ctx.progress(0.7)
     const count = scriptWordCount(script)
     ctx.log(`Roteiro com ${script.scenes.length} cenas e ${count} palavras`)

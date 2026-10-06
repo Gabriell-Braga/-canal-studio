@@ -2,9 +2,9 @@ import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 
-/** Folder with python/, remotion/ and scripts/. In a packaged app they ship as extra resources. */
+/** Folder with python/, remotion/ and scripts/. Packaged (no asar) they live in resources/app. */
 export function appRoot(): string {
-  if (app.isPackaged) return process.resourcesPath
+  if (app.isPackaged) return app.getAppPath()
   // `electron out/main/index.js` reports out/main as the app path; walk up to the project.
   let dir = app.getAppPath()
   while (!existsSync(join(dir, 'package.json'))) {

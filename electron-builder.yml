@@ -2,19 +2,30 @@ appId: app.canalstudio
 productName: Canal Studio
 directories:
   buildResources: build
+  output: dist
+# No asar: the Remotion bundler (webpack + esbuild), its compositor binaries and the
+# headless Chrome download all need real files on disk.
+asar: false
 files:
-  - '!**/.vscode/*'
-  - '!{src,electron,shared}/**'
-  - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
-  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
-asarUnpack:
+  - out/**
+  - package.json
+  - remotion/**/*.{ts,tsx}
+  - shared/render.ts
+  - python/server.py
+  - python/warmup.py
+  - python/requirements.txt
+  - scripts/check-setup.ps1
   - resources/**
+  - '!**/.vscode/*'
+  - '!**/*.map'
 win:
   executableName: canal-studio
+  target:
+    - nsis
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  oneClick: true
+  perMachine: false
+  artifactName: ${productName}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always

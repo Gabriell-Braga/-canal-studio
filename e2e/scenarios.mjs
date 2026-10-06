@@ -411,3 +411,29 @@ async function phase6({ launch, api, shot, log }) {
 }
 
 scenarios.phase6 = phase6
+
+/** Script length check: generate one script of E2E_MINUTES (default 8) and report its size. */
+async function scriptLength({ launch, api, log, waitUntil }) {
+  const minutes = Number(process.env.E2E_MINUTES) || 8
+  const { app, page } = await launch()
+  await api(page, 'videos.addTopics', ['The ghost ship Octavius and the frozen crew'], minutes)
+  await api(page, 'videos.generateScripts')
+  const [v] = await waitUntil(
+    async () => {
+      const vs = await api(page, 'videos.list')
+      if (vs[0].status === 'ERROR') throw new Error(vs[0].error_message)
+      return vs[0].status === 'SCRIPT_REVIEW' && vs
+    },
+    { label: 'script', timeoutMs: 30 * 60_000, everyMs: 5000 }
+  )
+  const words = [v.script.hook, ...v.script.scenes.map((s) => s.narration), v.script.outro]
+    .join(' ')
+    .split(/\s+/).length
+  const logs = await api(page, 'queue.logs', 0)
+  logs.forEach((l) => log(`  ${l.message}`))
+  log(`${words} palavras (~${(words / 150).toFixed(1)} min) para meta de ${minutes} min`)
+  assert(words >= minutes * 150 * 0.75, 'script reaches 75% of the target length')
+  await app.close()
+}
+
+scenarios.scriptLength = scriptLength

@@ -279,6 +279,25 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
     }
   }
 
+  async function fromAvatar(): Promise<void> {
+    try {
+      const colors = await api.channels.brandFromAvatar(channel.id)
+      setS((prev) =>
+        prev
+          ? {
+              ...prev,
+              brandPrimary: colors.primary,
+              brandSecondary: colors.secondary,
+              brandAuto: true
+            }
+          : prev
+      )
+      setMessage({ kind: 'info', text: 'Cores tiradas da foto do canal.' })
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) })
+    }
+  }
+
   async function testLlm(): Promise<void> {
     setTesting(true)
     setTestResult(null)
@@ -675,6 +694,19 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               vídeo. Sem esta opção, só domínio público e CC0. CC BY-SA, NC e ND nunca são usados.
             </span>
           </label>
+          <Field
+            label="Modelo de imagem IA"
+            hint="Z-Image Turbo: fotográfico, ~13 s por imagem. SDXL: reserva, visual mais antigo."
+          >
+            <select
+              className={inputClass}
+              value={s.imageModel}
+              onChange={(e) => set('imageModel', e.target.value as SettingsT['imageModel'])}
+            >
+              <option value="z-image">Z-Image Turbo (recomendado)</option>
+              <option value="sdxl">SDXL (checkpoint abaixo)</option>
+            </select>
+          </Field>
           <Field label="Pasta do ComfyUI">
             <input
               className={inputClass}
@@ -706,7 +738,16 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               checked={s.captionsEnabled}
               onChange={(e) => set('captionsEnabled', e.target.checked)}
             />
-            Legendas animadas palavra por palavra
+            Legendas gravadas na imagem do vídeo longo (os shorts sempre têm)
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={s.youtubeCaptions}
+              onChange={(e) => set('youtubeCaptions', e.target.checked)}
+            />
+            Enviar legendas em inglês para o YouTube (.srt exato da narração)
           </label>
           <Field
             label={`Volume da música: ${Math.round(s.musicVolume * 100)}%`}
@@ -810,6 +851,78 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
             />
             Marcar novos vídeos como conteúdo alterado/sintético
           </label>
+        </Section>
+
+        <Section
+          title="Identidade visual"
+          scope="channel"
+          description="Cores e fonte das thumbnails e das legendas dos shorts. Ao conectar o YouTube, as cores vêm da foto do canal."
+        >
+          <div className="flex flex-wrap items-end gap-5 md:col-span-2">
+            <Field label="Destaque">
+              <input
+                type="color"
+                className="h-10 w-20 cursor-pointer rounded-lg border border-ink-700 bg-ink-950"
+                value={s.brandPrimary}
+                onChange={(e) => {
+                  set('brandPrimary', e.target.value)
+                  set('brandAuto', false)
+                }}
+              />
+            </Field>
+            <Field label="Texto">
+              <input
+                type="color"
+                className="h-10 w-20 cursor-pointer rounded-lg border border-ink-700 bg-ink-950"
+                value={s.brandSecondary}
+                onChange={(e) => {
+                  set('brandSecondary', e.target.value)
+                  set('brandAuto', false)
+                }}
+              />
+            </Field>
+            <Field label="Fonte">
+              <select
+                className={`${inputClass} min-w-52`}
+                value={s.brandFont}
+                onChange={(e) => set('brandFont', e.target.value)}
+              >
+                {[
+                  'Impact',
+                  'Arial Black',
+                  'Bahnschrift',
+                  'Segoe UI Black',
+                  'Georgia',
+                  'Trebuchet MS'
+                ].map((f) => (
+                  <option key={f} value={f} style={{ fontFamily: f }}>
+                    {f}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Button onClick={fromAvatar}>Usar cores da foto do canal</Button>
+          </div>
+          <div className="md:col-span-2">
+            <div
+              className="relative flex aspect-[16/6] max-w-xl items-end overflow-hidden rounded-xl bg-gradient-to-br from-ink-700 to-ink-950 p-6"
+              style={{ fontFamily: `"${s.brandFont}", Impact, sans-serif` }}
+            >
+              <div
+                className="text-5xl font-black uppercase leading-none"
+                style={{
+                  textShadow:
+                    '0 0 4px #000, 4px 4px 0 #000, -4px -4px 0 #000, 4px -4px 0 #000, -4px 4px 0 #000'
+                }}
+              >
+                <div style={{ color: s.brandSecondary }}>The empire</div>
+                <div style={{ color: s.brandPrimary }}>that fell</div>
+              </div>
+              <span className="absolute right-3 top-3 rounded bg-black/50 px-2 py-0.5 text-[10px] text-ink-300">
+                prévia da thumbnail
+              </span>
+            </div>
+          </div>
         </Section>
 
         <Section

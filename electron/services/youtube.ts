@@ -8,17 +8,20 @@ import { OAuth2Client } from 'google-auth-library'
 import type { ChannelStats } from '../../shared/types'
 import { db, now } from '../db'
 import { listVideos, updateChannel } from '../db/repo'
-import { getSettings } from '../db/settings'
+import { getSettings, setSettings } from '../db/settings'
+import { brandColorsFromImage } from './brand'
 
 const SCOPES = [
   'https://www.googleapis.com/auth/youtube.upload',
+  // Needed by captions.insert (subtitle upload).
+  'https://www.googleapis.com/auth/youtube.force-ssl',
   'https://www.googleapis.com/auth/youtube.readonly',
   'https://www.googleapis.com/auth/yt-analytics.readonly'
 ]
 
 /** Default daily quota of a Google Cloud project, and the cost of each call we make. */
 export const QUOTA_LIMIT = 10_000
-export const COST = { insert: 1600, thumbnail: 50, list: 1 }
+export const COST = { insert: 1600, thumbnail: 50, list: 1, captions: 400 }
 
 // ---------------------------------------------------------------- secrets (safeStorage)
 
@@ -125,6 +128,11 @@ export async function connect(channelId: number): Promise<string> {
       'O Google não devolveu refresh token; remova o acesso do app na sua conta e tente de novo'
     )
   saveSecret(tokenKey(channelId), tokens.refresh_token)
+  db()
+    .prepare(
+      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    )
+    .run(`state.ch.${channelId}.youtubeScopes`, JSON.stringify(tokens.scope ?? ''))
   oauth.setCredentials(tokens)
   return syncChannelIdentity(channelId, oauth)
 }
@@ -174,6 +182,12 @@ export async function syncChannelIdentity(channelId: number, auth?: OAuth2Client
     }
   }
   updateChannel(channelId, { name: title, ...(avatar ? { avatar_path: avatar } : {}) })
+  // Follow the channel picture's colors unless the user picked their own.
+  if (avatar && getSettings(channelId).brandAuto) {
+    const colors = brandColorsFromImage(avatar)
+    if (colors)
+      setSettings({ brandPrimary: colors.primary, brandSecondary: colors.secondary }, channelId)
+  }
   return title
 }
 
@@ -256,6 +270,28 @@ export async function setThumbnail(
     media: { mimeType: 'image/jpeg', body: createReadStream(jpeg) }
   })
   addQuota(COST.thumbnail)
+}
+
+/** Channels connected before subtitles existed lack the scope and must reconnect once. */
+export function canUploadCaptions(channelId: number): boolean {
+  return (channelState(channelId, 'youtubeScopes') ?? '').includes('youtube.force-ssl')
+}
+
+/** Upload an English SubRip track; YouTube shows it as the video's own captions. */
+export async function uploadCaptions(
+  channelId: number,
+  videoId: string,
+  srtFile: string
+): Promise<void> {
+  if (quotaUsed() + COST.captions > QUOTA_LIMIT)
+    throw new Error('Cota diária esgotada para legendas')
+  const yt = youtube({ version: 'v3', auth: authed(channelId) })
+  await yt.captions.insert({
+    part: ['snippet'],
+    requestBody: { snippet: { videoId, language: 'en', name: 'English', isDraft: false } },
+    media: { mimeType: 'application/octet-stream', body: createReadStream(srtFile) }
+  })
+  addQuota(COST.captions)
 }
 
 // ---------------------------------------------------------------- analytics

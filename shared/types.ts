@@ -248,6 +248,8 @@ export interface Settings {
   comfyUrl: string
   comfyPath: string
   comfyCheckpoint: string
+  /** 'z-image' (Z-Image Turbo, default when installed) or 'sdxl' (the checkpoint above) */
+  imageModel: 'z-image' | 'sdxl'
   pexelsApiKey: string
   pixabayApiKey: string
   /** Stock sources tried in this order for each scene (per channel). */
@@ -255,12 +257,21 @@ export interface Settings {
   /** Also use CC BY files from Wikimedia, credited in the video description. */
   wikimediaAllowCcBy: boolean
   aiImageRatio: number
+  /** Burn word-by-word captions into long videos (shorts always have them) */
   captionsEnabled: boolean
+  /** Upload the narration subtitles (.srt) to YouTube */
+  youtubeCaptions: boolean
   musicVolume: number
   templates: string[]
   publishSlots: PublishSlot[]
   publishTimezone: string
   syntheticDefault: boolean
+  /** Channel look for thumbnails and shorts captions */
+  brandPrimary: string
+  brandSecondary: string
+  brandFont: string
+  /** Refresh the colors from the YouTube channel picture */
+  brandAuto: boolean
   shortsCount: number
   shortsCta: string
   shortsAuto: boolean
@@ -282,11 +293,16 @@ export const CHANNEL_SETTING_KEYS = [
   'aiImageRatio',
   'stockProviders',
   'captionsEnabled',
+  'youtubeCaptions',
   'musicVolume',
   'templates',
   'publishSlots',
   'publishTimezone',
   'syntheticDefault',
+  'brandPrimary',
+  'brandSecondary',
+  'brandFont',
+  'brandAuto',
   'shortsCount',
   'shortsCta',
   'shortsAuto'
@@ -356,6 +372,8 @@ export interface Api {
     update: (id: number, patch: { name?: string; color?: string }) => Promise<Channel>
     remove: (id: number) => Promise<void>
     musicDir: (id: number) => Promise<string>
+    /** Colors from the YouTube picture; saved as the channel's brand colors */
+    brandFromAvatar: (id: number) => Promise<{ primary: string; secondary: string }>
     openMusicDir: (id: number) => Promise<void>
   }
   services: {

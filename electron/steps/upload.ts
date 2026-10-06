@@ -2,7 +2,7 @@ import { join } from 'path'
 import { getVideo, listVideos, updateVideo } from '../db/repo'
 import { isValidFile, runTool } from '../services/ffmpeg'
 import { nextFreeSlot } from '../queue/slots'
-import { setThumbnail, uploadVideo } from '../services/youtube'
+import { canUploadCaptions, setThumbnail, uploadCaptions, uploadVideo } from '../services/youtube'
 import type { Step } from './types'
 
 export const uploadStep: Step = {
@@ -75,6 +75,24 @@ export const uploadStep: Step = {
       )
       video = updateVideo(videoId, { youtube_id: id })
       ctx.log(`Enviado: https://youtu.be/${id}`)
+    }
+
+    // Exact subtitles from the narration timings (YouTube's own captions, not burned in).
+    const srt = join(ctx.projectDir, 'captions.srt')
+    if (video.kind === 'long' && ctx.settings.youtubeCaptions && isValidFile(srt, 10)) {
+      if (!canUploadCaptions(video.channel_id)) {
+        ctx.log(
+          'Legendas não enviadas: reconecte o YouTube uma vez para liberar o envio de legendas',
+          'warn'
+        )
+      } else {
+        try {
+          await uploadCaptions(video.channel_id, video.youtube_id as string, srt)
+          ctx.log('Legendas em inglês enviadas ao YouTube')
+        } catch (error) {
+          ctx.log(`Legendas não enviadas: ${(error as Error).message}`, 'warn')
+        }
+      }
     }
 
     // Custom thumbnails cannot be set on shorts.

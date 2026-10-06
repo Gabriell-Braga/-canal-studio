@@ -36,6 +36,7 @@ import { channelSummaries } from './channels'
 import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scenes'
 import { freeComfy } from '../services/comfy'
 import { usableProviders } from '../services/stock'
+import { brandColorsFromImage } from '../services/brand'
 import { generateStructured, llmLabel } from '../services/llm'
 import { z } from 'zod'
 import {
@@ -240,6 +241,14 @@ export function registerIpc(
     deleteChannel(id)
   })
   handle('channels:musicDir', (id: number) => channelMusicDir(id))
+  handle('channels:brandFromAvatar', (id: number) => {
+    const avatar = listChannels().find((c) => c.id === id)?.avatar_path
+    if (!avatar) throw new Error('Conecte o YouTube para usar a foto do canal')
+    const colors = brandColorsFromImage(avatar)
+    if (!colors) throw new Error('Não deu para tirar cores da foto do canal')
+    setSettings({ brandPrimary: colors.primary, brandSecondary: colors.secondary }, id)
+    return colors
+  })
   handle('channels:openMusicDir', async (id: number) => {
     await shell.openPath(channelMusicDir(id))
   })

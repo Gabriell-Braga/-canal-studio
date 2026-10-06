@@ -14,6 +14,7 @@ import { getVideo, listScenes, updateVideo } from '../db/repo'
 import { isValidFile, probeDuration } from '../services/ffmpeg'
 import { runRender } from '../services/remotion'
 import { readWords } from './transcribe'
+import { writeSrt } from '../services/captions'
 import type { Step } from './types'
 
 const MUSIC_EXT = ['.mp3', '.wav', '.m4a', '.ogg']
@@ -72,12 +73,15 @@ export const renderStep: Step = {
         }
       })
     )
+    const words = readWords(pd)
+    // Long videos get real YouTube subtitles from this file; burned-in captions are optional.
+    writeSrt(words, join(pd, 'captions.srt'))
     const props: VideoProps = {
       fps: 30,
       durationSec: (await probeDuration(video.audio_path as string)) + 0.5,
       narration: url(pd, video.audio_path as string),
       scenes: renderScenes,
-      words: readWords(pd),
+      words,
       captions: ctx.settings.captionsEnabled,
       music: music ? url(pd, music) : null,
       musicVolume: ctx.settings.musicVolume,

@@ -252,6 +252,9 @@ async function phase4({ launch, api, shot, log, waitUntil, dataDir }) {
   }
 
   const { app, page } = await launch()
+  // Extra settings for this run, e.g. the model and stock keys: E2E_SETTINGS='{"llmProvider":"claude-code"}'
+  if (process.env.E2E_SETTINGS)
+    await api(page, 'settings.set', JSON.parse(process.env.E2E_SETTINGS))
   const t0 = Date.now()
   const elapsed = () => `${Math.round((Date.now() - t0) / 60000)} min`
   await api(page, 'videos.addTopics', 1, ['The ghost ship Octavius and the frozen crew'], minutes)

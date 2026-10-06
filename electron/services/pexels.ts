@@ -15,6 +15,7 @@ interface PexelsVideoFile {
 
 interface PexelsVideo {
   id: number
+  url?: string
   duration: number
   width: number
   height: number
@@ -23,6 +24,7 @@ interface PexelsVideo {
 
 interface PexelsPhoto {
   id: number
+  alt?: string
   width: number
   height: number
   src: { original: string; large2x: string; landscape: string }
@@ -35,6 +37,8 @@ export interface StockCandidate {
   duration?: number
   /** Attribution required by the file's license, if any. */
   credit?: string
+  /** What the media shows (tags, title, description), used to judge relevance */
+  label?: string
 }
 
 async function pexelsGet<T>(path: string, key: string, signal?: AbortSignal): Promise<T> {
@@ -86,7 +90,9 @@ export async function searchStock(
       source: `pexels:video:${v.id}`,
       kind: 'stock_video',
       url: file!.link,
-      duration: v.duration
+      duration: v.duration,
+      // The page URL slug is the clip's title: /video/old-ship-at-sea-123/
+      label: (v.url ?? '').split('/').filter(Boolean).pop()?.replace(/-\d+$/, '').replace(/-/g, ' ')
     })
   }
   const { photos } = await pexelsGet<{ photos: PexelsPhoto[] }>(
@@ -96,7 +102,12 @@ export async function searchStock(
   )
   for (const p of photos) {
     if (exclude.has(`pexels:photo:${p.id}`) || p.width < 1600) continue
-    candidates.push({ source: `pexels:photo:${p.id}`, kind: 'stock_photo', url: p.src.large2x })
+    candidates.push({
+      source: `pexels:photo:${p.id}`,
+      kind: 'stock_photo',
+      url: p.src.large2x,
+      label: p.alt
+    })
   }
   return candidates
 }

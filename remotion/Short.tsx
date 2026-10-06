@@ -88,7 +88,7 @@ function ShortCaptions({
 }): React.JSX.Element | null {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
-  const style = template(props.template)
+  const look = shortLook(props)
   const t = frame / fps
   // Shorter phrases than the long video: vertical screens are narrow.
   const phrases = useMemo(
@@ -123,7 +123,7 @@ function ShortCaptions({
           transform: `scale(${0.85 + 0.15 * pop})`,
           maxWidth: 940,
           textAlign: 'center',
-          fontFamily: style.fontFamily,
+          fontFamily: look.font,
           fontWeight: 900,
           fontSize: 76,
           lineHeight: 1.1,
@@ -141,7 +141,7 @@ function ShortCaptions({
               style={{
                 display: 'inline-block',
                 margin: '0 0.16em',
-                color: active ? style.thumbColors[1] : '#fff'
+                color: active ? look.accent : look.text
               }}
             >
               {w.word}
@@ -156,7 +156,7 @@ function ShortCaptions({
 function Headline({ text, props }: { text: string; props: ShortProps }): React.JSX.Element {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
-  const style = template(props.template)
+  const look = shortLook(props)
   const enter = spring({ frame, fps, config: { damping: 16 } })
   return (
     <AbsoluteFill style={{ justifyContent: 'flex-start', alignItems: 'center', paddingTop: 170 }}>
@@ -169,11 +169,11 @@ function Headline({ text, props }: { text: string; props: ShortProps }): React.J
           borderRadius: 22,
           background: 'rgba(0,0,0,0.55)',
           textAlign: 'center',
-          fontFamily: style.thumbFont,
+          fontFamily: look.font,
           fontWeight: 900,
           fontSize: 64,
           lineHeight: 1.08,
-          color: style.thumbColors[1],
+          color: look.accent,
           textTransform: 'uppercase'
         }}
       >
@@ -188,6 +188,7 @@ function EndCard({ props }: { props: ShortProps }): React.JSX.Element {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const style = template(props.template)
+  const look = shortLook(props)
   const enter = spring({ frame, fps, config: { damping: 13, stiffness: 140 } })
   const bounce = Math.sin((frame / fps) * Math.PI * 2.2) * 14
   return (
@@ -201,7 +202,7 @@ function EndCard({ props }: { props: ShortProps }): React.JSX.Element {
     >
       <div
         style={{
-          fontFamily: style.thumbFont,
+          fontFamily: look.font,
           fontWeight: 900,
           fontSize: 84,
           lineHeight: 1,
@@ -213,7 +214,7 @@ function EndCard({ props }: { props: ShortProps }): React.JSX.Element {
         }}
       >
         Watch the
-        <div style={{ color: style.thumbColors[1] }}>full video</div>
+        <div style={{ color: look.accent }}>full video</div>
       </div>
       {props.cta.thumbnail && (
         <div
@@ -222,7 +223,7 @@ function EndCard({ props }: { props: ShortProps }): React.JSX.Element {
             width: 940,
             borderRadius: 26,
             overflow: 'hidden',
-            boxShadow: `0 0 0 6px ${style.thumbColors[1]}, 0 40px 90px rgba(0,0,0,0.7)`,
+            boxShadow: `0 0 0 6px ${look.accent}, 0 40px 90px rgba(0,0,0,0.7)`,
             transform: `scale(${0.8 + 0.2 * enter})`
           }}
         >
@@ -248,7 +249,7 @@ function EndCard({ props }: { props: ShortProps }): React.JSX.Element {
         style={{
           marginTop: 50,
           fontSize: 110,
-          color: style.thumbColors[1],
+          color: look.accent,
           transform: `translateY(${bounce}px)`,
           opacity: enter
         }}
@@ -296,4 +297,14 @@ export const Short: React.FC<ShortProps> = (props) => {
       {props.music && <Audio src={props.music} loop volume={props.musicVolume * 0.8} />}
     </AbsoluteFill>
   )
+}
+
+/** Colors and font of the short: the channel's brand when set, else the template's. */
+function shortLook(props: ShortProps): { accent: string; text: string; font: string } {
+  const style = template(props.template)
+  return {
+    accent: props.brand?.primary ?? style.thumbColors[1],
+    text: props.brand?.secondary ?? '#ffffff',
+    font: props.brand?.font ? `"${props.brand.font}", ${style.thumbFont}` : style.thumbFont
+  }
 }

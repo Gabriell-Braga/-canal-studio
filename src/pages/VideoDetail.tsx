@@ -164,7 +164,7 @@ export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.El
         ))}
         <div className={`ml-auto flex items-center gap-2 pb-1 ${isShort ? 'hidden' : ''}`}>
           <select
-            className={`${inputClass} max-w-44 py-1`}
+            className={`${inputClass} h-9 max-w-44 py-0`}
             value={redoStep}
             onChange={(e) => setRedoStep(e.target.value as JobType)}
           >
@@ -175,7 +175,7 @@ export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.El
             ))}
           </select>
           <Button
-            size="sm"
+            variant="secondary"
             onClick={() =>
               act(
                 () => api.videos.retryFrom(id, redoStep),
@@ -591,7 +591,7 @@ function ShortsTab({
           </p>
         </div>
         <select
-          className={`${inputClass} max-w-28`}
+          className={`${inputClass} h-9 max-w-28 py-0`}
           value={count}
           onChange={(e) => setCount(Number(e.target.value))}
         >

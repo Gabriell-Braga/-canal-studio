@@ -2,6 +2,13 @@
 
 export type TemplateId = 'documentary' | 'bold' | 'minimal'
 
+/** The channel's own colors and font; overrides the template's text styling. */
+export interface Brand {
+  primary: string
+  secondary: string
+  font: string
+}
+
 export interface RenderScene {
   src: string
   type: 'video' | 'image'
@@ -47,6 +54,7 @@ export interface ShortProps {
   music: string | null
   musicVolume: number
   template: TemplateId
+  brand?: Brand
   /** Hook text shown at the top for the whole short */
   headline: string
   cta: {
@@ -63,6 +71,7 @@ export interface ThumbnailProps {
   background: string
   text: string
   template: TemplateId
+  brand?: Brand
   variant: number
   [key: string]: unknown
 }

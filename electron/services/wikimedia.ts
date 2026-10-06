@@ -50,7 +50,7 @@ export async function searchWikimedia(
     prop: 'imageinfo',
     iiprop: 'url|size|extmetadata',
     iiurlwidth: '1920',
-    iiextmetadatafilter: 'LicenseShortName|Artist|Credit'
+    iiextmetadatafilter: 'LicenseShortName|Artist|Credit|ImageDescription'
   })
   const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
     headers: { 'User-Agent': USER_AGENT },
@@ -79,6 +79,9 @@ export async function searchWikimedia(
       source,
       kind: 'stock_photo',
       url: info.thumburl ?? info.url,
+      label: `${page.title.replace(/^File:/, '').replace(/\.\w+$/, '')}. ${strip(
+        info.extmetadata?.ImageDescription?.value
+      ).slice(0, 160)}`,
       credit: free
         ? undefined
         : `"${page.title.replace(/^File:/, '')}" by ${artist}, ${license}, via Wikimedia Commons (${info.descriptionurl})`

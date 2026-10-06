@@ -1,12 +1,14 @@
 import { copyFileSync, mkdirSync, renameSync, rmSync } from 'fs'
 import { extname, join } from 'path'
 import type { Scene, Settings } from '../../shared/types'
-import { getScene, listScenes, updateScene } from '../db/repo'
+import { getScene, getVideo, listScenes, updateScene } from '../db/repo'
 import { ensureComfy, freeComfy, generateImage } from '../services/comfy'
 import { isValidFile, probeDuration, runTool } from '../services/ffmpeg'
 import { unloadAll } from '../services/ollama'
 import { download } from '../services/pexels'
-import { PROVIDER_LABELS, searchAll, usableProviders } from '../services/stock'
+import { gatherCandidates, PROVIDER_LABELS, usableProviders } from '../services/stock'
+import type { StockCandidate } from '../services/pexels'
+import { pickRelevant } from './relevance'
 import { pythonPost } from '../services/python'
 import type { Step } from './types'
 
@@ -42,10 +44,37 @@ export async function assignStock(
   if (!usableProviders(s).length) return false
   const exclude = usedSources(scene.video_id, scene.id)
   extraExclude.forEach((e) => exclude.add(e))
-  const query = scene.visual_keywords || scene.narration.split(/\s+/).slice(0, 4).join(' ')
-  const candidates = await searchAll(query, sceneDuration(scene), s, exclude, onWarn, signal)
-  const pick = candidates[0]
+  const candidates = await sceneCandidates(scene, s, exclude, onWarn, signal)
+  const topic = getVideo(scene.video_id).topic
+  const pick = (
+    await pickRelevant([scene], new Map([[scene.id, candidates]]), topic, s, signal)
+  ).get(scene.id)
   if (!pick) return false
+  await downloadCandidate(scene, pick, dir, signal)
+  return true
+}
+
+/** Search query for a scene: its visual keywords, else the first words of the narration. */
+function sceneQuery(scene: Scene): string {
+  return scene.visual_keywords || scene.narration.split(/\s+/).slice(0, 4).join(' ')
+}
+
+function sceneCandidates(
+  scene: Scene,
+  s: Settings,
+  exclude: Set<string>,
+  onWarn?: (message: string) => void,
+  signal?: AbortSignal
+): Promise<StockCandidate[]> {
+  return gatherCandidates(sceneQuery(scene), sceneDuration(scene), s, exclude, 4, onWarn, signal)
+}
+
+async function downloadCandidate(
+  scene: Scene,
+  pick: StockCandidate,
+  dir: string,
+  signal?: AbortSignal
+): Promise<void> {
   const ext = pick.kind === 'stock_video' ? '.mp4' : '.jpg'
   const out = join(
     dir,
@@ -61,7 +90,6 @@ export async function assignStock(
     asset_source: pick.source,
     asset_credit: pick.credit ?? null
   })
-  return true
 }
 
 /**
@@ -133,6 +161,9 @@ export const scenesStep: Step = {
     const scenes = listScenes(videoId)
     const wantAi = aiIndexes(scenes.length, s.aiImageRatio)
     const needAi: Scene[] = []
+    const wantStock: Scene[] = []
+    const candidates = new Map<number, StockCandidate[]>()
+    const used = usedSources(videoId)
     let stock = 0
     let kept = 0
     const providers = usableProviders(s)
@@ -151,16 +182,41 @@ export const scenesStep: Step = {
         continue
       }
       try {
-        if (await assignStock(scene, dir, s, [], ctx.signal, (m) => ctx.log(m, 'warn'))) stock++
-        else needAi.push(scene)
+        const found = await sceneCandidates(scene, s, used, (m) => ctx.log(m, 'warn'), ctx.signal)
+        if (found.length) {
+          candidates.set(scene.id, found)
+          wantStock.push(scene)
+        } else needAi.push(scene)
       } catch (error) {
-        ctx.log(
-          `Banco de mídia falhou na cena ${scene.index + 1}: ${(error as Error).message}`,
-          'warn'
-        )
+        ctx.log(`Busca falhou na cena ${scene.index + 1}: ${(error as Error).message}`, 'warn')
         needAi.push(scene)
       }
-      ctx.progress((0.3 * (i + 1)) / scenes.length)
+      ctx.progress((0.15 * (i + 1)) / scenes.length)
+    }
+
+    if (wantStock.length) {
+      ctx.log(`Escolhendo a mídia mais relevante para ${wantStock.length} cena(s)`)
+      const topic = getVideo(videoId).topic
+      const picks = await pickRelevant(wantStock, candidates, topic, s, ctx.signal, (m) =>
+        ctx.log(m, 'warn')
+      )
+      for (const [k, scene] of wantStock.entries()) {
+        const pick = picks.get(scene.id)
+        // No fitting option, or the same file already chosen for another scene.
+        if (!pick || used.has(pick.source)) {
+          needAi.push(scene)
+          continue
+        }
+        try {
+          await downloadCandidate(scene, pick, dir, ctx.signal)
+          used.add(pick.source)
+          stock++
+        } catch (error) {
+          ctx.log(`Download falhou na cena ${scene.index + 1}: ${(error as Error).message}`, 'warn')
+          needAi.push(scene)
+        }
+        ctx.progress(0.15 + (0.15 * (k + 1)) / wantStock.length)
+      }
     }
     ctx.log(`Cenas: ${stock} de banco, ${needAi.length} para IA, ${kept} já prontas`)
 

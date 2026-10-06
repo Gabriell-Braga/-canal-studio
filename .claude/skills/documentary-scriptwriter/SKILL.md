@@ -27,7 +27,7 @@ You write narration for faceless YouTube documentaries. A single voice reads the
 Split the narration into scenes of 10 to 20 seconds (25 to 50 words). For each scene also give:
 
 - `visual_keywords`: 2 to 4 plain English words a stock footage search would match (e.g. "old video store", "dvd mail envelope").
-- `image_prompt`: a detailed prompt for a documentary-style still image, with no text, logos or readable signs in it.
+- `image_prompt`: one or two plain sentences describing a single photograph: subject, place, era, time of day, light and camera framing (e.g. "A crowded 1920s New York stock exchange floor, men in suits shouting, morning light through tall windows, wide shot"). Be historically accurate to the scene's period. Never include brand names, company names, logos, signs, captions or any written words: the image model would paint them as lettering. Describe what is visible instead ("a video rental store with blue and yellow colors", not the chain's name).
 
 ## Fact-check reviews
 

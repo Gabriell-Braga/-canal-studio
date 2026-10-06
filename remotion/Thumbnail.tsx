@@ -8,9 +8,12 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
   background,
   text,
   template: id,
+  brand,
   variant
 }) => {
   const style = template(id)
+  const colors: [string, string] = brand ? [brand.secondary, brand.primary] : style.thumbColors
+  const font = brand?.font ? `"${brand.font}", ${style.thumbFont}` : style.thumbFont
   const words = text.toUpperCase().split(/\s+/).filter(Boolean)
   // Highlight the last word in the accent color.
   const head = words.slice(0, -1).join(' ')
@@ -54,7 +57,7 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
         <div
           style={{
             maxWidth: 760,
-            fontFamily: style.thumbFont,
+            fontFamily: font,
             fontWeight: 900,
             fontSize: words.length > 3 ? 104 : 128,
             lineHeight: 0.95,
@@ -63,8 +66,8 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
             textAlign: layout.textAlign
           }}
         >
-          {head && <div style={{ color: style.thumbColors[0] }}>{head}</div>}
-          <div style={{ color: style.thumbColors[1] }}>{tail}</div>
+          {head && <div style={{ color: colors[0] }}>{head}</div>}
+          <div style={{ color: colors[1] }}>{tail}</div>
         </div>
       </AbsoluteFill>
     </AbsoluteFill>

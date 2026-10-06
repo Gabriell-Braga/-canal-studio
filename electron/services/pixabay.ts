@@ -9,12 +9,14 @@ interface PixabayVideoFile {
 
 interface PixabayVideo {
   id: number
+  tags?: string
   duration: number
   videos: Partial<Record<'large' | 'medium' | 'small' | 'tiny', PixabayVideoFile>>
 }
 
 interface PixabayImage {
   id: number
+  tags?: string
   imageWidth: number
   imageHeight: number
   largeImageURL: string
@@ -64,7 +66,8 @@ export async function searchPixabay(
     source: `pixabay:video:${v.id}`,
     kind: 'stock_video',
     url: file!.url,
-    duration: v.duration
+    duration: v.duration,
+    label: v.tags
   }))
   const { hits: photos } = await pixabayGet<{ hits: PixabayImage[] }>(
     `${base}/?key=${key}&q=${q}&image_type=photo&orientation=horizontal&min_width=1600&safesearch=true&per_page=20`,
@@ -72,7 +75,12 @@ export async function searchPixabay(
   )
   for (const p of photos) {
     if (exclude.has(`pixabay:photo:${p.id}`)) continue
-    candidates.push({ source: `pixabay:photo:${p.id}`, kind: 'stock_photo', url: p.largeImageURL })
+    candidates.push({
+      source: `pixabay:photo:${p.id}`,
+      kind: 'stock_photo',
+      url: p.largeImageURL,
+      label: p.tags
+    })
   }
   return candidates
 }

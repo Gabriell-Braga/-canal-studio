@@ -93,6 +93,28 @@ export async function searchAll(
   return []
 }
 
+/**
+ * Up to `perProvider` fresh candidates from each enabled provider, in the channel's order,
+ * so the relevance pick can compare sources (a modern stock clip vs an archive photo).
+ */
+export async function gatherCandidates(
+  query: string,
+  minDuration: number,
+  s: Settings,
+  exclude: Set<string>,
+  perProvider = 4,
+  onWarn?: (message: string) => void,
+  signal?: AbortSignal
+): Promise<StockCandidate[]> {
+  const out: StockCandidate[] = []
+  for (const provider of usableProviders(s)) {
+    const one = { ...s, stockProviders: [provider] }
+    const found = await searchAll(query, minDuration, one, exclude, onWarn, signal)
+    out.push(...found.slice(0, perProvider))
+  }
+  return out
+}
+
 export const PROVIDER_LABELS: Record<StockProvider, string> = {
   pixabay: 'Pixabay',
   pexels: 'Pexels',

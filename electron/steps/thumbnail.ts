@@ -28,7 +28,24 @@ const DANGLING = new Set([
   'on',
   'at',
   'with',
-  'by'
+  'by',
+  'or',
+  'from',
+  'into',
+  'their',
+  'his',
+  'her',
+  'its',
+  'our',
+  'your',
+  'my',
+  'this',
+  'that',
+  'is',
+  'was',
+  'are',
+  'were',
+  'still'
 ])
 
 /** Keep the headline at 2–4 words without ending on "of", "the"… */
@@ -120,6 +137,7 @@ Return ONLY JSON: {"texts": ["...", "...", "..."]}`,
         background: url(ctx.projectDir, backgrounds[i % backgrounds.length]),
         text: clampWords(texts[i]),
         template,
+        brand: { primary: s.brandPrimary, secondary: s.brandSecondary, font: s.brandFont },
         variant: i
       } satisfies ThumbnailProps
     }))

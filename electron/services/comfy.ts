@@ -34,6 +34,52 @@ export async function ensureComfy(s: Settings, signal?: AbortSignal): Promise<vo
   throw new Error('ComfyUI não respondeu em 3 minutos')
 }
 
+/** Z-Image Turbo files in ComfyUI/models (Apache 2.0). */
+export const ZIMAGE = {
+  unet: 'z_image_turbo_int8_convrot.safetensors',
+  clip: 'qwen_3_4b_fp8_mixed.safetensors',
+  vae: 'ae.safetensors'
+}
+
+export function hasZImage(comfyPath: string): boolean {
+  const models = join(comfyPath, 'ComfyUI', 'models')
+  return (
+    existsSync(join(models, 'diffusion_models', ZIMAGE.unet)) &&
+    existsSync(join(models, 'text_encoders', ZIMAGE.clip)) &&
+    existsSync(join(models, 'vae', ZIMAGE.vae))
+  )
+}
+
+/** Z-Image Turbo: distilled, 9 steps at CFG 1 (no negative prompt), photographic output. */
+function zImageWorkflow(prompt: string, width: number, height: number, seed: number): object {
+  return {
+    '1': { class_type: 'UNETLoader', inputs: { unet_name: ZIMAGE.unet, weight_dtype: 'default' } },
+    '2': { class_type: 'CLIPLoader', inputs: { clip_name: ZIMAGE.clip, type: 'lumina2' } },
+    '3': { class_type: 'VAELoader', inputs: { vae_name: ZIMAGE.vae } },
+    '4': { class_type: 'ModelSamplingAuraFlow', inputs: { model: ['1', 0], shift: 3 } },
+    '5': { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ['2', 0] } },
+    '6': { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['5', 0] } },
+    '7': { class_type: 'EmptySD3LatentImage', inputs: { width, height, batch_size: 1 } },
+    '8': {
+      class_type: 'KSampler',
+      inputs: {
+        seed,
+        steps: 9,
+        cfg: 1,
+        sampler_name: 'res_multistep',
+        scheduler: 'simple',
+        denoise: 1,
+        model: ['4', 0],
+        positive: ['5', 0],
+        negative: ['6', 0],
+        latent_image: ['7', 0]
+      }
+    },
+    '9': { class_type: 'VAEDecode', inputs: { samples: ['8', 0], vae: ['3', 0] } },
+    '10': { class_type: 'SaveImage', inputs: { filename_prefix: 'canal-studio', images: ['9', 0] } }
+  }
+}
+
 function sdxlWorkflow(
   prompt: string,
   s: Settings,
@@ -82,13 +128,19 @@ export async function generateImage(
   s: Settings,
   opts: { width?: number; height?: number; seed?: number; signal?: AbortSignal } = {}
 ): Promise<void> {
-  const fullPrompt = `${prompt}, cinematic documentary photograph, dramatic natural lighting, highly detailed, 35mm film`
+  const useZ = s.imageModel === 'z-image' && hasZImage(s.comfyPath)
+  // Z-Image renders lettering well, so ask for none; brand names in prompts become signs.
+  const fullPrompt = useZ
+    ? `${prompt}. Cinematic documentary photograph, 35mm film, natural light, realistic detail. No text, no lettering, no logos, no watermarks.`
+    : `${prompt}, cinematic documentary photograph, dramatic natural lighting, highly detailed, 35mm film`
   const seed = opts.seed ?? Math.floor(Math.random() * 2 ** 31)
   const res = await fetch(`${s.comfyUrl}/prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      prompt: sdxlWorkflow(fullPrompt, s, opts.width ?? 1344, opts.height ?? 768, seed),
+      prompt: useZ
+        ? zImageWorkflow(fullPrompt, opts.width ?? 1344, opts.height ?? 768, seed)
+        : sdxlWorkflow(fullPrompt, s, opts.width ?? 1344, opts.height ?? 768, seed),
       client_id: randomUUID()
     })
   })

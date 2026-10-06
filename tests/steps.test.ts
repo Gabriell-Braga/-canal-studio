@@ -33,6 +33,7 @@ describe('pipeline helpers', () => {
   it('keeps thumbnail headlines at 2–4 words without a dangling preposition', () => {
     expect(clampWords('The Last Voyage of the Octavius')).toBe('The Last Voyage')
     expect(clampWords('"Frozen in Time"')).toBe('Frozen in Time')
+    expect(clampWords('Crew Still At Their Posts')).toBe('Crew Still')
   })
 
   it('builds YouTube chapters starting at 0:00', () => {

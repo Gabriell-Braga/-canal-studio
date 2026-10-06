@@ -14,6 +14,7 @@ const api: Api = {
     update: invoke('channels:update'),
     remove: invoke('channels:remove'),
     musicDir: invoke('channels:musicDir'),
+    brandFromAvatar: invoke('channels:brandFromAvatar'),
     openMusicDir: invoke('channels:openMusicDir')
   },
   services: {

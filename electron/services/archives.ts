@@ -15,7 +15,7 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 
 interface NasaItem {
   href: string
-  data: { nasa_id: string; media_type: 'image' | 'video'; title: string }[]
+  data: { nasa_id: string; media_type: 'image' | 'video'; title: string; description?: string }[]
 }
 
 /**
@@ -50,7 +50,8 @@ export async function searchNasa(
         return {
           source: `nasa:${meta.nasa_id}`,
           kind: meta.media_type === 'video' ? 'stock_video' : 'stock_photo',
-          url: encodeURI(pick.replace(/^http:/, 'https:'))
+          url: encodeURI(pick.replace(/^http:/, 'https:')),
+          label: `${meta.title}. ${(meta.description ?? '').slice(0, 160)}`
         }
       } catch {
         return null
@@ -72,6 +73,9 @@ interface MetObject {
   isPublicDomain: boolean
   primaryImage: string
   title: string
+  objectDate?: string
+  culture?: string
+  objectName?: string
 }
 
 /** The Metropolitan Museum of Art Open Access (CC0 for public-domain works). */
@@ -99,7 +103,8 @@ export async function searchMet(
     .map((o) => ({
       source: `met:${o.objectID}`,
       kind: 'stock_photo' as const,
-      url: o.primaryImage
+      url: o.primaryImage,
+      label: [o.title, o.objectName, o.objectDate, o.culture].filter(Boolean).join(', ')
     }))
 }
 
@@ -125,8 +130,10 @@ export async function searchArchive(
   const q = encodeURIComponent(
     `collection:prelinger AND mediatype:movies AND (${query.slice(0, 100)})`
   )
-  const { response } = await getJson<{ response: { docs: { identifier: string }[] } }>(
-    `https://archive.org/advancedsearch.php?q=${q}&fl[]=identifier&rows=8&output=json`,
+  const { response } = await getJson<{
+    response: { docs: { identifier: string; title?: string }[] }
+  }>(
+    `https://archive.org/advancedsearch.php?q=${q}&fl[]=identifier&fl[]=title&rows=8&output=json`,
     signal
   )
   const docs = response.docs.filter((d) => !exclude.has(`archive:${d.identifier}`)).slice(0, 6)
@@ -145,6 +152,7 @@ export async function searchArchive(
           source: `archive:${d.identifier}`,
           kind: 'stock_video',
           url: `https://archive.org/download/${d.identifier}/${encodeURIComponent(mp4.name)}`,
+          label: `Vintage film: ${d.title ?? d.identifier}`,
           duration: Number(mp4.length) || undefined
         }
       } catch {

@@ -327,3 +327,69 @@ async function phase4({ launch, api, shot, log, waitUntil, dataDir }) {
 }
 
 export const scenarios = { phase1, phase2, phase3, phase4 }
+
+/**
+ * Fase 5 (reuse the data folder of a phase4 run, CANAL_DATA_DIR): open the finished video,
+ * swap one scene for a new AI image, re-render, check the 3 thumbnails and approve.
+ */
+async function phase5({ launch, api, shot, log, waitUntil }) {
+  const { statSync } = await import('fs')
+  const { app, page } = await launch()
+  // Keep the upload out of the night window during the test.
+  await api(page, 'settings.set', { nightStart: '12:00', nightEnd: '12:01' })
+  const video = (await api(page, 'videos.list')).find((v) => v.status === 'FINAL_REVIEW')
+  assert(video, 'a video in FINAL_REVIEW (run phase4 first with the same CANAL_DATA_DIR)')
+  const before = statSync(video.video_path).mtimeMs
+
+  await page.getByTestId('video-card').filter({ hasText: video.title }).first().click()
+  await page.getByTestId('tab-publish').waitFor()
+  await shot(page, 'detail-publish')
+  await page.getByTestId('tab-scenes').click()
+  const card = page.getByTestId('scene-card').nth(2)
+  const oldAsset = (await api(page, 'videos.get', video.id)).scenes[2].asset_path
+  await card.getByText('Gerar imagem IA').click()
+  log('Gerando nova imagem IA para a cena 3…')
+  await page.getByText('Imagem IA gerada.').waitFor({ timeout: 5 * 60_000 })
+  const newAsset = (await api(page, 'videos.get', video.id)).scenes[2].asset_path
+  assert(newAsset !== oldAsset, 'scene asset changed')
+  await shot(page, 'scene-swapped')
+
+  await page.getByTestId('rerender').click()
+  log('Re-renderizando…')
+  await waitUntil(
+    async () => {
+      const d = await api(page, 'videos.get', video.id)
+      if (d.video.status === 'ERROR') throw new Error(d.video.error_message)
+      const job = d.jobs.find((j) => j.type === 'render' && !j.chain)
+      return job?.status === 'done' && d.video.status === 'FINAL_REVIEW'
+    },
+    { label: 're-render', timeoutMs: 30 * 60_000, everyMs: 5000 }
+  )
+  assert(statSync(video.video_path).mtimeMs > before, 'video.mp4 rewritten')
+  const after = await api(page, 'videos.get', video.id)
+  assert(
+    !after.jobs.some(
+      (j) => j.type === 'thumbnail' && j.created_at > after.jobs.find((x) => !x.chain).created_at
+    ),
+    'no new thumbnail job'
+  )
+
+  await page.getByTestId('tab-publish').click()
+  assert((await page.getByTestId('thumb-option').count()) === 3, '3 thumbnails shown')
+  await page.getByTestId('thumb-option').nth(1).click()
+  await shot(page, 'publish-tab')
+  await page.getByText('Salvar, aprovar e agendar').click()
+  await page.getByText('Aprovado e agendado').waitFor()
+  const final = await api(page, 'videos.get', video.id)
+  assert(final.video.status === 'SCHEDULED', 'SCHEDULED')
+  assert(final.video.chosen_thumbnail === 1, 'thumbnail 2 chosen')
+  assert(
+    final.jobs.some((j) => j.type === 'upload' && j.status === 'pending'),
+    'upload queued'
+  )
+  log(`Agendado para ${new Date(final.video.scheduled_at).toLocaleString('pt-BR')}`)
+  await shot(page, 'scheduled')
+  await app.close()
+}
+
+scenarios.phase5 = phase5

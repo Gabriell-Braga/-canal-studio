@@ -1,5 +1,5 @@
 import { tmpdir } from 'os'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { JobType } from '../shared/types'
 import {
   createVideo,
@@ -43,8 +43,10 @@ function fakeStep(type: JobType, status: Step['status'], ms = 30): Step {
   }
 }
 
+const schedulers: Scheduler[] = []
+
 function makeScheduler(): Scheduler {
-  return new Scheduler({
+  const s = new Scheduler({
     steps: {
       script: fakeStep('script', 'SCRIPT_GENERATING'),
       audio: fakeStep('audio', 'AUDIO'),
@@ -59,7 +61,14 @@ function makeScheduler(): Scheduler {
     clock: () => clock,
     onEvent: (e) => events.push(e)
   })
+  schedulers.push(s)
+  return s
 }
+
+// A scheduler left alive would pick up jobs from the next test's database.
+afterEach(() => {
+  schedulers.splice(0).forEach((s) => s.stop())
+})
 
 /** Tick until nothing is running or pending-and-eligible. */
 async function drain(s: Scheduler, rounds = 60): Promise<void> {

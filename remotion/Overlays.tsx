@@ -99,24 +99,10 @@ function YearCardView({ card, accent }: { card: YearCard; accent: string }): Rea
     ...clamp,
     easing: Easing.inOut(Easing.cubic)
   })
-  const forward = !card.from || card.year >= card.from
   return (
     <AbsoluteFill
       style={{ backgroundColor: '#000', opacity, alignItems: 'center', justifyContent: 'center' }}
     >
-      {card.from && (
-        <div
-          style={{
-            fontFamily: UI_FONT,
-            fontSize: 34,
-            letterSpacing: 8,
-            color: 'rgba(255,255,255,0.4)',
-            marginBottom: 10
-          }}
-        >
-          {forward ? `${card.from} →` : `← ${card.from}`}
-        </div>
-      )}
       <div
         style={{
           fontFamily: UI_FONT,
@@ -131,15 +117,192 @@ function YearCardView({ card, accent }: { card: YearCard; accent: string }): Rea
       >
         {year}
       </div>
+      <Timeline card={card} progress={p} reveal={line} accent={accent} />
+    </AbsoluteFill>
+  )
+}
+
+const TRACK_W = 860
+const TICKS = 25
+
+/**
+ * Track under the year: ticks fade in, a glowing dot travels from the old year (left) to the
+ * new one (right) as the counter runs. The first card has no old year: the dot settles in
+ * the middle.
+ */
+function Timeline({
+  card,
+  progress,
+  reveal,
+  accent
+}: {
+  card: YearCard
+  progress: number
+  reveal: number
+  accent: string
+}): React.JSX.Element {
+  const back = card.from !== null && card.year < card.from
+  const start = card.from ? (back ? 1 : 0) : 0.5
+  const end = card.from ? (back ? 0 : 1) : 0.5
+  const pos = start + (end - start) * progress
+  const fillFrom = Math.min(start, pos)
+  const fillTo = Math.max(start, pos)
+  const label = (text: number, side: 'left' | 'right', strong: boolean): React.JSX.Element => (
+    <div
+      style={{
+        position: 'absolute',
+        top: 30,
+        [side]: -10,
+        fontFamily: UI_FONT,
+        fontSize: 30,
+        fontWeight: strong ? 700 : 500,
+        letterSpacing: 4,
+        color: strong ? '#fff' : 'rgba(255,255,255,0.4)',
+        opacity: reveal
+      }}
+    >
+      {text}
+    </div>
+  )
+  return (
+    <div style={{ position: 'relative', width: TRACK_W, height: 70, marginTop: 46 }}>
+      {Array.from({ length: TICKS }, (_, i) => {
+        const x = i / (TICKS - 1)
+        const major = i % 6 === 0
+        const lit = x >= fillFrom - 0.001 && x <= fillTo + 0.001 && card.from !== null
+        const shown = interpolate(
+          reveal,
+          [Math.abs(x - 0.5) * 0.9, Math.abs(x - 0.5) * 0.9 + 0.2],
+          [0, 1],
+          clamp
+        )
+        return (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              left: x * TRACK_W - 1,
+              top: major ? 0 : 5,
+              width: 2,
+              height: major ? 22 : 12,
+              borderRadius: 1,
+              background: lit ? accent : 'rgba(255,255,255,0.28)',
+              opacity: shown
+            }}
+          />
+        )
+      })}
       <div
         style={{
-          marginTop: 34,
-          height: 3,
-          width: 720 * line,
-          background: `linear-gradient(90deg, transparent, ${accent}, transparent)`
+          position: 'absolute',
+          top: 10,
+          left: 0,
+          width: TRACK_W * reveal,
+          marginLeft: (TRACK_W * (1 - reveal)) / 2,
+          height: 2,
+          background: 'rgba(255,255,255,0.18)'
         }}
       />
-    </AbsoluteFill>
+      {card.from !== null && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 9,
+            left: fillFrom * TRACK_W,
+            width: (fillTo - fillFrom) * TRACK_W,
+            height: 4,
+            borderRadius: 2,
+            background: accent,
+            boxShadow: `0 0 14px ${accent}`
+          }}
+        />
+      )}
+      <div
+        style={{
+          position: 'absolute',
+          top: 1,
+          left: pos * TRACK_W - 10,
+          width: 20,
+          height: 20,
+          borderRadius: 10,
+          background: '#fff',
+          border: `4px solid ${accent}`,
+          boxSizing: 'border-box',
+          boxShadow: `0 0 0 6px ${accent}33, 0 0 22px ${accent}`,
+          opacity: reveal
+        }}
+      />
+      {card.from !== null && label(back ? card.year : card.from, 'left', back)}
+      {card.from !== null && label(back ? card.from : card.year, 'right', !back)}
+    </div>
+  )
+}
+
+/** Up or down arrow drawn as a path, so it looks the same on any machine. */
+function TrendArrow({
+  up,
+  color,
+  size
+}: {
+  up: boolean
+  color: string
+  size: number
+}): React.JSX.Element {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block' }}>
+      <path
+        d={up ? 'M12 5 L19 13 H14.5 V19 H9.5 V13 H5 Z' : 'M12 19 L5 11 H9.5 V5 H14.5 V11 H19 Z'}
+        fill={color}
+        strokeLinejoin="round"
+        stroke={color}
+        strokeWidth={1.5}
+      />
+    </svg>
+  )
+}
+
+/** "+12%", "−40%", "×5.2" for big jumps. */
+function changeLabel(from: number, to: number): string {
+  const ratio = to / from
+  if (ratio >= 2)
+    return `×${ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1).replace(/\.0$/, '')}`
+  const pct = Math.round((ratio - 1) * 100)
+  return `${pct > 0 ? '+' : '−'}${Math.abs(pct)}%`
+}
+
+function TrendChip({
+  from,
+  to,
+  shown
+}: {
+  from: number
+  to: number
+  shown: number
+}): React.JSX.Element {
+  const up = to > from
+  const color = up ? '#3ddc84' : '#ff5c5c'
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '4px 12px 4px 6px',
+        borderRadius: 999,
+        background: up ? 'rgba(61,220,132,0.16)' : 'rgba(255,92,92,0.16)',
+        border: `1px solid ${up ? 'rgba(61,220,132,0.45)' : 'rgba(255,92,92,0.45)'}`,
+        color,
+        fontSize: 22,
+        fontWeight: 800,
+        letterSpacing: 0.5,
+        opacity: shown,
+        transform: `scale(${0.7 + 0.3 * shown})`,
+        alignSelf: 'center'
+      }}
+    >
+      <TrendArrow up={up} color={color} size={24} />
+      {changeLabel(from, to)}
+    </div>
   )
 }
 
@@ -222,8 +385,7 @@ function CompanyBadge({
   const value = interpolateValue(from, to, p)
   const counting = p > 0 && p < 1 && from !== null && to !== null && from !== to
   const up = to !== null && from !== null && to > from
-  const trend = to !== null && from !== null && to !== from ? (up ? '▲' : '▼') : null
-  const trendColor = up ? '#3ddc84' : '#ff5c5c'
+  const showChange = from !== null && to !== null && from > 0 && to > 0 && from !== to
   return (
     <div
       style={{
@@ -261,9 +423,10 @@ function CompanyBadge({
         <div
           style={{
             display: 'flex',
-            alignItems: 'baseline',
-            gap: 10,
-            justifyContent: side === 'left' ? 'flex-start' : 'flex-end',
+            alignItems: 'center',
+            gap: 12,
+            flexDirection: side === 'left' ? 'row' : 'row-reverse',
+            justifyContent: 'flex-start',
             fontSize: 42,
             fontWeight: 800,
             color: counting ? (up ? '#c9ffe0' : '#ffd4d4') : '#fff',
@@ -272,10 +435,12 @@ function CompanyBadge({
           }}
         >
           {value === null ? '—' : `$${formatUsd(value)}`}
-          {trend && (
-            <span style={{ fontSize: 24, color: trendColor, opacity: p < 1 ? 1 : 0.85 }}>
-              {trend}
-            </span>
+          {showChange && (
+            <TrendChip
+              from={from as number}
+              to={to as number}
+              shown={interpolate(p, [0, 0.3], [0, 1], clamp)}
+            />
           )}
         </div>
       </div>

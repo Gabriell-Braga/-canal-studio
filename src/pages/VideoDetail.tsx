@@ -7,6 +7,7 @@ import {
   type Video,
   type VideoDetail as Detail
 } from '../../shared/types'
+import { THUMB_KIND_LABELS, thumbKindOf } from '../../shared/render'
 import ScriptEditor from '../components/ScriptEditor'
 import { Banner, Button, Card, Field, inputClass, PageHeader } from '../components/ui'
 import { api, errorText, formatDate, mediaUrl, useLive } from '../lib/api'
@@ -486,12 +487,17 @@ function PublishTab({
                 key={p}
                 data-testid="thumb-option"
                 onClick={() => setChosen(i)}
-                className={`overflow-hidden rounded-md border-2 ${chosen === i ? 'border-brand-500' : 'border-transparent'}`}
+                className={`relative overflow-hidden rounded-md border-2 ${chosen === i ? 'border-brand-500' : 'border-transparent'}`}
               >
                 <img
                   src={mediaUrl(p, video.updated_at)}
                   className="aspect-video w-full object-cover"
                 />
+                {thumbKindOf(p) && (
+                  <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-white">
+                    {THUMB_KIND_LABELS[thumbKindOf(p) ?? 'ai']}
+                  </span>
+                )}
               </button>
             ))}
           </div>

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Scene } from '../shared/types'
 import { buildChapters, timestamp } from '../electron/steps/metadata'
 import { aiIndexes } from '../electron/steps/scenes'
-import { clampWords } from '../electron/steps/thumbnail'
+import { clampWords, layoutFor } from '../electron/steps/thumbnail'
+import { thumbKindOf } from '../shared/render'
 import { toPhrases } from '../remotion/Video'
 
 function scene(i: number, start: number, end: number): Scene {
@@ -34,6 +35,13 @@ describe('pipeline helpers', () => {
     expect(clampWords('The Last Voyage of the Octavius')).toBe('The Last Voyage')
     expect(clampWords('"Frozen in Time"')).toBe('Frozen in Time')
     expect(clampWords('Crew Still At Their Posts')).toBe('Crew Still')
+  })
+
+  it('labels thumbnail options by source and varies their layout', () => {
+    expect(thumbKindOf('C:/p/thumbs/thumb_2_stock.png')).toBe('stock')
+    expect(thumbKindOf('C:/p/thumbs/thumb_1.png')).toBeNull()
+    expect([0, 1, 2].map((n) => layoutFor('ai', n))).toEqual([0, 3, 2])
+    expect(layoutFor('split', 0)).toBe(4)
   })
 
   it('builds YouTube chapters starting at 0:00', () => {

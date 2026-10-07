@@ -8,7 +8,7 @@ import { unloadAll } from '../services/ollama'
 import { download } from '../services/pexels'
 import { gatherCandidates, PROVIDER_LABELS, searchReal, usableProviders } from '../services/stock'
 import type { StockCandidate } from '../services/pexels'
-import { pickRelevant } from './relevance'
+import { fillRealSubjects, pickRelevant } from './relevance'
 import { pythonPost } from '../services/python'
 import type { Step } from './types'
 
@@ -172,8 +172,18 @@ export const scenesStep: Step = {
     const s = ctx.settings
     const dir = join(ctx.projectDir, 'scenes')
     mkdirSync(dir, { recursive: true })
-    const scenes = listScenes(videoId)
+    let scenes = listScenes(videoId)
     const subject = getVideo(videoId).script?.companies?.[0]?.name ?? ''
+    if (!scenes.some((sc) => sc.real_subject)) {
+      try {
+        const found = await fillRealSubjects(scenes, getVideo(videoId).topic, s, ctx.signal)
+        found.forEach((real_subject, id) => updateScene(id, { real_subject }))
+        if (found.size) ctx.log(`Fotos reais: ${found.size} cena(s) citam pessoas ou eventos reais`)
+        scenes = listScenes(videoId)
+      } catch (error) {
+        ctx.log(`Não deu para marcar as cenas reais: ${(error as Error).message}`, 'warn')
+      }
+    }
     const wantAi = aiIndexes(scenes.length, s.aiImageRatio)
     const needAi: Scene[] = []
     const wantStock: Scene[] = []

@@ -9,6 +9,41 @@ const picksSchema = z.object({
 
 const BATCH = 8
 
+const subjectsSchema = z.object({
+  subjects: z.array(z.object({ scene: z.number().int(), real_subject: z.string() }))
+})
+
+/**
+ * Scripts written before real_subject existed: ask for it once, scene by scene, so the
+ * search can look for the real photo (Steve Jobs on stage in 2007) instead of generic stock.
+ */
+export async function fillRealSubjects(
+  scenes: Scene[],
+  topic: string,
+  settings: Settings,
+  signal?: AbortSignal
+): Promise<Map<number, string>> {
+  const result = new Map<number, string>()
+  for (let start = 0; start < scenes.length; start += BATCH * 2) {
+    const batch = scenes.slice(start, start + BATCH * 2)
+    const listing = batch.map((sc, i) => `SCENE ${i}: "${sc.narration}"`).join('\n')
+    const { subjects } = await generateStructured(
+      `These scenes come from a YouTube documentary about "${topic}". For each scene that is about a specific real person, product, place or event, give real_subject: the words that find a real photo of it on Wikimedia Commons, proper names first, plus the year or event when it helps (e.g. "Steve Jobs iPhone Macworld 2007", "Apple I computer", "Xerox Alto"). Use "" when the scene is generic.
+
+${listing}
+
+Return ONLY JSON: {"subjects": [{"scene": 0, "real_subject": "..."}, ...]} with one entry per scene.`,
+      subjectsSchema,
+      { settings, signal, temperature: 0.1, effort: 'low' }
+    )
+    for (const p of subjects) {
+      const scene = batch[p.scene]
+      if (scene && p.real_subject.trim()) result.set(scene.id, p.real_subject.trim())
+    }
+  }
+  return result
+}
+
 /**
  * Let the model choose, for each scene, the candidate whose description best fits what the
  * narration says at that moment, or none (-1) so the scene gets an AI image instead.

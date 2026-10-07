@@ -27,6 +27,8 @@ export interface SchedulerOptions {
   projectDir: (videoId: number) => string
   onBusyChange?: (busy: boolean) => void
   onEvent?: (event: QueueEvent) => void
+  /** Shorts of a video finished; they are approved at once if the video already is. */
+  onShortsDone?: (videoId: number) => void
   getVram?: () => Promise<{ used: number; total: number } | null>
   clock?: () => Date
   tickMs?: number
@@ -200,6 +202,7 @@ export class Scheduler {
 
     for (const job of pending) {
       if (job.run_after && job.run_after > date.toISOString()) continue
+      if (job.type === 'upload' && this.waitsForParent(job.video_id)) continue
       if (job.run_mode === 'night' && !nightOpen && !forceRun) continue
       if (job.gpu ? gpuBusy : cpuCount >= MAX_CPU_JOBS) continue
       if (job.run_mode === 'night' && !forceRun && !this.claimNightSlot(job, s.maxVideosPerNight)) {
@@ -211,6 +214,19 @@ export class Scheduler {
       else cpuCount++
       void this.runJob(job, step)
     }
+  }
+
+  /**
+   * A short links to its full video, so its upload waits while the full video's upload is
+   * still queued or running instead of failing and burning its retries.
+   */
+  private waitsForParent(videoId: number): boolean {
+    const v = findVideo(videoId)
+    if (v?.kind !== 'short' || !v.parent_id) return false
+    if (findVideo(v.parent_id)?.youtube_id) return false
+    return [...jobsByStatus('pending'), ...jobsByStatus('running')].some(
+      (j) => j.video_id === v.parent_id && j.type === 'upload'
+    )
   }
 
   /** A video counts against the nightly limit when its first production step starts. */
@@ -307,6 +323,7 @@ export class Scheduler {
       return
     }
     if (job.type === 'short') {
+      this.opts.onShortsDone?.(video.id)
       this.opts.onEvent?.({
         type: 'final-ready',
         videoId: video.id,

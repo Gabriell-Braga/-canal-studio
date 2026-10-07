@@ -9,7 +9,15 @@ import {
 } from '../../shared/types'
 import { THUMB_KIND_LABELS, thumbKindOf } from '../../shared/render'
 import ScriptEditor from '../components/ScriptEditor'
-import { Banner, Button, Card, Field, inputClass, PageHeader } from '../components/ui'
+import {
+  Banner,
+  Button,
+  Card,
+  Field,
+  inlineCheckClass,
+  inputClass,
+  PageHeader
+} from '../components/ui'
 import { api, errorText, formatDate, mediaUrl, useLive } from '../lib/api'
 import { Smartphone, Sparkles, Trash2 } from 'lucide-react'
 import DeleteVideoModal from '../components/DeleteVideoModal'
@@ -207,9 +215,7 @@ export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.El
       {activeTab === 'audio' && <AudioTab video={video} />}
       {activeTab === 'scenes' && <ScenesTab data={data} act={act} />}
       {activeTab === 'video' && <VideoTab video={video} act={act} busy={!!running} />}
-      {activeTab === 'shorts' && (
-        <ShortsTab video={video} act={act} busy={!!running} onOpen={onOpen} />
-      )}
+      {activeTab === 'shorts' && <ShortsTab video={video} act={act} busy={!!running} />}
       {activeTab === 'publish' && <PublishTab video={video} act={act} />}
       {activeTab === 'log' && <LogTab data={data} />}
     </div>
@@ -542,7 +548,7 @@ function PublishTab({
               onChange={(e) => setWhen(e.target.value)}
             />
           </Field>
-          <label className="flex items-center gap-2 self-end text-sm">
+          <label className={inlineCheckClass}>
             <input
               type="checkbox"
               className="h-4 w-4"
@@ -605,16 +611,15 @@ function LogTab({ data }: { data: Detail }): React.JSX.Element {
 function ShortsTab({
   video,
   act,
-  busy,
-  onOpen
+  busy
 }: {
   video: Video
   act: (fn: () => Promise<unknown>, ok: string) => Promise<void>
   busy: boolean
-  onOpen?: (id: number) => void
 }): React.JSX.Element {
   const { data: shorts = [] } = useLive(() => api.videos.shorts(video.id), ['videos'], [video.id])
   const [count, setCount] = useState(2)
+  const [deleting, setDeleting] = useState<Video | null>(null)
   return (
     <div className="space-y-5">
       <Card className="flex flex-wrap items-center gap-4 p-5">
@@ -624,7 +629,7 @@ function ShortsTab({
             A IA escolhe os trechos mais fortes (18–52 s), monta em vertical 9:16 com legendas e
             fecha com uma tela “assista ao vídeo completo” narrada na voz do canal. Os shorts saem
             no mesmo dia do vídeo completo: o primeiro meia hora depois dele, os outros de meia em
-            meia hora.
+            meia hora. Eles são aprovados junto com o vídeo, sem revisão separada.
           </p>
         </div>
         <select
@@ -669,37 +674,65 @@ function ShortsTab({
                 <div className="flex items-center justify-between">
                   <Badge
                     tone={
-                      s.status === 'FINAL_REVIEW'
-                        ? 'warn'
-                        : s.status === 'ERROR'
-                          ? 'error'
-                          : s.status === 'SCHEDULED' || s.status === 'PUBLISHED'
-                            ? 'ok'
-                            : 'neutral'
+                      s.status === 'ERROR'
+                        ? 'error'
+                        : s.status === 'SCHEDULED' || s.status === 'PUBLISHED'
+                          ? 'ok'
+                          : 'neutral'
                     }
                   >
-                    {STATUS_LABELS[s.status]}
+                    {s.status === 'FINAL_REVIEW' ? 'Pronto' : STATUS_LABELS[s.status]}
                   </Badge>
                   <span className="text-xs text-ink-500">
                     {Math.round((s.short_end ?? 0) - (s.short_start ?? 0))} s
                   </span>
                 </div>
-                {onOpen && (
+                <div className="text-xs text-ink-400" data-testid="short-when">
+                  {s.scheduled_at
+                    ? `Publica em ${formatDate(s.scheduled_at)}`
+                    : s.status === 'FINAL_REVIEW'
+                      ? 'Aprovado junto com o vídeo'
+                      : ''}
+                </div>
+                {s.error_message && s.status === 'ERROR' && (
+                  <div className="line-clamp-2 text-xs text-red-300">{s.error_message}</div>
+                )}
+                <div className="flex gap-2">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="w-full"
-                    onClick={() => onOpen(s.id)}
+                    className="flex-1"
+                    disabled={!!s.youtube_id || busy}
+                    title="Cortar outro trecho no lugar deste"
+                    onClick={() =>
+                      act(() => api.videos.retryFrom(s.id, 'short'), 'Novo short na fila.')
+                    }
                   >
-                    Revisar e aprovar
+                    Refazer
                   </Button>
-                )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label="Excluir short"
+                    title="Excluir"
+                    onClick={() => setDeleting(s)}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
               </div>
             </Card>
           ))}
         </div>
       ) : (
         <p className="text-sm text-ink-500">Nenhum short gerado ainda.</p>
+      )}
+      {deleting && (
+        <DeleteVideoModal
+          video={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => setDeleting(null)}
+        />
       )}
     </div>
   )

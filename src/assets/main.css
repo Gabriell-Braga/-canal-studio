@@ -108,6 +108,16 @@
   input[type='range'] {
     accent-color: var(--color-brand-400);
   }
+
+  /* Native controls (date/time pickers, select popups) drawn for a dark background. */
+  :root {
+    color-scheme: dark;
+  }
+
+  ::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.8;
+  }
 }
 
 /* Custom title bar: the strip can drag the window; controls inside must not. */

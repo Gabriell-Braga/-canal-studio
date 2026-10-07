@@ -94,6 +94,13 @@ export function Banner({
 export const inputClass =
   'w-full rounded-lg border border-ink-700 bg-ink-950/60 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-500 transition-colors hover:border-ink-600 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/20'
 
+/**
+ * Checkbox beside a Field in a two-column grid: skips the Field's label and matches the
+ * input's height, so it lines up with the input instead of with the hint below it.
+ */
+export const inlineCheckClass =
+  'flex min-h-[38px] items-center gap-2 self-start text-sm md:mt-[25.5px]'
+
 export function Field({
   label,
   hint,

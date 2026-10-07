@@ -4,6 +4,7 @@ import {
   createVideo,
   deleteVideo,
   enqueueJob,
+  findVideo,
   getVideo,
   listShorts,
   replaceScenes,
@@ -89,7 +90,10 @@ export class Pipeline {
     this.scheduler.kick()
   }
 
-  /** Second human approval. Only here does a video get a publish slot and an upload job. */
+  /**
+   * Second human approval. Only here does a video get a publish slot and an upload job.
+   * Approving a full video approves its finished shorts too.
+   */
   approveFinal(id: number): Video {
     const v = getVideo(id)
     if (v.status !== 'FINAL_REVIEW') throw new Error('O vídeo não está em revisão final')
@@ -98,8 +102,27 @@ export class Pipeline {
       v.scheduled_at ?? (v.kind === 'short' ? this.shortSlot(v) : this.nextSlot(v.channel_id))
     const updated = updateVideo(id, { status: 'SCHEDULED', scheduled_at: scheduledAt })
     enqueueJob(id, 'upload', 'night')
+    if (v.kind === 'long') this.approveShorts(id)
     this.scheduler.kick()
     return updated
+  }
+
+  /**
+   * Shorts follow their full video: once it is approved, every finished short is approved
+   * with it. Runs on approval, when shorts finish and at startup (shorts cut before this rule).
+   */
+  approveShorts(parentId: number): void {
+    const parent = findVideo(parentId)
+    if (!parent || !['SCHEDULED', 'PUBLISHED'].includes(parent.status)) return
+    for (const short of listShorts(parentId)) {
+      if (short.status === 'FINAL_REVIEW' && short.video_path) this.approveFinal(short.id)
+    }
+  }
+
+  approveAllShorts(): void {
+    for (const v of [...videosByStatus('SCHEDULED'), ...videosByStatus('PUBLISHED')]) {
+      if (v.kind === 'long') this.approveShorts(v.id)
+    }
   }
 
   rejectFinal(id: number, fromStep: JobType): void {

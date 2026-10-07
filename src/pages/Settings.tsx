@@ -13,6 +13,7 @@ import {
   Card,
   ChannelAvatar,
   Field,
+  inlineCheckClass,
   inputClass,
   PageHeader
 } from '../components/ui'
@@ -455,7 +456,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
                   <option value="sonnet">Claude Sonnet 5.5</option>
                 </select>
               </Field>
-              <label className="flex items-center gap-2 self-end text-sm text-ink-200">
+              <label className={`${inlineCheckClass} text-ink-200`}>
                 <input
                   type="checkbox"
                   className="h-4 w-4"
@@ -868,7 +869,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               onChange={(e) => set('publishTimezone', e.target.value)}
             />
           </Field>
-          <label className="flex items-center gap-2 self-end text-sm">
+          <label className={inlineCheckClass}>
             <input
               type="checkbox"
               className="h-4 w-4"
@@ -943,7 +944,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               <option value="mixed">Misto: destaques e texto sobre a imagem</option>
             </select>
           </Field>
-          <label className="flex items-center gap-2 self-end text-sm text-ink-200">
+          <label className={`${inlineCheckClass} text-ink-200`}>
             <input
               type="checkbox"
               className="h-4 w-4"
@@ -993,7 +994,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               onChange={(e) => set('shortsCount', Math.max(1, Math.min(5, num(e.target.value))))}
             />
           </Field>
-          <label className="flex items-center gap-2 self-end text-sm text-ink-200">
+          <label className={`${inlineCheckClass} text-ink-200`}>
             <input
               type="checkbox"
               className="h-4 w-4"

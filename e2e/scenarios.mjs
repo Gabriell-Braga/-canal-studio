@@ -557,7 +557,7 @@ async function stock({ launch, api, log }) {
 
 scenarios.stock = stock
 
-/** Shorts: cut 2 vertical shorts from a finished video, approve one. */
+/** Shorts: cut 2 vertical shorts from a finished video; approving the video approves them. */
 async function shorts({ launch, api, shot, log, waitUntil }) {
   const { execFileSync } = await import('child_process')
   const { app, page } = await launch()
@@ -576,7 +576,11 @@ async function shorts({ launch, api, shot, log, waitUntil }) {
       if (failed) throw new Error(failed.error_message)
       const state = await api(page, 'queue.state')
       const job = [...state.running, ...state.pending].find((j) => j.type === 'short')
-      return !job && list.filter((s) => s.status === 'FINAL_REVIEW').length >= 2 && list
+      return (
+        !job &&
+        list.filter((s) => ['FINAL_REVIEW', 'SCHEDULED'].includes(s.status)).length >= 2 &&
+        list
+      )
     },
     { label: 'shorts', timeoutMs: 30 * 60_000, everyMs: 5000 }
   )
@@ -602,14 +606,18 @@ async function shorts({ launch, api, shot, log, waitUntil }) {
   }
   await page.waitForTimeout(1500)
   await shot(page, 'shorts-tab')
-  await page.getByText('Revisar e aprovar').first().click()
-  await page.getByTestId('tab-publish').waitFor()
-  await shot(page, 'short-detail')
-  await page.getByTestId('approve-final').click()
-  await page.getByText('Aprovado e agendado').waitFor()
-  const approved = await api(page, 'videos.get', done[0].id)
-  log(`Short agendado para ${new Date(approved.video.scheduled_at).toLocaleString('pt-BR')}`)
-  assert(approved.video.status === 'SCHEDULED', 'short scheduled')
+  if ((await api(page, 'videos.get', video.id)).video.status === 'FINAL_REVIEW') {
+    await page.getByTestId('approve-final').click()
+    await page.getByText('Aprovado e agendado').waitFor()
+  }
+  const parent = (await api(page, 'videos.get', video.id)).video
+  const approved = (await api(page, 'videos.get', done[0].id)).video
+  log(`Short agendado para ${new Date(approved.scheduled_at).toLocaleString('pt-BR')}`)
+  assert(approved.status === 'SCHEDULED', 'short approved with the full video')
+  assert(
+    new Date(approved.scheduled_at) - new Date(parent.scheduled_at) >= 30 * 60_000,
+    'short 30 min after the full video'
+  )
   await app.close()
   return done
 }

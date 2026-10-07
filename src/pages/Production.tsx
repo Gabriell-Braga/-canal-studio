@@ -62,7 +62,9 @@ function Stat({
 
 export default function Production({ onOpen, onReview }: Props): React.JSX.Element {
   const { channel } = useChannel()
-  const { data: videos = [] } = useLive(() => api.videos.list(channel.id), ['videos'], [channel.id])
+  const { data: all = [] } = useLive(() => api.videos.list(channel.id), ['videos'], [channel.id])
+  // Shorts live inside their full video (Shorts tab), not as cards of their own.
+  const videos = all.filter((v) => v.kind === 'long')
   const [text, setText] = useState('')
   const [duration, setDuration] = useState('')
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)

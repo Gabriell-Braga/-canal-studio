@@ -9,48 +9,120 @@ Sem a auditoria, todo vídeo enviado pela API fica travado como privado. Este gu
    - Política de privacidade: `https://gabriell-braga.github.io/-canal-studio/privacy.html`
 2. **E-mail de contato.** A política de privacidade usa `gabribragandrade@gmail.com`, o mesmo e-mail da tela de consentimento OAuth.
 3. **Tela de consentimento OAuth** (Google Cloud → *Google Auth Platform*):
-   - *Branding*: preencha a página inicial e a política de privacidade com os links acima.
+   - *Branding*: preencha a página inicial, a política de privacidade e os termos de serviço (`https://gabriell-braga.github.io/-canal-studio/terms.html`).
    - *Público-alvo*: clique em **Publicar app** (status "Em produção"). Reconecte cada canal uma vez no Canal Studio. O login para de vencer a cada 7 dias.
    - Não precisa pedir a verificação do app. O aviso "app não verificado" só aparece para você, e uso próprio é permitido.
-4. **Gravar o vídeo de tela** (roteiro na seção 3) e subir no YouTube como **não listado**.
+4. **Gravar o vídeo de tela** (roteiro na seção 3) e subir no YouTube como **não listado**. O formulário não tem campo de vídeo: o link vai nas instruções de acesso, e as capturas saem do vídeo.
 
 ## 2. Formulário
 
-Entre no Google com a conta principal (`gabribragandrade@gmail.com`), dona do projeto, e abra o formulário **YouTube API Services – Audit and Quota Extension Form**: `https://support.google.com/youtube/contact/yt_api_form`. Escolha a opção de auditoria (*I want to have my API client audited*). Os nomes dos campos mudam um pouco com o tempo; use a resposta do campo mais parecido.
+Entre no Google com a conta principal (`gabribragandrade@gmail.com`), dona do projeto, e abra `https://support.google.com/youtube/contact/yt_api_form`. O formulário tem 5 secções. As respostas de texto estão em inglês porque a equipe do Google lê em inglês.
 
-**Project number:** o número do projeto, só dígitos (Google Cloud → Página inicial → card "Informações do projeto" → "Número do projeto"). Não confunda com o ID do projeto, `project-7c0dd44f-35ae-4636-9fa`. Se o formulário também pedir o ID, use esse.
+### Arquivos para anexar
 
-**API client name:** `Canal Studio`
+Junte tudo numa pasta antes de começar (sugestão: `Documentos\auditoria-youtube`).
 
-**Website / link to the API client:** `https://gabriell-braga.github.io/-canal-studio/`
+| Arquivo | Como conseguir |
+|---|---|
+| `1-pagina-inicial.png` | Página inicial com os links da política e dos termos (já gerado) |
+| `2-politica-privacidade.png` | Política de privacidade inteira (já gerado) |
+| `3-termos-de-servico.png` | Termos de serviço inteiros (já gerado) |
+| `4-evidencias.pdf` | Um PDF com as capturas abaixo, nesta ordem |
 
-**Privacy policy URL:** `https://gabriell-braga.github.io/-canal-studio/privacy.html`
+Capturas do `4-evidencias.pdf` (tire do vídeo de tela ou com Win + Shift + S):
 
-**Who uses the API client?**
-> Only me. Canal Studio is a private desktop app that I use to publish videos to my own YouTube channels. It has no other users, no public sign-up and no backend server.
+1. Tela de consentimento do Google com os 4 escopos e a barra de endereço.
+2. Tela **YouTube** do app com o canal conectado e o botão *Desconectar*.
+3. `myaccount.google.com/permissions` mostrando o Canal Studio com acesso (revogação).
+4. Aprovação final de um vídeo com "conteúdo alterado/sintético" marcado.
+5. Fila de upload com o vídeo enviado.
+6. O vídeo no YouTube Studio com título, thumbnail e legendas.
+7. Métricas do canal na tela **YouTube**.
 
-**Describe your API client and how it uses YouTube API Services:**
-> Canal Studio is a Windows desktop app that I built to produce documentary videos for my own YouTube channels. I choose the topics, the app drafts a script with AI and fact-checks it, and I review, edit and approve every script. The app then records the narration, builds the visuals from licensed stock footage and AI images, and renders the video on my computer. I watch the final video and approve it before anything is uploaded.
+### Secção 1: tipo de pedido
+
+- **Compliance audit to request additional quota** (auditoria para pedir quota adicional). É a opção para quem nunca passou por auditoria. A outra opção é só para quem já foi auditado.
+
+### Secção 2: organização e contactos
+
+| Campo | Resposta |
+|---|---|
+| Pedido feito | **As individual person** (pessoa individual) |
+| Full name | seu nome completo |
+| Organization legal name | `self` |
+| Parent company | `self` |
+| Main website | `https://gabriell-braga.github.io/-canal-studio/` |
+| País / morada / cidade / estado / CEP | sua morada real no Brasil |
+| Category | **Tools and Services for Content Creators** |
+| Organization size/type | **Independent developer/sole proprietor** |
+| Primary contact | seu nome e `gabribragandrade@gmail.com` |
+| Technical contact | marque **Same as primary contact** |
+| Business contact | marque **Same as primary contact** |
+
+### Secção 3: modelo de negócio e contactos da Google
+
+**Describe your organization's work as it relates to YouTube:**
+> I am an independent developer and YouTube creator. Canal Studio is a private Windows desktop app that I built for myself to produce documentary videos for my own YouTube channels. It has no other users, no public sign-up and no backend server.
 >
-> The app uses the YouTube Data API v3 to upload the approved video (videos.insert) as private with a scheduled publish time (status.publishAt), with the "altered or synthetic content" disclosure set (status.containsSyntheticMedia). It then sets my custom thumbnail (thumbnails.set) and uploads English subtitles generated from the narration (captions.insert). It reads my own channel name and picture (channels.list). The YouTube Analytics API (reports.query) shows me the views, watch time, average view duration and subscribers gained of the videos the app uploaded.
+> I choose the topics, the app drafts a script with AI and fact-checks it, and I review, edit and approve every script. The app then records the narration, builds the visuals from licensed stock footage and AI images, and renders the video on my computer. I watch the final video and approve it before anything is uploaded.
 >
-> The app runs only on my computer. OAuth tokens are encrypted with Windows DPAPI and stored locally. No YouTube data is sent to any other service or shared with anyone.
+> The app uses the YouTube Data API v3 to upload the approved video as private with a scheduled publish time (status.publishAt), with the "altered or synthetic content" disclosure set (status.containsSyntheticMedia). It then sets my custom thumbnail (thumbnails.set), uploads English subtitles generated from the narration (captions.insert) and reads my own channel name and picture (channels.list). The YouTube Analytics API shows me the views, watch time, average view duration and subscribers gained of the videos the app uploaded.
+>
+> The value for me: one reviewed workflow from idea to scheduled upload, with a human approval at every step. I am requesting this audit because unaudited projects have every upload locked as private, so the scheduled publish time is ignored. The default quota is enough; I am not asking for more quota.
 
-**Which API services do you use?** YouTube Data API v3 e YouTube Analytics API.
+| Campo | Resposta |
+|---|---|
+| Público-alvo | **Utilizadores internos** (só esta) |
+| Monetização | **No-cost service** (serviço gratuito) |
+| Representante da Google | **I have no Google representative** |
+| Como conheceu a API | **Google Developers documentation** |
+| Content Owner IDs | deixe vazio |
+| Google Ads Client IDs | deixe vazio |
 
-**Which OAuth scopes do you request?**
-> youtube.upload, youtube.force-ssl, youtube.readonly, yt-analytics.readonly
+### Secção 4: cliente da API
 
-**Why do the uploaded videos need to be public?**
-> The app schedules each approved video with status.publishAt so YouTube publishes it at my chosen time. Without the audit, every upload is locked as private and the schedule is ignored, so I have to publish each video by hand in YouTube Studio.
+| Campo | Resposta |
+|---|---|
+| API client name | `Canal Studio` |
+| Nome contém "YouTube" | **No** |
+| Primary access URL | `https://gabriell-braga.github.io/-canal-studio/` |
+| Privacy policy URL | `https://gabriell-braga.github.io/-canal-studio/privacy.html` |
+| Terms of service URL | `https://gabriell-braga.github.io/-canal-studio/terms.html` |
+| Acesso público | **No** |
+| Demo account username / password / login URL | deixe vazio (se for obrigatório, escreva `N/A`) |
+| Confirmação das credenciais | marque |
 
-**Expected usage:**
-> About 1 long video and 2 Shorts per day across my channels: around 3 to 6 uploads per day. The default quota of 10,000 units per day is enough; I am not asking for more quota.
+**Special access instructions:**
+> Canal Studio is a private Windows desktop app with no web login and no accounts, so there is no demo account. It runs only on my computer and signs in with Google OAuth to my own channel. A screencast of the full flow (OAuth consent, script review, final approval, upload, channel statistics and revoking access) is here: <LINK DO VÍDEO NÃO LISTADO>. Screenshots are attached in the compliance evidence.
 
-**Link to a demo video:** o link do vídeo não listado da seção 3.
+### Secção 5: casos de uso e quota
 
-**How do you comply with the YouTube API Services Terms and Developer Policies?**
-> Every video is reviewed and approved by me twice before upload: once as a script and once as the finished video. The app sets the altered or synthetic content disclosure on every upload, uses only stock media whose license allows this use and credits authors when the license requires it, and shows only my own channel's data to me. Users can revoke access in the app (Desconectar) or at myaccount.google.com/permissions, and the privacy policy explains what is stored and how to delete it.
+| Campo | Resposta |
+|---|---|
+| Number of projects | **1** |
+| Google Cloud project number | só os dígitos (Google Cloud → Página inicial → "Número do projeto"; o ID é `project-7c0dd44f-35ae-4636-9fa`) |
+| Use case categories | **Video uploading and account management** e **Internal company tool** |
+| OAuth 2.0 login | **Yes** |
+| Derived metrics and data storage | marque |
+| Expected API usage | **Less than 1,000 requests/day** |
+| Privacy policy screenshots | `2-politica-privacidade.png` |
+| Homepage screenshot | `1-pagina-inicial.png` |
+| Terms of service | `3-termos-de-servico.png` |
+| Conditional evidence | `4-evidencias.pdf` |
+| Endpoints | `youtube.videos.insert`, `youtube.thumbnails.set`, `youtube.captions.insert`, `youtube.channels.list` |
+| Total quota | **No change / Default quota (10,000 quota points)** |
+
+Ao marcar `youtube.videos.insert`, o formulário pede uma quota própria:
+
+| Campo | Resposta |
+|---|---|
+| Total daily quota | `100` |
+| Maximum per minute | `2` |
+
+**Justification:**
+> I upload about 1 long video and 2 Shorts per day across my own channels, so 3 to 6 videos.insert calls per day. The default allocation is enough and I am not asking for more. I am submitting this audit only so that uploads are no longer locked as private and the scheduled publish time (status.publishAt) works. Every video is reviewed and approved by me before upload and carries the altered or synthetic content disclosure.
+
+Revise tudo e clique em **Enviar**. Guarde o e-mail de confirmação.
 
 ## 3. Roteiro do vídeo de tela (3 a 5 minutos)
 

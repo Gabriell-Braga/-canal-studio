@@ -72,3 +72,35 @@ export function brandColorsFromImage(file: string): { primary: string; secondary
     secondary: other ? toHex(other.h, other.s * 0.5, 0.92) : '#ffffff'
   }
 }
+
+/**
+ * Average color of the picture's border: the background a logo sits on. The channel intro
+ * fills the screen with it, so the picture blends into the card.
+ */
+export function edgeColor(file: string): string | null {
+  const image = nativeImage.createFromPath(file)
+  if (image.isEmpty()) return null
+  const size = 48
+  const bitmap = image.resize({ width: size, height: size }).toBitmap() // BGRA
+  let r = 0
+  let g = 0
+  let b = 0
+  let n = 0
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (x > 1 && x < size - 2 && y > 1 && y < size - 2) continue
+      const i = (y * size + x) * 4
+      if (bitmap[i + 3] < 128) continue
+      b += bitmap[i]
+      g += bitmap[i + 1]
+      r += bitmap[i + 2]
+      n++
+    }
+  }
+  if (!n) return null
+  const hex = (v: number): string =>
+    Math.round(v / n)
+      .toString(16)
+      .padStart(2, '0')
+  return `#${hex(r)}${hex(g)}${hex(b)}`
+}

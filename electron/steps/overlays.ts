@@ -8,7 +8,8 @@ import {
   type RenderCompany,
   type YearCard
 } from '../../shared/render'
-import type { Scene, ScriptCompany, Settings, Video } from '../../shared/types'
+import type { PublishSlot, Scene, ScriptCompany, Settings, Video } from '../../shared/types'
+import { edgeColor } from '../services/brand'
 import { getChannel, updateVideo } from '../db/repo'
 import { generateStructured } from '../services/llm'
 import { fetchLogos } from '../services/logos'
@@ -31,11 +32,35 @@ export function channelIntroProps(channelId: number, s: Settings, root: string):
   return {
     name: channel.name,
     avatar,
+    background: channel.avatar_path ? edgeColor(channel.avatar_path) : null,
+    schedule: scheduleLabel(s.publishSlots, s.publishTimezone),
     tagline: s.introTagline.trim(),
     primary: s.brandPrimary,
     secondary: s.brandSecondary,
     font: s.brandFont
   }
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** "New video every day · 2 PM ET", "New videos Mon · Wed · Fri · 2 PM ET". */
+export function scheduleLabel(slots: PublishSlot[], timezone: string): string {
+  const days = [...new Set(slots.map((s) => s.weekday))].sort((a, b) => a - b)
+  if (!days.length) return ''
+  let when: string
+  if (days.length === 7) when = 'New video every day'
+  else if (days.join() === '1,2,3,4,5') when = 'New videos every weekday'
+  else if (days.length === 1) when = `New video every ${DAY_NAMES[days[0]]}`
+  else when = `New videos ${days.map((d) => DAY_NAMES[d]).join(' · ')}`
+  const times = [...new Set(slots.map((s) => s.time))]
+  if (times.length !== 1) return when
+  const [h, m] = times[0].split(':').map(Number)
+  const clock = `${h % 12 || 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${h < 12 ? 'AM' : 'PM'}`
+  const zone =
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone, timeZoneName: 'shortGeneric' })
+      .formatToParts(new Date())
+      .find((p) => p.type === 'timeZoneName')?.value ?? ''
+  return `${when} · ${clock}${zone ? ` ${zone}` : ''}`
 }
 
 function url(root: string, file: string): string {

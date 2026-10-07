@@ -60,3 +60,22 @@ describe('company values', () => {
     expect(formatUsd(0)).toBe('0')
   })
 })
+
+describe('channel intro schedule', async () => {
+  const { scheduleLabel } = await import('../electron/steps/overlays')
+  const at = (days: number[], time = '14:00'): { weekday: number; time: string }[] =>
+    days.map((weekday) => ({ weekday, time }))
+
+  it('says how often videos come out', () => {
+    expect(scheduleLabel(at([0, 1, 2, 3, 4, 5, 6]), 'America/New_York')).toBe(
+      'New video every day · 2 PM ET'
+    )
+    expect(scheduleLabel(at([1, 3, 5], '09:30'), 'America/New_York')).toBe(
+      'New videos Mon · Wed · Fri · 9:30 AM ET'
+    )
+    expect(scheduleLabel(at([1, 2, 3, 4, 5]), 'America/New_York')).toBe(
+      'New videos every weekday · 2 PM ET'
+    )
+    expect(scheduleLabel([], 'America/New_York')).toBe('')
+  })
+})

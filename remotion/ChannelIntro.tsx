@@ -17,6 +17,112 @@ import type { ChannelIntroProps } from '../shared/render'
 
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const
 
+const SLICES = 7
+const LOGO = 300
+
+/** The channel picture cut into vertical strips that fly in from above and below and lock together. */
+function AssemblingLogo({
+  src,
+  frame,
+  fps
+}: {
+  src: string
+  frame: number
+  fps: number
+}): React.JSX.Element {
+  const settle = spring({ frame: frame - 24, fps, config: { damping: 14, stiffness: 90 } })
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: LOGO,
+        height: LOGO,
+        transform: `scale(${1.08 - 0.08 * settle})`,
+        // Soft edge: the picture melts into the card, which has the same color.
+        maskImage: 'radial-gradient(circle, black 52%, transparent 71%)',
+        WebkitMaskImage: 'radial-gradient(circle, black 52%, transparent 71%)'
+      }}
+    >
+      {Array.from({ length: SLICES }, (_, i) => {
+        const p = spring({
+          frame: frame - 2 - i * 2,
+          fps,
+          config: { damping: 15, stiffness: 140, mass: 0.8 }
+        })
+        const from = i % 2 === 0 ? -1 : 1
+        const left = (i / SLICES) * 100
+        const right = 100 - ((i + 1) / SLICES) * 100
+        return (
+          <Img
+            key={i}
+            src={src}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: LOGO,
+              height: LOGO,
+              objectFit: 'cover',
+              // A hair of overlap so no seam shows once the strips meet.
+              clipPath: `inset(0 ${Math.max(0, right - 0.3)}% 0 ${Math.max(0, left - 0.3)}%)`,
+              transform: `translateY(${(1 - p) * from * 140}%) rotate(${(1 - p) * from * 8}deg)`,
+              opacity: Math.min(1, p * 2)
+            }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+/** Each letter drops into place, one after the other. */
+function AssembledText({
+  text,
+  frame,
+  fps,
+  start,
+  style
+}: {
+  text: string
+  frame: number
+  fps: number
+  start: number
+  style: React.CSSProperties
+}): React.JSX.Element {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', ...style }}>
+      {[...text].map((ch, i) => {
+        const p = spring({
+          frame: frame - start - i * 1.2,
+          fps,
+          config: { damping: 13, stiffness: 160 }
+        })
+        return (
+          <span
+            key={i}
+            style={{
+              display: 'inline-block',
+              whiteSpace: 'pre',
+              opacity: p,
+              transform: `translateY(${(1 - p) * -60}px) scale(${0.6 + 0.4 * p})`
+            }}
+          >
+            {ch}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+function CalendarIcon({ color }: { color: string }): React.JSX.Element {
+  return (
+    <svg width={26} height={26} viewBox="0 0 24 24" fill="none" style={{ display: 'block' }}>
+      <rect x={3} y={5} width={18} height={16} rx={3} stroke={color} strokeWidth={2} />
+      <path d="M3 10 H21 M8 3 V7 M16 3 V7" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function ChannelIntroCard({
   intro,
   seconds
@@ -27,107 +133,101 @@ export function ChannelIntroCard({
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = frame / fps
-  const fade = interpolate(t, [0, 0.3, seconds - 0.4, seconds], [0, 1, 1, 0], clamp)
-  const pop = spring({ frame: frame - 4, fps, config: { damping: 11, stiffness: 120 } })
-  const ring = interpolate(t, [0.1, 1.1], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) })
-  const wipe = interpolate(t, [0.45, 1.15], [0, 100], {
-    ...clamp,
-    easing: Easing.inOut(Easing.cubic)
-  })
-  const tag = interpolate(t, [1.1, 1.6], [0, 1], clamp)
-  const sweep = interpolate(t, [0.3, 2.2], [-30, 130], clamp)
-  const drift = interpolate(t, [0, seconds], [1, 1.06])
+  const fade = interpolate(t, [0, 0.25, seconds - 0.4, seconds], [0, 1, 1, 0], clamp)
+  // The whole card sits on the color of the channel picture, so the picture blends in.
+  const bg = intro.background ?? intro.primary
   const font = `"${intro.font}", "Segoe UI Black", "Arial Black", sans-serif`
+  const line = interpolate(t, [1.1, 1.7], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) })
+  const tag = interpolate(t, [1.5, 2.0], [0, 1], clamp)
+  const sched = spring({ frame: frame - Math.round(2.1 * fps), fps, config: { damping: 14 } })
+  const drift = interpolate(t, [0, seconds], [1, 1.05])
+  const shine = interpolate(t, [0.9, 2.2], [-40, 140], clamp)
   return (
-    <AbsoluteFill style={{ opacity: fade, backgroundColor: '#050608', overflow: 'hidden' }}>
+    <AbsoluteFill style={{ opacity: fade, backgroundColor: bg, overflow: 'hidden' }}>
       <AbsoluteFill
         style={{
           transform: `scale(${drift})`,
-          background: `radial-gradient(circle at 50% 45%, ${intro.primary}38 0%, transparent 55%), radial-gradient(circle at 80% 90%, ${intro.primary}18 0%, transparent 45%)`
+          background: 'radial-gradient(circle at 50% 120%, rgba(0,0,0,0.45) 0%, transparent 60%)'
         }}
       />
-      {/* Fine lines that sweep across once, like light on glass. */}
       <AbsoluteFill
         style={{
-          background: `linear-gradient(105deg, transparent ${sweep - 8}%, ${intro.primary}22 ${sweep}%, transparent ${sweep + 8}%)`
+          background: `linear-gradient(105deg, transparent ${shine - 10}%, rgba(255,255,255,0.12) ${shine}%, transparent ${shine + 10}%)`
         }}
       />
-      <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', gap: 34 }}>
-        {intro.avatar && (
-          <div style={{ position: 'relative', width: 230, height: 230 }}>
-            <svg
-              width={270}
-              height={270}
-              viewBox="0 0 270 270"
-              style={{ position: 'absolute', left: -20, top: -20 }}
-            >
-              <circle
-                cx={135}
-                cy={135}
-                r={128}
-                fill="none"
-                stroke={intro.primary}
-                strokeWidth={5}
-                strokeLinecap="round"
-                strokeDasharray={2 * Math.PI * 128}
-                strokeDashoffset={2 * Math.PI * 128 * (1 - ring)}
-                transform="rotate(-90 135 135)"
-                style={{ filter: `drop-shadow(0 0 12px ${intro.primary})` }}
-              />
-            </svg>
-            <Img
-              src={intro.avatar}
-              style={{
-                width: 230,
-                height: 230,
-                borderRadius: '50%',
-                objectFit: 'cover',
-                transform: `scale(${0.5 + 0.5 * pop})`,
-                opacity: Math.min(1, pop * 1.5)
-              }}
-            />
-          </div>
-        )}
-        <div
+      <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>
+        {intro.avatar && <AssemblingLogo src={intro.avatar} frame={frame} fps={fps} />}
+        <AssembledText
+          text={intro.name.toUpperCase()}
+          frame={frame}
+          fps={fps}
+          start={Math.round(0.65 * fps)}
           style={{
+            marginTop: 36,
             fontFamily: font,
             fontWeight: 900,
-            fontSize: 112,
+            fontSize: 104,
             lineHeight: 1,
-            letterSpacing: 4,
+            letterSpacing: 5,
             color: intro.secondary,
-            textTransform: 'uppercase',
-            clipPath: `inset(0 ${100 - wipe}% 0 0)`,
-            textShadow: '0 8px 40px rgba(0,0,0,0.6)'
+            textShadow: '0 8px 30px rgba(0,0,0,0.35)'
           }}
-        >
-          {intro.name}
-        </div>
+        />
         <div
           style={{
+            marginTop: 26,
             height: 4,
-            width: 520 * ring,
+            width: 460 * line,
             borderRadius: 2,
-            background: intro.primary,
-            boxShadow: `0 0 18px ${intro.primary}`
+            background: intro.secondary,
+            opacity: 0.85
           }}
         />
         {intro.tagline && (
           <div
             style={{
+              marginTop: 22,
               fontFamily: '"Segoe UI", Arial, sans-serif',
               fontSize: 44,
               fontWeight: 600,
-              letterSpacing: 2,
-              color: 'rgba(255,255,255,0.86)',
-              opacity: tag,
-              transform: `translateY(${(1 - tag) * 16}px)`
+              letterSpacing: 1.5,
+              color: intro.secondary,
+              opacity: tag * 0.92,
+              transform: `translateY(${(1 - tag) * 18}px)`
             }}
           >
             {intro.tagline}
           </div>
         )}
       </AbsoluteFill>
+      {intro.schedule && (
+        <AbsoluteFill
+          style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 70 }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '10px 24px',
+              borderRadius: 999,
+              background: 'rgba(0,0,0,0.28)',
+              border: '1px solid rgba(255,255,255,0.3)',
+              fontFamily: '"Segoe UI", Arial, sans-serif',
+              fontSize: 26,
+              fontWeight: 700,
+              letterSpacing: 3,
+              textTransform: 'uppercase',
+              color: intro.secondary,
+              opacity: sched,
+              transform: `translateY(${(1 - sched) * 30}px)`
+            }}
+          >
+            <CalendarIcon color={intro.secondary} />
+            {intro.schedule}
+          </div>
+        </AbsoluteFill>
+      )}
     </AbsoluteFill>
   )
 }

@@ -127,6 +127,10 @@ export interface ChannelIntroProps {
   primary: string
   secondary: string
   font: string
+  /** Background color of the channel picture; the card is filled with it */
+  background?: string | null
+  /** Small line with the upload frequency, e.g. "New video every day · 2 PM ET" */
+  schedule?: string
   /** Preview length when rendered alone, seconds */
   duration?: number
   [key: string]: unknown

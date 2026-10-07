@@ -425,6 +425,16 @@ function PublishTab({
 
   const locked = ['SCHEDULED', 'PUBLISHED'].includes(video.status) && !!video.youtube_id
 
+  /** Uses the thumbnail picked here; a warning from YouTube shows as an error with its reason. */
+  function resend(): Promise<void> {
+    return act(async () => {
+      await api.videos.update(video.id, { chosen_thumbnail: chosen })
+      const lines = await api.videos.resendExtras(video.id)
+      const problems = lines.filter((l) => l.level !== 'info').map((l) => l.message)
+      if (problems.length) throw new Error(problems.join(' · '))
+    }, 'Thumbnail e legendas enviadas ao YouTube.')
+  }
+
   function save(): Promise<void> {
     return act(
       () =>
@@ -447,7 +457,17 @@ function PublishTab({
     <div className="space-y-5">
       {locked && (
         <Banner kind="info">
-          Já enviado ao YouTube ({video.youtube_id}). Mudanças aqui não são reenviadas.
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              Já enviado ao YouTube ({video.youtube_id}). Mudanças aqui não são reenviadas, exceto a
+              thumbnail e as legendas pelo botão ao lado.
+            </span>
+            {video.kind === 'long' && (
+              <Button size="sm" data-testid="resend-extras" onClick={resend}>
+                Reenviar thumbnail e legendas
+              </Button>
+            )}
+          </div>
         </Banner>
       )}
       {video.kind === 'short' && (

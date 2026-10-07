@@ -3,7 +3,8 @@ import { getVideo, listVideos, updateVideo } from '../db/repo'
 import { isValidFile, runTool } from '../services/ffmpeg'
 import { nextFreeSlot } from '../queue/slots'
 import { canUploadCaptions, setThumbnail, uploadCaptions, uploadVideo } from '../services/youtube'
-import type { Step } from './types'
+import type { Settings, Video } from '../../shared/types'
+import type { Step, StepContext } from './types'
 
 export const uploadStep: Step = {
   type: 'upload',
@@ -83,42 +84,56 @@ export const uploadStep: Step = {
       }
     }
 
-    // Exact subtitles from the narration timings (YouTube's own captions, not burned in).
-    const srt = join(ctx.projectDir, 'captions.srt')
-    if (video.kind === 'long' && ctx.settings.youtubeCaptions && isValidFile(srt, 10)) {
-      if (!canUploadCaptions(video.channel_id)) {
-        ctx.log(
-          'Legendas não enviadas: reconecte o YouTube uma vez para liberar o envio de legendas',
-          'warn'
-        )
-      } else {
-        try {
-          await uploadCaptions(video.channel_id, video.youtube_id as string, srt)
-          ctx.log('Legendas em inglês enviadas ao YouTube')
-        } catch (error) {
-          ctx.log(`Legendas não enviadas: ${(error as Error).message}`, 'warn')
-        }
-      }
-    }
-
-    // Custom thumbnails cannot be set on shorts.
-    const thumb =
-      video.kind === 'short' ? undefined : video.thumbnail_paths[video.chosen_thumbnail ?? 0]
-    if (thumb && isValidFile(thumb)) {
-      // YouTube limits custom thumbnails to 2 MB; JPEG keeps 1280x720 well under it.
-      const jpeg = join(ctx.projectDir, 'thumbs', 'upload.jpg')
-      await runTool('ffmpeg', ['-y', '-i', thumb, '-q:v', '3', jpeg], ctx.signal)
-      try {
-        await setThumbnail(video.channel_id, video.youtube_id as string, jpeg)
-        ctx.log('Thumbnail enviada')
-      } catch (error) {
-        // Custom thumbnails need a verified channel (phone verification).
-        ctx.log(
-          `Thumbnail não enviada: ${(error as Error).message}. Verifique o canal por telefone no YouTube.`,
-          'warn'
-        )
-      }
-    }
+    await sendExtras(video, ctx.projectDir, ctx.settings, ctx.log, ctx.signal)
     ctx.progress(1)
+  }
+}
+
+/**
+ * Subtitles and the custom thumbnail of an uploaded video. Each one only warns on failure,
+ * so the upload still counts; "Reenviar thumbnail e legendas" runs this again later.
+ */
+export async function sendExtras(
+  video: Video,
+  projectDir: string,
+  settings: Settings,
+  log: StepContext['log'],
+  signal?: AbortSignal
+): Promise<void> {
+  // Exact subtitles from the narration timings (YouTube's own captions, not burned in).
+  const srt = join(projectDir, 'captions.srt')
+  if (video.kind === 'long' && settings.youtubeCaptions && isValidFile(srt, 10)) {
+    if (!canUploadCaptions(video.channel_id)) {
+      log(
+        'Legendas não enviadas: reconecte o YouTube uma vez para liberar o envio de legendas',
+        'warn'
+      )
+    } else {
+      try {
+        await uploadCaptions(video.channel_id, video.youtube_id as string, srt)
+        log('Legendas em inglês enviadas ao YouTube')
+      } catch (error) {
+        log(`Legendas não enviadas: ${(error as Error).message}`, 'warn')
+      }
+    }
+  }
+
+  // Custom thumbnails cannot be set on shorts.
+  const thumb =
+    video.kind === 'short' ? undefined : video.thumbnail_paths[video.chosen_thumbnail ?? 0]
+  if (thumb && isValidFile(thumb)) {
+    // YouTube limits custom thumbnails to 2 MB; JPEG keeps 1280x720 well under it.
+    const jpeg = join(projectDir, 'thumbs', 'upload.jpg')
+    await runTool('ffmpeg', ['-y', '-i', thumb, '-q:v', '3', jpeg], signal)
+    try {
+      await setThumbnail(video.channel_id, video.youtube_id as string, jpeg)
+      log('Thumbnail enviada')
+    } catch (error) {
+      // Custom thumbnails need a verified channel (phone verification).
+      log(
+        `Thumbnail não enviada: ${(error as Error).message}. Verifique o canal por telefone no YouTube.`,
+        'warn'
+      )
+    }
   }
 }

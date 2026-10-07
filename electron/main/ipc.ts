@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { JobType, Script, Settings, VideoPatch } from '../../shared/types'
 import {
+  addLog,
   countVideos,
   createChannel,
   deleteChannel,
@@ -35,6 +36,7 @@ import { channelMusicDir, dataDir, projectDir, setDataDir } from './paths'
 import { channelSummaries } from './channels'
 import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scenes'
 import { freeComfy } from '../services/comfy'
+import { sendExtras } from '../steps/upload'
 import { usableProviders } from '../services/stock'
 import { brandColorsFromImage } from '../services/brand'
 import { generateStructured, llmLabel } from '../services/llm'
@@ -84,6 +86,17 @@ export function registerIpc(
   handle('videos:approveScripts', (ids: number[]) => pipeline.approveScripts(ids))
   handle('videos:redoScript', (id: number) => pipeline.redoScript(id))
   handle('videos:fixScript', (id: number) => pipeline.fixScript(id))
+  // Subtitles and thumbnail again, for a video already on YouTube (e.g. after phone verification).
+  handle('videos:resendExtras', async (id: number) => {
+    const v = getVideo(id)
+    if (!v.youtube_id) throw new Error('Vídeo ainda não foi enviado ao YouTube')
+    const lines: { message: string; level: 'info' | 'warn' | 'error' }[] = []
+    await sendExtras(v, projectDir(id), getSettings(v.channel_id), (message, level = 'info') => {
+      lines.push({ message, level })
+      addLog(null, level, `${v.title ?? v.topic}: ${message}`)
+    })
+    return lines
+  })
   handle('settings:testLlm', async (patch: Partial<Settings>) => {
     const s = { ...getSettings(), ...patch }
     const started = Date.now()

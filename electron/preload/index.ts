@@ -30,6 +30,7 @@ const api: Api = {
     approveScripts: invoke('videos:approveScripts'),
     redoScript: invoke('videos:redoScript'),
     fixScript: invoke('videos:fixScript'),
+    resendExtras: invoke('videos:resendExtras'),
     update: invoke('videos:update'),
     remove: invoke('videos:remove'),
     retryFrom: invoke('videos:retryFrom'),

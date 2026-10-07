@@ -400,6 +400,8 @@ export interface Api {
     redoScript: (id: number) => Promise<void>
     /** Rewrite the flagged passages using the review alerts */
     fixScript: (id: number) => Promise<Video>
+    /** Upload the subtitles and the chosen thumbnail again to a video already on YouTube */
+    resendExtras: (id: number) => Promise<{ message: string; level: 'info' | 'warn' | 'error' }[]>
     update: (id: number, patch: VideoPatch) => Promise<Video>
     remove: (id: number) => Promise<void>
     retryFrom: (id: number, step: JobType) => Promise<void>

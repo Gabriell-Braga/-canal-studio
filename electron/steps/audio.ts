@@ -1,7 +1,7 @@
 import { createHash } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { getVideo, listScenes, updateVideo } from '../db/repo'
+import { getVideo, listScenes, replaceScenes, updateVideo } from '../db/repo'
 import { concatAndNormalize, isValidFile, probeDuration, runTool } from '../services/ffmpeg'
 import type { Settings } from '../../shared/types'
 import { pythonPost } from '../services/python'
@@ -12,6 +12,7 @@ import {
   YEAR_CARD_SEC,
   yearChanges
 } from '../../shared/render'
+import { polishScript } from './polish'
 import type { Step } from './types'
 
 export interface SceneTiming {
@@ -83,6 +84,26 @@ export const audioStep: Step = {
     const { voice, voiceSpeed, scenePauseSec } = ctx.settings
     const dir = join(ctx.projectDir, 'audio')
     mkdirSync(dir, { recursive: true })
+    // Scripts approved before the final edit existed get it now, while no scene has media yet.
+    const video = getVideo(videoId)
+    if (
+      ctx.settings.scriptPolish &&
+      video.script &&
+      !video.script.polished &&
+      !listScenes(videoId).some((s) => s.asset_path)
+    ) {
+      try {
+        ctx.log('Revisão final do roteiro com Claude Sonnet')
+        const script = structuredClone(video.script)
+        const changed = await polishScript(script, video.topic, ctx.settings, ctx.signal)
+        replaceScenes(videoId, script)
+        updateVideo(videoId, { script })
+        ctx.log(`Revisão final: ${changed} trecho(s) ajustado(s)`)
+      } catch (error) {
+        if (ctx.signal.aborted) throw error
+        ctx.log(`Revisão final falhou: ${(error as Error).message}`, 'warn')
+      }
+    }
     const scenes = listScenes(videoId)
     if (!scenes.length) throw new Error('Vídeo sem cenas; gere o roteiro primeiro')
 

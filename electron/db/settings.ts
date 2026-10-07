@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
   claudeModel: 'opus',
   anthropicApiKey: '',
   factCheckWeb: true,
+  scriptPolish: true,
   ollamaUrl: 'http://localhost:11434',
   ollamaModel: 'qwen3:14b',
   scriptPrompt: DEFAULT_SCRIPT_PROMPT,

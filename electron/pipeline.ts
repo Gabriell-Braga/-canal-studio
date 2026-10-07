@@ -228,7 +228,7 @@ ${JSON.stringify(v.script)}`,
     )
     replaceScenes(id, fixed)
     return updateVideo(id, {
-      script: fixed,
+      script: { ...fixed, polished: v.script.polished },
       title_options: fixed.title_options,
       review_alerts: [
         {

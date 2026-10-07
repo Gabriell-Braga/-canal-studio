@@ -460,6 +460,16 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               </label>
             ))}
           </div>
+          <label className={`${inlineCheckClass} text-ink-200`}>
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={s.scriptPolish}
+              onChange={(e) => set('scriptPolish', e.target.checked)}
+            />
+            Revisão final do roteiro pelo Claude Sonnet (gancho, final calmo, fotos reais; devolve
+            só o que muda)
+          </label>
           {s.llmProvider !== 'ollama' && (
             <>
               <Field

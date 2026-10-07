@@ -3,6 +3,7 @@ import type { Script } from '../../shared/types'
 import { getVideo, replaceScenes, updateVideo } from '../db/repo'
 import { formatUsd } from '../../shared/render'
 import { generateStructured, llmLabel, type LlmCall } from '../services/llm'
+import { polishScript } from './polish'
 import type { Step, StepContext } from './types'
 
 export const scriptSchema = z.object({
@@ -191,6 +192,15 @@ export const scriptStep: Step = {
     ctx.progress(0.4)
     await expandScript(script, words, video.topic, call, ctx)
     ctx.progress(0.7)
+    if (settings.scriptPolish) {
+      try {
+        ctx.log('Revisão final do roteiro com Claude Sonnet')
+        const changed = await polishScript(script, video.topic, settings, ctx.signal)
+        ctx.log(`Revisão final: ${changed} trecho(s) ajustado(s)`)
+      } catch (error) {
+        ctx.log(`Revisão final falhou: ${(error as Error).message}`, 'warn')
+      }
+    }
     const count = scriptWordCount(script)
     ctx.log(`Roteiro com ${script.scenes.length} cenas e ${count} palavras`)
 

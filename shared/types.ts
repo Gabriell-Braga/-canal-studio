@@ -126,6 +126,8 @@ export interface Script {
   outro_visual_keywords?: string
   /** At most two; empty when the video is not about companies */
   companies?: ScriptCompany[]
+  /** Claude's final edit already ran on this script */
+  polished?: boolean
 }
 
 export type ReviewAlertKind = 'hook' | 'pacing' | 'repetition' | 'dubious_fact' | 'other'
@@ -259,6 +261,8 @@ export interface Settings {
   anthropicApiKey: string
   /** Fact-check scripts with web search (Claude only) */
   factCheckWeb: boolean
+  /** Claude (Sonnet) does a short final edit of every script: hook, calm outro, real photos */
+  scriptPolish: boolean
   ollamaUrl: string
   ollamaModel: string
   scriptPrompt: string

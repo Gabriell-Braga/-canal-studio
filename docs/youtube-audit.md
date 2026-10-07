@@ -7,7 +7,7 @@ Sem a auditoria, todo vídeo enviado pela API fica travado como privado. Este gu
 1. **Publicar as páginas.** No GitHub, abra o repositório → **Settings → Pages**. Em *Build and deployment*, escolha **Deploy from a branch**, branch `main`, pasta `/docs`, e salve. Em 1 ou 2 minutos as páginas ficam no ar:
    - Página inicial: `https://gabriell-braga.github.io/-canal-studio/`
    - Política de privacidade: `https://gabriell-braga.github.io/-canal-studio/privacy.html`
-2. **E-mail de contato.** A política de privacidade usa `gabriel@gabrielbraga.app`, o mesmo e-mail da tela de consentimento OAuth.
+2. **E-mail de contato.** A política de privacidade usa `gabribragandrade@gmail.com`, o mesmo e-mail da tela de consentimento OAuth.
 3. **Tela de consentimento OAuth** (Google Cloud → *Google Auth Platform*):
    - *Branding*: preencha a página inicial e a política de privacidade com os links acima.
    - *Público-alvo*: clique em **Publicar app** (status "Em produção"). Reconecte cada canal uma vez no Canal Studio. O login para de vencer a cada 7 dias.
@@ -16,9 +16,9 @@ Sem a auditoria, todo vídeo enviado pela API fica travado como privado. Este gu
 
 ## 2. Formulário
 
-Abra o formulário **YouTube API Services – Audit and Quota Extension Form**: `https://support.google.com/youtube/contact/yt_api_form`. Escolha a opção de auditoria (*I want to have my API client audited*). Os nomes dos campos mudam um pouco com o tempo; use a resposta do campo mais parecido.
+Entre no Google com a conta principal (`gabribragandrade@gmail.com`), dona do projeto, e abra o formulário **YouTube API Services – Audit and Quota Extension Form**: `https://support.google.com/youtube/contact/yt_api_form`. Escolha a opção de auditoria (*I want to have my API client audited*). Os nomes dos campos mudam um pouco com o tempo; use a resposta do campo mais parecido.
 
-**Project number:** o número do projeto (Google Cloud → página inicial do projeto, "Número do projeto").
+**Project number:** o número do projeto, só dígitos (Google Cloud → Página inicial → card "Informações do projeto" → "Número do projeto"). Não confunda com o ID do projeto, `project-7c0dd44f-35ae-4636-9fa`. Se o formulário também pedir o ID, use esse.
 
 **API client name:** `Canal Studio`
 

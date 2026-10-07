@@ -1,6 +1,10 @@
+import { mkdirSync, utimesSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createShort, createVideo, getVideo, jobsForVideo, updateVideo } from '../electron/db/repo'
+import { setSettings } from '../electron/db/settings'
 import { Pipeline } from '../electron/pipeline'
+import { staleShorts } from '../electron/steps/shorts'
 import type { Scheduler } from '../electron/queue/scheduler'
 import { freshDb } from './helpers'
 
@@ -51,5 +55,55 @@ describe('shorts follow their full video', () => {
     const a = finishedShort(id)
     pipeline.approveShorts(id)
     expect(getVideo(a).status).toBe('SCHEDULED')
+  })
+})
+
+describe('shorts show the picked thumbnail', () => {
+  let dir = ''
+  beforeEach(() => {
+    dir = freshDb()
+  })
+
+  /** A full video with two thumbnails and one short whose end card shows the first one. */
+  function setup(): { id: number; short: number } {
+    const id = finishedVideo()
+    const thumbs = ['thumb_1.png', 'thumb_2.png'].map((f) => join(dir, f))
+    thumbs.forEach((t) => writeFileSync(t, 'png'))
+    updateVideo(id, { thumbnail_paths: thumbs, chosen_thumbnail: 0 })
+    const short = finishedShort(id)
+    mkdirSync(join(dir, 'shorts'))
+    const out = join(dir, 'shorts', `short_${short}.mp4`)
+    writeFileSync(out, Buffer.alloc(200_000))
+    utimesSync(out, new Date(), new Date(Date.now() + 60_000))
+    const job = { root: dir, short: { cta: { thumbnail: '{{root}}/thumb_1.png' } } }
+    writeFileSync(join(dir, 'shorts', `short_${short}.json`), JSON.stringify(job))
+    updateVideo(short, { video_path: out })
+    return { id, short }
+  }
+
+  it('finds shorts whose end card shows another thumbnail', () => {
+    const { id, short } = setup()
+    expect(staleShorts(getVideo(id))).toEqual([])
+    updateVideo(id, { chosen_thumbnail: 1 })
+    expect(staleShorts(getVideo(id)).map((s) => s.id)).toEqual([short])
+    const pipeline = new Pipeline(scheduler)
+    pipeline.refreshShortThumbs(id)
+    expect(jobsForVideo(id).find((j) => j.type === 'short')?.args).toEqual({ refresh: true })
+  })
+
+  it('leaves shorts already on YouTube alone', () => {
+    const { id, short } = setup()
+    updateVideo(short, { youtube_id: 'abc' })
+    updateVideo(id, { chosen_thumbnail: 1 })
+    expect(staleShorts(getVideo(id))).toEqual([])
+  })
+
+  it('cuts automatic shorts only when the full video is approved', () => {
+    setSettings({ shortsAuto: true, shortsCount: 2 })
+    const pipeline = new Pipeline(scheduler)
+    const id = finishedVideo()
+    expect(jobsForVideo(id).some((j) => j.type === 'short')).toBe(false)
+    pipeline.approveFinal(id)
+    expect(jobsForVideo(id).find((j) => j.type === 'short')?.args).toEqual({ count: 2 })
   })
 })

@@ -1001,7 +1001,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               checked={s.shortsAuto}
               onChange={(e) => set('shortsAuto', e.target.checked)}
             />
-            Gerar shorts automaticamente quando o vídeo ficar pronto
+            Gerar shorts automaticamente quando você aprovar o vídeo (com a thumbnail escolhida)
           </label>
           <div className="md:col-span-2">
             <Field

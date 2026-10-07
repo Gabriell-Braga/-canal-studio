@@ -276,11 +276,13 @@ app.whenReady().then(async () => {
     onBusyChange,
     onEvent: onQueueEvent,
     onShortsDone: (id) => pipeline.approveShorts(id),
+    onThumbnails: (id) => pipeline.refreshShortThumbs(id),
     getVram: readVram,
     tickMs: Number(process.env.CANAL_TICK_MS) || 5000
   })
   const pipeline = new Pipeline(scheduler)
   pipeline.approveAllShorts()
+  pipeline.refreshAllShortThumbs()
   registerIpc(pipeline, scheduler, applySettings)
   forwardChanges()
 

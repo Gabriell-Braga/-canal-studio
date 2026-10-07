@@ -15,6 +15,7 @@ import {
 import { getSettings } from './db/settings'
 import { generateStructured } from './services/llm'
 import { scriptSchema } from './steps/script'
+import { staleShorts } from './steps/shorts'
 import { nextFreeSlot, shortSlotAfter } from './queue/slots'
 import type { Scheduler } from './queue/scheduler'
 
@@ -102,9 +103,30 @@ export class Pipeline {
       v.scheduled_at ?? (v.kind === 'short' ? this.shortSlot(v) : this.nextSlot(v.channel_id))
     const updated = updateVideo(id, { status: 'SCHEDULED', scheduled_at: scheduledAt })
     enqueueJob(id, 'upload', 'night')
-    if (v.kind === 'long') this.approveShorts(id)
+    if (v.kind === 'long') {
+      this.approveShorts(id)
+      // Cut only now, so the end card shows the thumbnail picked in the review.
+      const s = getSettings(v.channel_id)
+      if (s.shortsAuto && !listShorts(id).length) {
+        enqueueJob(id, 'short', 'night', 0, true, { count: s.shortsCount })
+      }
+    }
     this.scheduler.kick()
     return updated
+  }
+
+  /** Render again the shorts whose end card shows another thumbnail than the picked one. */
+  refreshShortThumbs(id: number): void {
+    const v = findVideo(id)
+    if (!v || v.kind !== 'long' || !staleShorts(v).length) return
+    enqueueJob(id, 'short', 'now', 5, true, { refresh: true })
+    this.scheduler.kick()
+  }
+
+  refreshAllShortThumbs(): void {
+    for (const v of listVideos()) {
+      if (v.kind === 'long' && v.thumbnail_paths.length) this.refreshShortThumbs(v.id)
+    }
   }
 
   /**

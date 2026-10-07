@@ -127,6 +127,8 @@ export function registerIpc(
     const video = updateVideo(id, clean)
     // Scenes mirror the script; asset choices are rebuilt by the scenes step.
     if (clean.script) replaceScenes(id, clean.script as Script)
+    // The end card of the shorts shows the picked thumbnail.
+    if ('chosen_thumbnail' in clean) pipeline.refreshShortThumbs(id)
     return video
   })
   /**

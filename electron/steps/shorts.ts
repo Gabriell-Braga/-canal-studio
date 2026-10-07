@@ -1,16 +1,16 @@
 import { createHash } from 'crypto'
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'fs'
-import { join, relative } from 'path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from 'fs'
+import { dirname, join, relative } from 'path'
 import { z } from 'zod'
-import type { ShortProps, TemplateId } from '../../shared/render'
-import type { Scene } from '../../shared/types'
+import type { RenderJob, ShortProps, TemplateId } from '../../shared/render'
+import type { Scene, Video } from '../../shared/types'
 import { createShort, deleteVideo, getVideo, listScenes, listShorts, updateVideo } from '../db/repo'
 import { isValidFile, probeDuration } from '../services/ffmpeg'
 import { generateStructured } from '../services/llm'
 import { pythonPost } from '../services/python'
 import { runRender } from '../services/remotion'
 import { readWords } from './transcribe'
-import type { Step } from './types'
+import type { Step, StepContext } from './types'
 
 /** Shorts above ~60 s lose reach; the end card adds ~4 s. */
 export const MIN_SEGMENT = 18
@@ -104,6 +104,67 @@ function url(root: string, file: string): string {
   return `{{root}}/${relative(root, file).split('\\').join('/').split('/').map(encodeURIComponent).join('/')}`
 }
 
+/** The thumbnail picked for the full video, which the end card of its shorts shows. */
+function chosenThumb(video: Video): string | null {
+  const thumb = video.thumbnail_paths[video.chosen_thumbnail ?? 0]
+  return thumb && existsSync(thumb) ? thumb : null
+}
+
+function readShortJob(short: Video): (RenderJob & { short: ShortProps }) | null {
+  if (!short.video_path) return null
+  const file = join(dirname(short.video_path), `short_${short.id}.json`)
+  if (!existsSync(file)) return null
+  const job = JSON.parse(readFileSync(file, 'utf8')) as RenderJob
+  return job.short ? (job as RenderJob & { short: ShortProps }) : null
+}
+
+/**
+ * Finished shorts whose end card shows another thumbnail than the one picked, or an older
+ * version of it. Shorts already on YouTube are left alone: their video can't be replaced.
+ */
+export function staleShorts(parent: Video): Video[] {
+  const thumb = chosenThumb(parent)
+  if (!thumb) return []
+  return listShorts(parent.id).filter((short) => {
+    if (short.youtube_id || !isValidFile(short.video_path, 100_000)) return false
+    const job = readShortJob(short)
+    if (!job) return false
+    if (job.short.cta.thumbnail !== url(job.root, thumb)) return true
+    return statSync(thumb).mtimeMs > statSync(short.video_path as string).mtimeMs
+  })
+}
+
+/** Render the stale shorts again with the picked thumbnail; the cut stays the same. */
+async function refreshEndCards(parent: Video, ctx: StepContext, share: number): Promise<number> {
+  const stale = staleShorts(parent)
+  const thumb = chosenThumb(parent)
+  if (!thumb) return 0
+  for (const [k, short] of stale.entries()) {
+    if (ctx.signal.aborted) throw new Error('Cancelado')
+    const job = readShortJob(short)
+    if (!job) continue
+    const out = short.video_path as string
+    // Render beside the old file and swap at the end, so a pending upload never sees half a file.
+    const tmp = out.replace(/\.mp4$/, '.new.mp4')
+    ctx.log(`Atualizando a thumbnail no final do short "${short.title}"`)
+    try {
+      await runRender(
+        {
+          ...job,
+          out: tmp,
+          short: { ...job.short, cta: { ...job.short.cta, thumbnail: url(job.root, thumb) } }
+        },
+        join(dirname(out), `short_${short.id}.json`),
+        { progress: (p) => ctx.progress((share * (k + p)) / stale.length), signal: ctx.signal }
+      )
+      renameSync(tmp, out)
+    } finally {
+      rmSync(tmp, { force: true })
+    }
+  }
+  return stale.length
+}
+
 /**
  * Cut vertical shorts out of a finished video. Each short ends with a card and a narrated
  * line that send viewers to the full video; the upload links it in the description.
@@ -114,6 +175,15 @@ export const shortsStep: Step = {
     const video = getVideo(videoId)
     const s = ctx.settings
     if (video.kind !== 'long') throw new Error('Shorts são gerados a partir de um vídeo longo')
+    // Shorts already cut show the thumbnail picked now; a refresh job stops there.
+    if (ctx.jobArgs?.refresh) {
+      const n = await refreshEndCards(video, ctx, 1)
+      ctx.log(
+        n ? `${n} short(s) com a thumbnail atualizada` : 'Shorts já mostram a thumbnail escolhida'
+      )
+      return
+    }
+    await refreshEndCards(video, ctx, 0)
     if (!isValidFile(video.audio_path) || !isValidFile(video.video_path, 100_000)) {
       throw new Error('Gere e renderize o vídeo antes dos shorts')
     }
@@ -180,7 +250,7 @@ Return ONLY JSON: {"segments": [...]}`,
     }
     const ctaDuration = (await probeDuration(ctaAudio)) + 0.6
     const music = readdirSync(ctx.projectDir).find((f) => f.startsWith('music.'))
-    const thumb = video.thumbnail_paths[video.chosen_thumbnail ?? 0]
+    const thumb = chosenThumb(video)
     const words = readWords(ctx.projectDir)
     const root = ctx.projectDir
 
@@ -224,7 +294,7 @@ Return ONLY JSON: {"segments": [...]}`,
           audio: url(root, ctaAudio),
           duration: ctaDuration,
           text: s.shortsCta,
-          thumbnail: thumb && existsSync(thumb) ? url(root, thumb) : null,
+          thumbnail: thumb ? url(root, thumb) : null,
           parentTitle: video.title ?? video.topic
         }
       }

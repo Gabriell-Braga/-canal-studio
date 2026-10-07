@@ -29,6 +29,8 @@ export interface SchedulerOptions {
   onEvent?: (event: QueueEvent) => void
   /** Shorts of a video finished; they are approved at once if the video already is. */
   onShortsDone?: (videoId: number) => void
+  /** New thumbnails were made; shorts already cut must show the picked one. */
+  onThumbnails?: (videoId: number) => void
   getVram?: () => Promise<{ used: number; total: number } | null>
   clock?: () => Date
   tickMs?: number
@@ -324,6 +326,7 @@ export class Scheduler {
     }
     if (job.type === 'short') {
       this.opts.onShortsDone?.(video.id)
+      if (job.args?.refresh) return
       this.opts.onEvent?.({
         type: 'final-ready',
         videoId: video.id,
@@ -333,7 +336,6 @@ export class Scheduler {
     }
     if (job.type === 'metadata') {
       updateVideo(video.id, { status: 'FINAL_REVIEW' })
-      if (getSettings(video.channel_id).shortsAuto) enqueueJob(video.id, 'short', job.run_mode)
       this.opts.onEvent?.({
         type: 'final-ready',
         videoId: video.id,
@@ -344,6 +346,7 @@ export class Scheduler {
     if (job.type === 'upload') {
       return
     }
+    if (job.type === 'thumbnail') this.opts.onThumbnails?.(video.id)
     if (!job.chain && video.thumbnail_paths.length) {
       // Re-render requested from the final review: go straight back to it.
       updateVideo(video.id, { status: 'FINAL_REVIEW' })

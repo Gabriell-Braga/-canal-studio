@@ -620,8 +620,9 @@ function ShortsTab({
           <div className="font-medium text-ink-100">Gerar shorts deste vídeo</div>
           <p className="mt-1 text-sm text-ink-400">
             A IA escolhe os trechos mais fortes (18–52 s), monta em vertical 9:16 com legendas e
-            fecha com uma tela “assista ao vídeo completo” narrada na voz do canal. Cada short é
-            publicado um dia depois do anterior, depois do vídeo completo.
+            fecha com uma tela “assista ao vídeo completo” narrada na voz do canal. Os shorts saem no
+            mesmo dia do vídeo completo: o primeiro meia hora depois dele, os outros de meia em
+            meia hora.
           </p>
         </div>
         <select

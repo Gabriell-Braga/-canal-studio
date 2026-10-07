@@ -161,22 +161,23 @@ ${JSON.stringify(v.script)}`,
   }
 
   /**
-   * Shorts go out one per day after the full video, at the same time of day, so each one
-   * can link to a video that is already public.
+   * Shorts go out the same day as the full video, 30 minutes apart starting 30 minutes after
+   * it, so each one links to a video that is already public.
    */
   shortSlot(short: Video): string {
+    const step = 30 * 60_000
     const parent = short.parent_id ? getVideo(short.parent_id) : null
     const base = new Date(parent?.scheduled_at ?? Date.now() + 3600_000)
     const siblings = listShorts(short.parent_id ?? 0).filter(
       (x) => x.id !== short.id && x.scheduled_at
     )
     const taken = new Set(siblings.map((x) => new Date(x.scheduled_at as string).getTime()))
-    for (let day = 1; day < 60; day++) {
-      const slot = new Date(base.getTime() + day * 24 * 3600_000)
+    for (let k = 1; k < 200; k++) {
+      const slot = new Date(base.getTime() + k * step)
       if (slot.getTime() > Date.now() + 3600_000 && !taken.has(slot.getTime()))
         return slot.toISOString()
     }
-    return new Date(Date.now() + 24 * 3600_000).toISOString()
+    return new Date(Date.now() + 3600_000).toISOString()
   }
 
   /** After swapping scenes: render again and come straight back to the final review. */

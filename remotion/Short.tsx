@@ -12,7 +12,7 @@ import {
   useVideoConfig
 } from 'remotion'
 import type { RenderScene, ShortProps } from '../shared/render'
-import { template } from './templates'
+import { brandTextShadow, template } from './templates'
 import { KenBurns, toPhrases } from './Video'
 
 const FADE_SEC = 0.35
@@ -129,8 +129,7 @@ function ShortCaptions({
           lineHeight: 1.1,
           color: '#ffffff',
           textTransform: 'uppercase',
-          textShadow:
-            '0 0 3px #000, 4px 4px 0 #000, -4px -4px 0 #000, 4px -4px 0 #000, -4px 4px 0 #000, 0 10px 30px rgba(0,0,0,0.8)'
+          textShadow: look.shadow
         }}
       >
         {phrase.words.map((w, i) => {
@@ -300,11 +299,17 @@ export const Short: React.FC<ShortProps> = (props) => {
 }
 
 /** Colors and font of the short: the channel's brand when set, else the template's. */
-function shortLook(props: ShortProps): { accent: string; text: string; font: string } {
+function shortLook(props: ShortProps): {
+  accent: string
+  text: string
+  font: string
+  shadow: string
+} {
   const style = template(props.template)
   return {
     accent: props.brand?.primary ?? style.thumbColors[1],
     text: props.brand?.secondary ?? '#ffffff',
-    font: props.brand?.font ? `"${props.brand.font}", ${style.thumbFont}` : style.thumbFont
+    font: props.brand?.font ? `"${props.brand.font}", ${style.thumbFont}` : style.thumbFont,
+    shadow: brandTextShadow(props.brand?.outline ?? true, 4)
   }
 }

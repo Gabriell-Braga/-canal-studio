@@ -59,6 +59,8 @@ export const DEFAULT_SETTINGS: Settings = {
   brandPrimary: '#ffd34d',
   brandSecondary: '#ffffff',
   brandFont: 'Impact',
+  brandOutline: true,
+  thumbStyle: 'text',
   brandAuto: true,
   shortsCount: 2,
   shortsCta: 'Want the full story? Watch the full video on our channel.',

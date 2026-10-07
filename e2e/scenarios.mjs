@@ -707,3 +707,24 @@ async function deleteVideo({ launch, api, shot, log, waitUntil, dataDir }) {
 }
 
 scenarios.deleteVideo = deleteVideo
+
+/** Thumbnail look: outline off and the mixed style show both previews on the channel settings. */
+async function brand({ launch, api, shot, log }) {
+  const { app, page } = await launch()
+  await page.getByTestId('nav-channelSettings').click()
+  const select = page.locator('select').filter({ hasText: 'Destaque colorido' })
+  await select.selectOption('mixed')
+  await page.getByText('Contorno preto no texto').click()
+  await page.getByText('prévia do destaque').scrollIntoViewIfNeeded()
+  await page.waitForTimeout(1500)
+  await shot(page, 'brand-mixed-no-outline')
+  await page.getByTestId('save-settings').click()
+  await page.waitForTimeout(800)
+  const saved = await api(page, 'settings.get', 1)
+  assert(saved.thumbStyle === 'mixed' && saved.brandOutline === false, 'brand settings saved')
+  log('Estilo misto e sem contorno salvos')
+  await api(page, 'settings.set', { thumbStyle: 'text', brandOutline: true }, 1)
+  await app.close()
+}
+
+scenarios.brand = brand

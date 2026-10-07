@@ -270,6 +270,10 @@ export interface Settings {
   brandPrimary: string
   brandSecondary: string
   brandFont: string
+  /** Black outline around thumbnail and caption text; off gives a cleaner, modern look */
+  brandOutline: boolean
+  /** text: headline over the image; highlight: no text, the subject in channel colors over a black and white image; mixed: one highlight, two text */
+  thumbStyle: ThumbStyle
   /** Refresh the colors from the YouTube channel picture */
   brandAuto: boolean
   shortsCount: number
@@ -302,6 +306,8 @@ export const CHANNEL_SETTING_KEYS = [
   'brandPrimary',
   'brandSecondary',
   'brandFont',
+  'brandOutline',
+  'thumbStyle',
   'brandAuto',
   'shortsCount',
   'shortsCta',
@@ -309,6 +315,8 @@ export const CHANNEL_SETTING_KEYS = [
 ] as const satisfies readonly (keyof Settings)[]
 
 export type ChannelSettingKey = (typeof CHANNEL_SETTING_KEYS)[number]
+
+export type ThumbStyle = 'text' | 'highlight' | 'mixed'
 
 export interface QueueState {
   paused: boolean

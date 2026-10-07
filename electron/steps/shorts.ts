@@ -213,7 +213,12 @@ Return ONLY JSON: {"segments": [...]}`,
         music: music ? url(root, join(root, music)) : null,
         musicVolume: s.musicVolume,
         template: (video.template as TemplateId) ?? 'bold',
-        brand: { primary: s.brandPrimary, secondary: s.brandSecondary, font: s.brandFont },
+        brand: {
+          primary: s.brandPrimary,
+          secondary: s.brandSecondary,
+          font: s.brandFont,
+          outline: s.brandOutline
+        },
         headline: seg.headline.toUpperCase(),
         cta: {
           audio: url(root, ctaAudio),

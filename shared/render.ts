@@ -7,6 +7,8 @@ export interface Brand {
   primary: string
   secondary: string
   font: string
+  /** Black outline around the text (default on) */
+  outline?: boolean
 }
 
 export interface RenderScene {
@@ -72,6 +74,8 @@ export interface ThumbnailProps {
   text: string
   template: TemplateId
   brand?: Brand
+  /** Subject cut out of the background (RGBA PNG): renders the no-text highlight style */
+  cutout?: string | null
   variant: number
   [key: string]: unknown
 }

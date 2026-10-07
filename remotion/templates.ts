@@ -65,3 +65,10 @@ export const TEMPLATES: Record<TemplateId, TemplateStyle> = {
 export function template(id: string | undefined): TemplateStyle {
   return TEMPLATES[(id as TemplateId) ?? 'documentary'] ?? TEMPLATES.documentary
 }
+
+/** Heavy black outline for thumbnail and caption text, or a soft shadow when the channel turns it off. */
+export function brandTextShadow(outline: boolean, width: number): string {
+  if (!outline) return `0 ${width}px ${width * 5}px rgba(0,0,0,0.6), 0 2px 6px rgba(0,0,0,0.45)`
+  const w = `${width}px`
+  return `0 0 ${width - 1}px #000, ${w} ${w} 0 #000, -${w} -${w} 0 #000, ${w} -${w} 0 #000, -${w} ${w} 0 #000, 0 ${width * 2}px ${width * 6}px rgba(0,0,0,0.85)`
+}

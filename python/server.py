@@ -1,4 +1,4 @@
-"""Canal Studio sidecar: Kokoro TTS + faster-whisper transcription.
+"""Canal Studio sidecar: Kokoro TTS, faster-whisper transcription and subject cutouts.
 
 Run: venv\\Scripts\\python.exe -m uvicorn server:app --host 127.0.0.1 --port 8765
 """
@@ -167,11 +167,65 @@ def transcribe(req: TranscribeRequest):
         raise HTTPException(500, "; ".join(errors))
 
 
+# IS-Net (DIS) background removal, the "isnet-general-use" weights published by rembg (Apache-2.0).
+CUTOUT_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx"
+CUTOUT_MODEL = Path.home() / ".cache" / "canal-studio" / "isnet-general-use.onnx"
+_cutout: dict[str, object] = {"session": None}
+
+
+class CutoutRequest(BaseModel):
+    image_path: str
+    out_path: str
+
+
+def _cutout_session():
+    if _cutout["session"] is None:
+        import onnxruntime as ort
+
+        if not CUTOUT_MODEL.exists():
+            import urllib.request
+
+            log.info("Downloading %s", CUTOUT_URL)
+            CUTOUT_MODEL.parent.mkdir(parents=True, exist_ok=True)
+            tmp = CUTOUT_MODEL.with_suffix(".part")
+            urllib.request.urlretrieve(CUTOUT_URL, tmp)
+            os.replace(tmp, CUTOUT_MODEL)
+        # CPU on purpose: one image takes a couple of seconds and ComfyUI may hold the GPU.
+        _cutout["session"] = ort.InferenceSession(str(CUTOUT_MODEL), providers=["CPUExecutionProvider"])
+    return _cutout["session"]
+
+
+@app.post("/cutout")
+def cutout(req: CutoutRequest):
+    """Cut the main subject out of an image: writes an RGBA PNG and returns how much of the frame it covers."""
+    from PIL import Image
+
+    if not Path(req.image_path).exists():
+        raise HTTPException(404, f"image not found: {req.image_path}")
+    with _lock:
+        session = _cutout_session()
+        img = Image.open(req.image_path).convert("RGB")
+        x = np.asarray(img.resize((1024, 1024), Image.LANCZOS), dtype=np.float32)
+        x = x / max(float(x.max()), 1e-6) - 0.5
+        x = x.transpose(2, 0, 1)[None]
+        pred = session.run(None, {session.get_inputs()[0].name: x})[0][0, 0]
+        pred = (pred - pred.min()) / max(float(pred.max() - pred.min()), 1e-6)
+    mask = Image.fromarray((pred * 255).astype(np.uint8)).resize(img.size, Image.LANCZOS)
+    out = Path(req.out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    rgba = img.copy()
+    rgba.putalpha(mask)
+    rgba.save(out)
+    coverage = float((np.asarray(mask) > 127).mean())
+    return {"path": str(out), "coverage": coverage}
+
+
 @app.post("/unload")
 def unload():
     """Release Whisper (and its VRAM) before ComfyUI runs."""
     with _lock:
         _unload_whisper()
+        _cutout["session"] = None
         try:
             import torch
 

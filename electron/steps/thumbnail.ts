@@ -5,10 +5,11 @@ import type { TemplateId, ThumbnailProps } from '../../shared/render'
 import { getVideo, listScenes, updateVideo } from '../db/repo'
 import { freeComfy, generateImage } from '../services/comfy'
 import { isValidFile, probeDuration, runTool } from '../services/ffmpeg'
+import { pythonPost } from '../services/python'
 import { generateStructured } from '../services/llm'
 import { runRender } from '../services/remotion'
 import { prepareComfy } from './scenes'
-import type { Step } from './types'
+import type { Step, StepContext } from './types'
 
 const textsSchema = z.object({ texts: z.array(z.string().min(1)).min(3).max(5) })
 
@@ -58,6 +59,34 @@ export function clampWords(text: string): string {
     words.pop()
   }
   return words.join(' ')
+}
+
+/**
+ * Cut the main subject out of a background. Returns null (the thumbnail falls back to text)
+ * when the cut fails or finds no clear subject: too small to read, or most of the frame.
+ */
+async function cutoutFor(
+  background: string,
+  i: number,
+  dir: string,
+  ctx: StepContext
+): Promise<string | null> {
+  try {
+    const out = join(dir, `cutout_${i + 1}.png`)
+    const { coverage } = await pythonPost<{ coverage: number }>(
+      '/cutout',
+      { image_path: background, out_path: out },
+      ctx.signal
+    )
+    if (coverage >= 0.03 && coverage <= 0.75) return out
+    ctx.log(`Thumbnail ${i + 1}: sem objeto claro para destacar; usando texto`, 'warn')
+  } catch (error) {
+    ctx.log(
+      `Recorte da thumbnail ${i + 1} falhou (${(error as Error).message}); usando texto`,
+      'warn'
+    )
+  }
+  return null
 }
 
 export const thumbnailStep: Step = {
@@ -130,6 +159,16 @@ Return ONLY JSON: {"texts": ["...", "...", "..."]}`,
     if (!backgrounds.length) throw new Error('Sem imagens para o fundo da thumbnail')
     ctx.progress(0.6)
 
+    // No-text style: cut the subject out so only it gets the channel color.
+    const cutouts: (string | null)[] = []
+    for (const i of [0, 1, 2]) {
+      const wanted = s.thumbStyle === 'highlight' || (s.thumbStyle === 'mixed' && i === 0)
+      cutouts.push(
+        wanted ? await cutoutFor(backgrounds[i % backgrounds.length], i, dir, ctx) : null
+      )
+    }
+    ctx.progress(0.7)
+
     const template = (video.template as TemplateId) ?? 'documentary'
     const stills = [0, 1, 2].map((i) => ({
       out: join(dir, `thumb_${i + 1}.png`),
@@ -137,16 +176,24 @@ Return ONLY JSON: {"texts": ["...", "...", "..."]}`,
         background: url(ctx.projectDir, backgrounds[i % backgrounds.length]),
         text: clampWords(texts[i]),
         template,
-        brand: { primary: s.brandPrimary, secondary: s.brandSecondary, font: s.brandFont },
+        brand: {
+          primary: s.brandPrimary,
+          secondary: s.brandSecondary,
+          font: s.brandFont,
+          outline: s.brandOutline
+        },
+        cutout: cutouts[i] && url(ctx.projectDir, cutouts[i]),
         variant: i
       } satisfies ThumbnailProps
     }))
     await runRender(
       { mode: 'stills', root: ctx.projectDir, out: '', stills },
       join(ctx.projectDir, 'thumb-job.json'),
-      { progress: (p) => ctx.progress(0.6 + 0.4 * p), log: (m) => ctx.log(m), signal: ctx.signal }
+      { progress: (p) => ctx.progress(0.7 + 0.3 * p), log: (m) => ctx.log(m), signal: ctx.signal }
     )
     updateVideo(videoId, { thumbnail_paths: stills.map((st) => st.out), chosen_thumbnail: 0 })
-    ctx.log(`3 thumbnails: ${stills.map((st) => `"${st.props.text}"`).join(', ')}`)
+    ctx.log(
+      `3 thumbnails: ${stills.map((st) => (st.props.cutout ? '[destaque sem texto]' : `"${st.props.text}"`)).join(', ')}`
+    )
   }
 }

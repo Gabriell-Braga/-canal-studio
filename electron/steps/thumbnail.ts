@@ -84,15 +84,17 @@ async function cutoutFor(
   i: number,
   dir: string,
   ctx: StepContext
-): Promise<string | null> {
+): Promise<{ file: string; textSide: 'left' | 'right' } | null> {
   try {
     const out = join(dir, `cutout_${i + 1}.png`)
-    const { coverage } = await pythonPost<{ coverage: number }>(
+    const { coverage, center_x } = await pythonPost<{ coverage: number; center_x?: number }>(
       '/cutout',
       { image_path: background, out_path: out },
       ctx.signal
     )
-    if (coverage >= 0.03 && coverage <= 0.75) return out
+    // Text on the side away from the subject; AI images put the subject on the right.
+    const textSide = (center_x ?? 1) < 0.5 ? 'right' : 'left'
+    if (coverage >= 0.03 && coverage <= 0.75) return { file: out, textSide }
     ctx.log(`Thumbnail ${i + 1}: sem objeto claro para destacar`, 'warn')
   } catch (error) {
     ctx.log(
@@ -131,7 +133,8 @@ export function layoutFor(kind: ThumbKind, n: number): number {
     stock: [1, 3, 0],
     scene: [0, 2, 1],
     split: [4],
-    highlight: [0]
+    highlight: [0],
+    glow: [0]
   }
   const options = byKind[kind]
   return options[n % options.length]
@@ -255,14 +258,21 @@ Return ONLY JSON: {"concepts": [{"text": "...", "image": "...", "search": "..."}
     const plan: { kind: ThumbKind; props: ThumbnailProps }[] = []
     const add = (
       kind: ThumbKind,
-      props: { background: string; background2?: string; text: string; cutout?: string }
+      props: {
+        background: string
+        background2?: string
+        text: string
+        cutout?: string
+        textSide?: 'left' | 'right'
+      }
     ): void => {
       const n = counts[kind] ?? 0
       counts[kind] = n + 1
       plan.push({ kind, props: { ...props, template, brand, variant: layoutFor(kind, n) } })
     }
 
-    // "highlight" turns every image into the no-text style; "mixed" adds two of them.
+    // "highlight" turns every image into the highlight style; "mixed" adds two of them.
+    // Each highlight comes twice: without text and with the headline.
     const highlightAll = s.thumbStyle === 'highlight'
     const highlightOf = new Set<Background>()
     if (s.thumbStyle !== 'text') {
@@ -275,11 +285,13 @@ Return ONLY JSON: {"concepts": [{"text": "...", "image": "...", "search": "..."}
         const cut = await cutoutFor(b.file, i, dir, ctx)
         if (cut) {
           highlightOf.add(b)
-          add('highlight', {
+          const props = {
             background: url(ctx.projectDir, b.file),
-            text: b.text,
-            cutout: url(ctx.projectDir, cut)
-          })
+            cutout: url(ctx.projectDir, cut.file),
+            textSide: cut.textSide
+          }
+          add('highlight', { ...props, text: '' })
+          add('glow', { ...props, text: b.text })
         }
       }
     }
@@ -316,7 +328,7 @@ Return ONLY JSON: {"concepts": [{"text": "...", "image": "...", "search": "..."}
       if (f.startsWith('thumb_') && !keep.has(join(dir, f))) rmSync(join(dir, f), { force: true })
     }
     ctx.log(
-      `${stills.length} thumbnails: ${plan.map((p) => `${THUMB_KIND_LABELS[p.kind]}${p.props.cutout ? '' : ` "${p.props.text}"`}`).join(', ')}`
+      `${stills.length} thumbnails: ${plan.map((p) => `${THUMB_KIND_LABELS[p.kind]}${p.props.text ? ` "${p.props.text}"` : ''}`).join(', ')}`
     )
   }
 }

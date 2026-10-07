@@ -216,8 +216,12 @@ def cutout(req: CutoutRequest):
     rgba = img.copy()
     rgba.putalpha(mask)
     rgba.save(out)
-    coverage = float((np.asarray(mask) > 127).mean())
-    return {"path": str(out), "coverage": coverage}
+    solid = np.asarray(mask) > 127
+    coverage = float(solid.mean())
+    # Horizontal center of the subject (0 left, 1 right): the text goes on the other side.
+    cols = solid.sum(axis=0)
+    center_x = float((cols * np.arange(len(cols))).sum() / max(cols.sum(), 1) / max(len(cols) - 1, 1))
+    return {"path": str(out), "coverage": coverage, "center_x": center_x}
 
 
 @app.post("/unload")

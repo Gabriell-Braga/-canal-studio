@@ -76,22 +76,25 @@ export interface ThumbnailProps {
   text: string
   template: TemplateId
   brand?: Brand
-  /** Subject cut out of the background (RGBA PNG): renders the no-text highlight style */
+  /** Subject cut out of the background (RGBA PNG): renders the highlight style, with no text when text is empty */
   cutout?: string | null
+  /** Highlight style: side of the frame the text goes on, away from the subject */
+  textSide?: 'left' | 'right'
   /** 0 text left, 1 text right, 2 text top, 3 text in a color block, 4 split screen */
   variant: number
   [key: string]: unknown
 }
 
 /** Where a thumbnail option came from; the step writes it at the end of the file name. */
-export type ThumbKind = 'ai' | 'stock' | 'scene' | 'split' | 'highlight'
+export type ThumbKind = 'ai' | 'stock' | 'scene' | 'split' | 'highlight' | 'glow'
 
 export const THUMB_KIND_LABELS: Record<ThumbKind, string> = {
   ai: 'Conceito IA',
   stock: 'Banco de imagens',
   scene: 'Cena do vídeo',
   split: 'Comparação',
-  highlight: 'Destaque sem texto'
+  highlight: 'Destaque sem texto',
+  glow: 'Destaque com texto'
 }
 
 /** "thumb_3_stock.png" → "stock"; null for files from before the kinds existed. */

@@ -931,7 +931,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
           </div>
           <Field
             label="Estilo da thumbnail"
-            hint="Destaque: imagem em preto e branco, sem texto, só o objeto principal na cor de destaque."
+            hint="Destaque: imagem em preto e branco, só o objeto principal na cor de destaque. Cada destaque sai em duas versões: com e sem texto."
           >
             <select
               className={inputClass}
@@ -939,8 +939,8 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               onChange={(e) => set('thumbStyle', e.target.value as ThumbStyle)}
             >
               <option value="text">Texto sobre a imagem</option>
-              <option value="highlight">Destaque colorido, sem texto</option>
-              <option value="mixed">Misto: 1 destaque e 2 com texto</option>
+              <option value="highlight">Destaque colorido</option>
+              <option value="mixed">Misto: destaques e texto sobre a imagem</option>
             </select>
           </Field>
           <label className="flex items-center gap-2 self-end text-sm text-ink-200">

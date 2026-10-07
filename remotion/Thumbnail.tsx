@@ -3,7 +3,7 @@ import { AbsoluteFill, Img } from 'remotion'
 import type { ThumbnailProps } from '../shared/render'
 import { brandTextShadow, template } from './templates'
 
-/** 1280x720 thumbnail: background + 2–4 word headline (5 layout variants), or the no-text highlight style. */
+/** 1280x720 thumbnail: background + 2–4 word headline (5 layout variants), or the highlight style with or without text. */
 export const Thumbnail: React.FC<ThumbnailProps> = ({
   background,
   background2,
@@ -11,11 +11,11 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
   template: id,
   brand,
   variant,
-  cutout
+  cutout,
+  textSide
 }) => {
   const style = template(id)
   const colors: [string, string] = brand ? [brand.secondary, brand.primary] : style.thumbColors
-  if (cutout) return <Highlight background={background} cutout={cutout} color={colors[1]} />
   const font = brand?.font ? `"${brand.font}", ${style.thumbFont}` : style.thumbFont
   const words = text.toUpperCase().split(/\s+/).filter(Boolean)
   // Highlight the last word in the accent color.
@@ -23,6 +23,47 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
   const tail = words.at(-1) ?? ''
   const fontSize = words.length > 3 ? 104 : 128
   const stroke = brandTextShadow(brand?.outline ?? true, 5)
+  if (cutout) {
+    const right = textSide === 'right'
+    return (
+      <AbsoluteFill>
+        <Highlight background={background} cutout={cutout} color={colors[1]} />
+        {/* Dark corner behind the text, so the accent word still reads over a lit subject. */}
+        {tail && (
+          <AbsoluteFill
+            style={{
+              background: `radial-gradient(ellipse 70% 60% at ${right ? '100%' : '0%'} 100%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.55) 45%, transparent 100%)`
+            }}
+          />
+        )}
+        {tail && (
+          <AbsoluteFill
+            style={{
+              justifyContent: 'flex-end',
+              alignItems: right ? 'flex-end' : 'flex-start',
+              padding: right ? '0 70px 60px 0' : '0 0 60px 70px'
+            }}
+          >
+            <div
+              style={{
+                maxWidth: 620,
+                fontFamily: font,
+                fontWeight: 900,
+                fontSize: fontSize * 0.85,
+                lineHeight: 0.95,
+                letterSpacing: -1,
+                textShadow: stroke,
+                textAlign: right ? 'right' : 'left'
+              }}
+            >
+              {head && <div style={{ color: colors[0] }}>{head}</div>}
+              <div style={{ color: colors[1] }}>{tail}</div>
+            </div>
+          </AbsoluteFill>
+        )}
+      </AbsoluteFill>
+    )
+  }
   const photo = (src: string, extra: React.CSSProperties = {}): React.JSX.Element => (
     <Img
       src={src}

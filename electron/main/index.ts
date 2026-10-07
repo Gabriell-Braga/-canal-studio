@@ -282,11 +282,11 @@ app.whenReady().then(async () => {
   })
   const pipeline = new Pipeline(scheduler)
   pipeline.approveAllShorts()
-  // Once: videos made before year cards and company badges are made again in the new format.
-  if (!getState('reprocess.yearCards', false) && process.env.CANAL_FAKE_STEPS !== '1') {
-    const done = pipeline.reprocessUnpublished()
-    console.log(`Reprocess: ${done.videos} video(s), ${done.shorts} short(s)`)
-    setState('reprocess.yearCards', true)
+  // Once: every video not public yet is made again with the teaser and channel intro.
+  if (!getState('reprocess.teaser', false) && process.env.CANAL_FAKE_STEPS !== '1') {
+    const done = pipeline.reprocessAll()
+    console.log(`Reprocess: ${done.videos} video(s), ${done.replaced} to replace on YouTube`)
+    setState('reprocess.teaser', true)
   }
   pipeline.refreshAllShortThumbs()
   registerIpc(pipeline, scheduler, applySettings)

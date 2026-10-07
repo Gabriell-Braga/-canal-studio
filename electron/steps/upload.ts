@@ -2,7 +2,15 @@ import { join } from 'path'
 import { getVideo, listShorts, listVideos, updateVideo } from '../db/repo'
 import { isValidFile, runTool } from '../services/ffmpeg'
 import { nextFreeSlot, shortSlotAfter } from '../queue/slots'
-import { canUploadCaptions, setThumbnail, uploadCaptions, uploadVideo } from '../services/youtube'
+import {
+  canUploadCaptions,
+  deleteYoutubeVideo,
+  setThumbnail,
+  uploadCaptions,
+  uploadVideo,
+  youtubePrivacy
+} from '../services/youtube'
+import { getState, setState } from '../db/settings'
 import type { Settings, Video } from '../../shared/types'
 import type { Step, StepContext } from './types'
 
@@ -64,6 +72,7 @@ export const uploadStep: Step = {
     }
 
     if (!video.youtube_id) {
+      await removeReplaced(video, ctx)
       ctx.log(
         `Enviando vídeo como privado, publicação em ${new Date(video.scheduled_at as string).toLocaleString('pt-BR')}`
       )
@@ -93,6 +102,43 @@ export const uploadStep: Step = {
     await sendExtras(video, ctx.projectDir, ctx.settings, ctx.log, ctx.signal)
     ctx.progress(1)
   }
+}
+
+/**
+ * A video made again in a new format replaces its earlier upload: the old copy (and the
+ * old shorts of a full video) are deleted from YouTube right before the new one goes up.
+ * A copy that is already public is never deleted; the upload stops so the owner decides.
+ */
+async function removeReplaced(video: Video, ctx: StepContext): Promise<void> {
+  const key = `replace.${video.id}`
+  const old = getState<string | null>(key, null)
+  const oldShorts = getState<string[]>(`replaceShorts.${video.id}`, [])
+  if (old) {
+    const privacy = await youtubePrivacy(video.channel_id, old)
+    if (privacy === 'public') {
+      throw new Error(
+        `A versão antiga (https://youtu.be/${old}) já está pública. Apague-a no YouTube Studio se quiser a nova, depois tente de novo.`
+      )
+    }
+    if (privacy) {
+      await deleteYoutubeVideo(video.channel_id, old)
+      ctx.log(`Versão antiga removida do YouTube (${old})`)
+    }
+    setState(key, null)
+  }
+  for (const id of oldShorts) {
+    try {
+      const privacy = await youtubePrivacy(video.channel_id, id)
+      if (privacy === 'public') ctx.log(`Short antigo ${id} já está público; mantido`, 'warn')
+      else if (privacy) {
+        await deleteYoutubeVideo(video.channel_id, id)
+        ctx.log(`Short antigo removido do YouTube (${id})`)
+      }
+    } catch (error) {
+      ctx.log(`Short antigo ${id}: ${(error as Error).message}`, 'warn')
+    }
+  }
+  if (oldShorts.length) setState(`replaceShorts.${video.id}`, [])
 }
 
 /**

@@ -21,7 +21,7 @@ const SCOPES = [
 
 /** Default daily quota of a Google Cloud project, and the cost of each call we make. */
 export const QUOTA_LIMIT = 10_000
-export const COST = { insert: 1600, thumbnail: 50, list: 1, captions: 400 }
+export const COST = { insert: 1600, thumbnail: 50, list: 1, captions: 400, delete: 50 }
 
 // ---------------------------------------------------------------- secrets (safeStorage)
 
@@ -257,6 +257,20 @@ export async function uploadVideo(
   const id = res.data.id
   if (!id) throw new Error('YouTube não devolveu o ID do vídeo')
   return id
+}
+
+/** Privacy of an uploaded video ('private', 'unlisted', 'public'), or null when it is gone. */
+export async function youtubePrivacy(channelId: number, videoId: string): Promise<string | null> {
+  const yt = youtube({ version: 'v3', auth: authed(channelId) })
+  const res = await yt.videos.list({ part: ['status'], id: [videoId] })
+  addQuota(COST.list)
+  return res.data.items?.[0]?.status?.privacyStatus ?? null
+}
+
+export async function deleteYoutubeVideo(channelId: number, videoId: string): Promise<void> {
+  const yt = youtube({ version: 'v3', auth: authed(channelId) })
+  await yt.videos.delete({ id: videoId })
+  addQuota(COST.delete)
 }
 
 export async function setThumbnail(

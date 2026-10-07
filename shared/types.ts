@@ -117,6 +117,8 @@ export interface Script {
   hook: string
   scenes: ScriptScene[]
   outro: string
+  /** The hook's punch line, shown big on screen while the hook plays */
+  teaser?: string
   /** Stock search for the hook: a real, recognizable image of the subject */
   hook_visual_keywords?: string
   outro_visual_keywords?: string

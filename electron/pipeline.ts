@@ -12,7 +12,7 @@ import {
   updateVideo,
   videosByStatus
 } from './db/repo'
-import { getSettings } from './db/settings'
+import { getSettings, getState, setState } from './db/settings'
 import { generateStructured } from './services/llm'
 import { scriptSchema } from './steps/script'
 import { staleShorts } from './steps/shorts'
@@ -77,33 +77,43 @@ export class Pipeline {
   }
 
   /**
-   * Bring everything not on YouTube yet to the current video format (year cards, company
-   * badges, logo opening). Full videos get a new script, which goes back to script review;
-   * their unpublished shorts are dropped and cut again from the new render. Shorts of videos
-   * already on YouTube are cut again from the published video.
+   * Make every video that is not public yet again in the current format (teaser, channel
+   * intro, year cards, company badges). Full videos get a new script, which goes back to
+   * script review; their shorts are dropped and cut again after the final approval. Copies
+   * already uploaded but not public keep their publish time and are replaced on YouTube when
+   * the new version is uploaded (see the upload step).
    */
-  reprocessUnpublished(): { videos: number; shorts: number } {
+  reprocessAll(): { videos: number; replaced: number } {
     let videos = 0
-    let shorts = 0
+    let replaced = 0
     for (const v of listVideos()) {
-      if (v.kind !== 'long') continue
-      const stale = listShorts(v.id).filter((s) => !s.youtube_id)
-      for (const s of stale) {
+      if (v.kind !== 'long' || v.status === 'PUBLISHED') continue
+      if (!v.script && v.status !== 'SCRIPT_GENERATING') continue
+      const shorts = listShorts(v.id)
+      const oldShortIds = shorts.map((s) => s.youtube_id).filter((id): id is string => !!id)
+      for (const s of shorts) {
         cancelPendingJobs(s.id)
         deleteVideo(s.id)
       }
-      if (!v.youtube_id) {
-        if (!v.script || v.status === 'SCRIPT_GENERATING') continue
-        updateVideo(v.id, { scheduled_at: null })
-        this.redoScript(v.id)
-        videos++
-      } else if (stale.length && v.video_path) {
-        enqueueJob(v.id, 'short', 'night', 0, true, { count: stale.length })
-        shorts += stale.length
+      if (oldShortIds.length) {
+        setState(`replaceShorts.${v.id}`, [
+          ...getState<string[]>(`replaceShorts.${v.id}`, []),
+          ...oldShortIds
+        ])
       }
+      if (shorts.length) setState(`reshorts.${v.id}`, shorts.length)
+      if (v.youtube_id) {
+        setState(`replace.${v.id}`, v.youtube_id)
+        updateVideo(v.id, { youtube_id: null })
+        replaced++
+      } else {
+        updateVideo(v.id, { scheduled_at: null })
+      }
+      this.redoScript(v.id)
+      videos++
     }
     this.scheduler.kick()
-    return { videos, shorts }
+    return { videos, replaced }
   }
 
   retryFrom(id: number, step: JobType): void {
@@ -137,8 +147,11 @@ export class Pipeline {
       this.approveShorts(id)
       // Cut only now, so the end card shows the thumbnail picked in the review.
       const s = getSettings(v.channel_id)
-      if (s.shortsAuto && !listShorts(id).length) {
-        enqueueJob(id, 'short', 'night', 0, true, { count: s.shortsCount })
+      // Shorts dropped when the video was made again are cut again too.
+      const recut = getState<number>(`reshorts.${id}`, 0)
+      if ((s.shortsAuto || recut) && !listShorts(id).length) {
+        enqueueJob(id, 'short', 'night', 0, true, { count: recut || s.shortsCount })
+        if (recut) setState(`reshorts.${id}`, 0)
       }
     }
     this.scheduler.kick()

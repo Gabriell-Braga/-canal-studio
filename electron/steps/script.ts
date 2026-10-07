@@ -19,6 +19,7 @@ export const scriptSchema = z.object({
     )
     .min(2),
   outro: z.string(),
+  teaser: z.string().min(1),
   hook_visual_keywords: z.string(),
   outro_visual_keywords: z.string(),
   companies: z
@@ -38,7 +39,7 @@ export const scriptSchema = z.object({
  */
 export const STRUCTURE_RULES = `
 Extra rules:
-- Opening: the hook must make clear right away which company, person or thing the video is about (name it in the first sentence). hook_visual_keywords: 2–4 English words for a REAL, instantly recognizable photo of that subject (its famous product, headquarters, founder or storefront), different from the first scene's visual_keywords. outro_visual_keywords: same idea for the ending, different from the last scene.
+- Opening (hook): a cold open that sells the whole video in 2–4 short sentences. First sentence: the story's biggest twist in one punchy line that names the subject and the stakes (e.g. "Xerox handed Apple the future, and billions of dollars, for free."). Then one line of tension (what nobody saw coming). End with a line that asks the viewer to stay until the end to understand how it happened, phrased naturally and differently each time (e.g. "Stay until the end, because how it happened is even stranger.", "By the end of this video, you'll see exactly where it went wrong."). Never greet, never say "in this video we will". teaser: that first punchy line, shortened to at most 9 words, shown big on screen during the hook (e.g. "Xerox gave Apple the future. For free."). hook_visual_keywords: 2–4 English words for a REAL, instantly recognizable photo of that subject (its famous product, headquarters, founder or storefront), different from the first scene's visual_keywords. outro_visual_keywords: same idea for the ending, different from the last scene.
 - Years: give every scene the year it takes place in (year, a number), or null when it has no clear moment in time. Keep years in story order where possible. Whenever a scene moves to a different year than the previous scene with a year, its narration MUST say that year out loud, phrased in a varied way each time (e.g. "By 1984...", "Fast forward to 1997.", "In the spring of 2001,", "Eleven years later, in 1995,", "1976. A garage in Los Altos."). Never repeat the same phrasing twice.
 - Curiosities: every 60–90 seconds of narration, drop in one surprising, little-known but true detail tightly tied to the topic (a strange decision, a near miss, a hidden connection, an odd number) that makes the viewer say "I didn't know that". Weave it into the story; do not announce it as a "fun fact".
 - companies: the companies the video is about, at most 2 (the main one first; e.g. a story about Xerox and Apple lists both). Empty array when the video is not about companies. For each: name (short, as people say it), wikipedia_title (exact English Wikipedia article title, e.g. "Apple Inc.") and values: the company's value in US dollars (market capitalization when public, otherwise its latest known private valuation) at each year the script mentions, plus its founding year with value 0. One entry per year, numbers in plain dollars (e.g. 2500000000 for 2.5 billion). Only use figures you are confident about; leave a year out rather than guess.

@@ -1039,6 +1039,15 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               onChange={(e) => set('googleClientSecret', e.target.value)}
             />
           </Field>
+          <label className="flex items-center gap-2 text-sm text-ink-200 md:col-span-2">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={s.youtubeAudited}
+              onChange={(e) => set('youtubeAudited', e.target.checked)}
+            />
+            O projeto passou na auditoria da API do YouTube (uploads podem ficar públicos)
+          </label>
         </Section>
 
         <Section title="Sistema" scope="global">

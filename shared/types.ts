@@ -281,6 +281,8 @@ export interface Settings {
   shortsAuto: boolean
   googleClientId: string
   googleClientSecret: string
+  /** The Google Cloud project passed the YouTube API audit, so uploads can go public */
+  youtubeAudited: boolean
   startWithWindows: boolean
   minimizeToTray: boolean
 }

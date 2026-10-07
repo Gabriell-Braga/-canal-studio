@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Canal Studio Privacy Policy</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <p><a href="index.html">← Canal Studio</a></p>
+      <h1>Privacy Policy</h1>
+      <p class="muted">Last updated: October 6, 2026</p>
+
+      <p>
+        Canal Studio is a Windows desktop application. It helps its owner produce documentary
+        videos and publish them to the owner's own YouTube channels. It is a private tool, not a
+        public service: it has no website accounts, no backend server and no users other than the
+        channel owner.
+      </p>
+
+      <h2>Google and YouTube data the app accesses</h2>
+      <p>When you connect a YouTube channel, the app asks for these Google OAuth scopes:</p>
+      <ul>
+        <li><code>youtube.upload</code>: to upload the videos you approved.</li>
+        <li>
+          <code>youtube.force-ssl</code>: to set the custom thumbnail and upload the English
+          subtitles of those videos.
+        </li>
+        <li>
+          <code>youtube.readonly</code>: to read your channel name and picture.
+        </li>
+        <li>
+          <code>yt-analytics.readonly</code>: to show views, watch time, average view duration and
+          subscribers gained of the videos the app uploaded.
+        </li>
+      </ul>
+
+      <h2>How the data is used</h2>
+      <ul>
+        <li>Only to upload your approved videos and show your own channel statistics to you.</li>
+        <li>Never for advertising, profiling, selling or training AI models.</li>
+        <li>
+          YouTube and Google data is not sent to any other service. It goes only between your
+          computer and Google's APIs.
+        </li>
+      </ul>
+
+      <h2>Where the data is stored</h2>
+      <ul>
+        <li>
+          Everything stays on your own computer. OAuth tokens are encrypted with Windows data
+          protection (DPAPI) and stored in the app's local database.
+        </li>
+        <li>Channel statistics are cached in the same local database to show them offline.</li>
+        <li>The developer has no server and receives no copy of your data.</li>
+      </ul>
+
+      <h2>Other services</h2>
+      <p>
+        To write scripts the app can use Anthropic's Claude API or a local model. Only the video
+        topic and the script text are sent there, never YouTube data. Stock footage is searched on
+        Pixabay, Pexels and Wikimedia Commons with keywords from the script.
+      </p>
+
+      <h2>Deleting your data and revoking access</h2>
+      <ul>
+        <li>In the app, click <b>Desconectar</b> on the YouTube screen to delete the stored tokens.</li>
+        <li>
+          You can also revoke access at any time at
+          <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+        </li>
+        <li>Uninstalling the app and deleting its data folder removes everything it stored.</li>
+      </ul>
+
+      <h2>YouTube Terms</h2>
+      <p>
+        By using the app you also agree to the
+        <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>. Google's handling of
+        your data is described in the
+        <a href="https://policies.google.com/privacy">Google Privacy Policy</a>.
+      </p>
+
+      <h2>Contact</h2>
+      <p>Questions about this policy: <a href="mailto:CONTACT_EMAIL">CONTACT_EMAIL</a>.</p>
+    </main>
+  </body>
+</html>

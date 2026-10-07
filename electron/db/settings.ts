@@ -67,6 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shortsAuto: false,
   googleClientId: '',
   googleClientSecret: '',
+  youtubeAudited: false,
   startWithWindows: false,
   minimizeToTray: true
 }

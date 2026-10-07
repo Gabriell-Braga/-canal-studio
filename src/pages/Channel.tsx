@@ -22,6 +22,7 @@ export default function Channel(): React.JSX.Element {
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [guide, setGuide] = useState(false)
+  const { data: settings } = useLive(() => api.settings.get(channel.id), ['settings'], [channel.id])
 
   async function run(fn: () => Promise<unknown>, ok: string): Promise<void> {
     setBusy(true)
@@ -96,10 +97,16 @@ export default function Channel(): React.JSX.Element {
         <b>Cota da API:</b> {fmt(stats?.quotaUsedToday ?? 0)} de {fmt(stats?.quotaLimit ?? 10000)}{' '}
         unidades usadas hoje ({quotaPct}%). Cada upload gasta ~1.650 unidades (vídeo + thumbnail):
         cabem cerca de {uploadsLeft} upload(s) até a cota zerar (meia-noite do Pacífico).
-        <br />
-        <b>Projeto não verificado:</b> enquanto o app do Google Cloud não passar pela auditoria, o
-        YouTube trava os uploads como privados. Os vídeos sobem e agendam normalmente, mas você
-        precisa torná-los públicos no YouTube Studio (ou pedir a auditoria). Veja o guia abaixo.
+        {settings && !settings.youtubeAudited && (
+          <>
+            <br />
+            <b>Projeto sem auditoria:</b> enquanto o projeto do Google Cloud não passar pela
+            auditoria da API, o YouTube trava os uploads como privados e ignora o agendamento. Os
+            vídeos sobem normalmente; publique ou agende cada um no YouTube Studio. Veja o guia
+            abaixo. Quando a auditoria for aprovada, marque a opção em Configurações gerais →
+            YouTube.
+          </>
+        )}
       </Banner>
 
       <div className="mb-6 grid gap-4 md:grid-cols-3">
@@ -196,14 +203,22 @@ export default function Channel(): React.JSX.Element {
             <li>
               No Canal Studio: <b>Configurações → YouTube</b>, cole os dois valores e salve. Volte
               aqui e clique em <b>Conectar YouTube</b>. O navegador abre; escolha a conta do canal e
-              aceite. Como o app está em teste, o Google mostra “app não verificado”: clique em{' '}
-              <b>Avançado → Acessar Canal Studio</b>.
+              aceite. O Google mostra “app não verificado”: clique em{' '}
+              <b>Avançado → Acessar Canal Studio</b>. Para uso próprio, você não precisa verificar o
+              app.
             </li>
             <li>
-              <b>Limites do modo teste:</b> o refresh token de apps em teste expira em 7 dias
-              (reconecte quando o upload falhar com erro de autenticação). Para tirar esse limite e
-              destravar uploads públicos, publique o app e peça a <b>auditoria da API do YouTube</b>{' '}
-              (formulário “YouTube API Services – Audit and Quota Extension”).
+              <b>Login que não expira:</b> em modo Teste, o login vence a cada 7 dias. Em{' '}
+              <b>Tela de consentimento OAuth → Público-alvo</b>, clique em <b>Publicar app</b>{' '}
+              (status “Em produção”) e reconecte cada canal uma vez. O aviso de “app não verificado”
+              continua, mas o login não vence mais.
+            </li>
+            <li>
+              <b>Uploads públicos (auditoria da API):</b> sem ela, todo vídeo enviado fica travado
+              como privado. Peça no formulário “YouTube API Services – Audit and Quota Extension”.
+              As respostas prontas, a política de privacidade e o roteiro do vídeo de tela estão em{' '}
+              <span className="font-mono">docs/youtube-audit.md</span> no projeto. A resposta leva
+              de semanas a meses; até lá, publique pelo YouTube Studio.
             </li>
             <li>
               Para thumbnails personalizadas, o canal precisa estar verificado por telefone em{' '}

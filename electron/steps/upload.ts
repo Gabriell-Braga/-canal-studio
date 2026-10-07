@@ -75,6 +75,12 @@ export const uploadStep: Step = {
       )
       video = updateVideo(videoId, { youtube_id: id })
       ctx.log(`Enviado: https://youtu.be/${id}`)
+      if (!ctx.settings.youtubeAudited) {
+        ctx.log(
+          'Projeto do Google Cloud sem auditoria da API: o YouTube trava este vídeo como privado e ignora o agendamento. Publique ou agende no YouTube Studio.',
+          'warn'
+        )
+      }
     }
 
     // Exact subtitles from the narration timings (YouTube's own captions, not burned in).

@@ -137,6 +137,9 @@ const migrations: string[] = [
   `,
   `
   ALTER TABLE scenes ADD COLUMN year INTEGER;
+  `,
+  `
+  ALTER TABLE scenes ADD COLUMN real_subject TEXT NOT NULL DEFAULT '';
   `
 ]
 

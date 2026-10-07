@@ -264,6 +264,7 @@ function toScene(r: Row): Scene {
     narration: r.narration as string,
     visual_keywords: r.visual_keywords as string,
     image_prompt: r.image_prompt as string,
+    real_subject: (r.real_subject as string) ?? '',
     asset_type: (r.asset_type as Scene['asset_type']) ?? null,
     asset_path: (r.asset_path as string) ?? null,
     asset_source: (r.asset_source as string) ?? null,
@@ -296,6 +297,7 @@ export function replaceScenes(videoId: number, script: Script): Scene[] {
       narration: script.hook,
       visual_keywords: script.hook_visual_keywords || script.scenes[0]?.visual_keywords || '',
       image_prompt: script.scenes[0]?.image_prompt ?? '',
+      real_subject: script.hook_visual_keywords || script.scenes[0]?.real_subject || '',
       year: null
     },
     ...script.scenes,
@@ -303,16 +305,25 @@ export function replaceScenes(videoId: number, script: Script): Scene[] {
       narration: script.outro,
       visual_keywords: script.outro_visual_keywords || script.scenes.at(-1)?.visual_keywords || '',
       image_prompt: script.scenes.at(-1)?.image_prompt ?? '',
+      real_subject: script.outro_visual_keywords || script.scenes.at(-1)?.real_subject || '',
       year: null
     }
   ].filter((s) => s.narration.trim())
   const insert = db().prepare(
-    'INSERT INTO scenes (video_id, "index", narration, visual_keywords, image_prompt, year) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO scenes (video_id, "index", narration, visual_keywords, image_prompt, real_subject, year) VALUES (?, ?, ?, ?, ?, ?, ?)'
   )
   db().transaction(() => {
     db().prepare('DELETE FROM scenes WHERE video_id = ?').run(videoId)
     rows.forEach((s, i) =>
-      insert.run(videoId, i, s.narration.trim(), s.visual_keywords, s.image_prompt, s.year ?? null)
+      insert.run(
+        videoId,
+        i,
+        s.narration.trim(),
+        s.visual_keywords,
+        s.image_prompt,
+        s.real_subject ?? '',
+        s.year ?? null
+      )
     )
   })()
   notify('videos')

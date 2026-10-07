@@ -14,6 +14,7 @@ function scene(i: number, start: number, end: number): Scene {
     narration: `Scene ${i}`,
     visual_keywords: '',
     image_prompt: '',
+    real_subject: '',
     asset_type: null,
     asset_path: null,
     asset_source: null,

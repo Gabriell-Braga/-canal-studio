@@ -216,7 +216,7 @@ export class Pipeline {
       .join('\n')
     const fixed = await generateStructured(
       `Here is a YouTube documentary script as JSON and the editor's review alerts.
-Rewrite the script fixing every alert: correct or soften wrong and unverifiable facts, strengthen the hook if flagged, fix pacing and repetition. Keep everything else, the scene structure and the length about the same. Keep visual_keywords and image_prompt unless the scene's content changed.
+Rewrite the script fixing every alert: correct or soften wrong and unverifiable facts, strengthen the hook if flagged, fix pacing and repetition. Keep everything else, the scene structure and the length about the same. Keep visual_keywords, real_subject and image_prompt unless the scene's content changed.
 
 ALERTS:
 ${alerts}

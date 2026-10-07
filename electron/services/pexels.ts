@@ -39,6 +39,8 @@ export interface StockCandidate {
   credit?: string
   /** What the media shows (tags, title, description), used to judge relevance */
   label?: string
+  /** A real photo of the person or event the scene names (Wikimedia search by real_subject) */
+  real?: boolean
 }
 
 async function pexelsGet<T>(path: string, key: string, signal?: AbortSignal): Promise<T> {

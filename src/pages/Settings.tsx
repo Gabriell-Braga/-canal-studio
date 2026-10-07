@@ -737,7 +737,20 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
             />
             <span>
               Wikimedia Commons: usar também arquivos CC BY, com crédito automático na descrição do
-              vídeo. Sem esta opção, só domínio público e CC0. CC BY-SA, NC e ND nunca são usados.
+              vídeo. Sem esta opção, só domínio público e CC0. NC e ND nunca são usados.
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-ink-200 md:col-span-2">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4"
+              checked={s.wikimediaAllowCcBySa}
+              onChange={(e) => set('wikimediaAllowCcBySa', e.target.checked)}
+            />
+            <span>
+              Wikimedia Commons: usar também arquivos CC BY-SA (a maioria das fotos reais de pessoas
+              e eventos, como o Steve Jobs apresentando o iPhone), com crédito automático. A licença
+              pede que obras derivadas usem a mesma licença.
             </span>
           </label>
           <Field

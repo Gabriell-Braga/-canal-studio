@@ -44,6 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pixabayApiKey: '',
   stockProviders: ['pixabay', 'wikimedia', 'pexels'],
   wikimediaAllowCcBy: true,
+  wikimediaAllowCcBySa: true,
   aiImageRatio: 0.3,
   captionsEnabled: false,
   youtubeCaptions: true,

@@ -4,7 +4,7 @@ import { join } from 'path'
 import type { Settings, StockProvider } from '../../shared/types'
 import { searchStock as searchPexels, type StockCandidate } from './pexels'
 import { searchPixabay } from './pixabay'
-import { searchWikimedia } from './wikimedia'
+import { searchWikimedia, type WikimediaOptions } from './wikimedia'
 import { searchArchive, searchMet, searchNasa } from './archives'
 
 let cacheDir = ''
@@ -33,6 +33,39 @@ async function cached(
   const result = await load()
   if (file) writeFileSync(file, JSON.stringify(result))
   return result
+}
+
+function wikimediaOptions(s: Settings, relaxed = false): WikimediaOptions {
+  return {
+    allowCcBy: s.wikimediaAllowCcBy,
+    allowCcBySa: s.wikimediaAllowCcBySa,
+    relaxed
+  }
+}
+
+/**
+ * Real photos of a named person, product or event (Steve Jobs on stage in 2007, not a concert).
+ * Wikimedia Commons only: the stock banks have no editorial photos. Runs even when the channel
+ * turned Wikimedia off, since nothing else can show the real thing.
+ */
+export async function searchReal(
+  subject: string,
+  s: Settings,
+  exclude: Set<string>,
+  onWarn?: (message: string) => void,
+  signal?: AbortSignal
+): Promise<StockCandidate[]> {
+  if (!subject.trim()) return []
+  try {
+    const all = await cached(
+      `real|${s.wikimediaAllowCcBy}|${s.wikimediaAllowCcBySa}|${subject}`,
+      () => searchWikimedia(subject, wikimediaOptions(s, true), new Set(), signal)
+    )
+    return all.filter((c) => !exclude.has(c.source)).map((c) => ({ ...c, real: true }))
+  } catch (error) {
+    onWarn?.(`Wikimedia (foto real): ${(error as Error).message}`)
+    return []
+  }
 }
 
 const KEYLESS = new Set<StockProvider>(['wikimedia', 'nasa', 'met', 'archive'])
@@ -71,8 +104,9 @@ export async function searchAll(
           searchPexels(query, minDuration, s.pexelsApiKey, new Set(), signal)
         )
       } else if (provider === 'wikimedia') {
-        all = await cached(`wikimedia|${s.wikimediaAllowCcBy}|${query}`, () =>
-          searchWikimedia(query, s.wikimediaAllowCcBy, new Set(), signal)
+        all = await cached(
+          `wikimedia|${s.wikimediaAllowCcBy}|${s.wikimediaAllowCcBySa}|${query}`,
+          () => searchWikimedia(query, wikimediaOptions(s), new Set(), signal)
         )
       } else {
         const search = { nasa: searchNasa, met: searchMet, archive: searchArchive }[provider]

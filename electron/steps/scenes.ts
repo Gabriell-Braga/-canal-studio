@@ -6,7 +6,7 @@ import { ensureComfy, freeComfy, generateImage } from '../services/comfy'
 import { isValidFile, probeDuration, runTool } from '../services/ffmpeg'
 import { unloadAll } from '../services/ollama'
 import { download } from '../services/pexels'
-import { gatherCandidates, PROVIDER_LABELS, usableProviders } from '../services/stock'
+import { gatherCandidates, PROVIDER_LABELS, searchReal, usableProviders } from '../services/stock'
 import type { StockCandidate } from '../services/pexels'
 import { pickRelevant } from './relevance'
 import { pythonPost } from '../services/python'
@@ -44,7 +44,7 @@ export async function assignStock(
   signal?: AbortSignal,
   onWarn?: (message: string) => void
 ): Promise<boolean> {
-  if (!usableProviders(s).length) return false
+  if (!usableProviders(s).length && !scene.real_subject) return false
   const exclude = usedSources(scene.video_id, scene.id)
   extraExclude.forEach((e) => exclude.add(e))
   const candidates = await sceneCandidates(scene, s, exclude, onWarn, signal)
@@ -62,14 +62,25 @@ function sceneQuery(scene: Scene): string {
   return scene.visual_keywords || scene.narration.split(/\s+/).slice(0, 4).join(' ')
 }
 
-function sceneCandidates(
+/** Real photos of the named person or event first, then the stock banks. */
+async function sceneCandidates(
   scene: Scene,
   s: Settings,
   exclude: Set<string>,
   onWarn?: (message: string) => void,
   signal?: AbortSignal
 ): Promise<StockCandidate[]> {
-  return gatherCandidates(sceneQuery(scene), sceneDuration(scene), s, exclude, 4, onWarn, signal)
+  const real = await searchReal(scene.real_subject, s, exclude, onWarn, signal)
+  const stock = await gatherCandidates(
+    sceneQuery(scene),
+    sceneDuration(scene),
+    s,
+    exclude,
+    4,
+    onWarn,
+    signal
+  )
+  return [...real.slice(0, 6), ...stock]
 }
 
 async function downloadCandidate(
@@ -182,7 +193,9 @@ export const scenesStep: Step = {
         continue
       }
       // The opening scenes always use real media: the first thing on screen sets the tone.
-      if ((wantAi.has(i) && i >= REAL_OPENING) || !providers.length) {
+      // A scene about a real person or event tries a real photo first, even in an AI slot.
+      const real = !!scene.real_subject
+      if ((wantAi.has(i) && i >= REAL_OPENING && !real) || (!providers.length && !real)) {
         needAi.push(scene)
         continue
       }

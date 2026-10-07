@@ -31,15 +31,16 @@ export async function pickRelevant(
         const options = (candidates.get(sc.id) ?? [])
           .map(
             (c, k) =>
-              `   ${k}. [${c.kind === 'stock_video' ? 'video' : 'photo'}] ${c.label?.trim() || '(no description)'}`
+              `   ${k}. [${c.real ? 'real photo' : c.kind === 'stock_video' ? 'video' : 'photo'}] ${c.label?.trim() || '(no description)'}`
           )
           .join('\n')
-        return `SCENE ${i}: "${sc.narration}"\n${options}`
+        const about = sc.real_subject ? `\n   (about: ${sc.real_subject})` : ''
+        return `SCENE ${i}: "${sc.narration}"${about}\n${options}`
       })
       .join('\n\n')
     try {
       const { picks } = await generateStructured(
-        `You pick B-roll for a YouTube documentary about "${topic}". For each scene, choose the option whose description best matches what the narration is talking about at that moment (place, era, object, action). Prefer video over photo when both fit. Answer -1 when no option clearly fits: a wrong image is worse than a generated one. Modern footage does not fit a scene about the distant past unless it shows a place or object that still looks the same.
+        `You pick B-roll for a YouTube documentary about "${topic}". For each scene, choose the option whose description best matches what the narration is talking about at that moment (place, era, object, action). Prefer video over photo when both fit. When a scene is about a real person, product or event, a [real photo] that actually shows it beats any stock clip; stock of a different situation does not fit (a concert or a random speaker for a product keynote, a random office for a famous company), so answer -1 rather than pick it. Answer -1 when no option clearly fits: a wrong image is worse than a generated one. Modern footage does not fit a scene about the distant past unless it shows a place or object that still looks the same.
 
 ${listing}
 

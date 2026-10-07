@@ -94,6 +94,8 @@ export interface ScriptScene {
   narration: string
   visual_keywords: string
   image_prompt: string
+  /** Real person, product or event the scene shows (e.g. "Steve Jobs iPhone keynote 2007"); '' when generic */
+  real_subject?: string
   /** Year the scene takes place in; a change of year gets a black year card before the scene */
   year?: number | null
 }
@@ -197,6 +199,8 @@ export interface Scene {
   narration: string
   visual_keywords: string
   image_prompt: string
+  /** Real person, product or event to find a real photo of first; '' when generic */
+  real_subject: string
   asset_type: AssetType | null
   asset_path: string | null
   asset_source: string | null
@@ -280,6 +284,8 @@ export interface Settings {
   stockProviders: StockProvider[]
   /** Also use CC BY files from Wikimedia, credited in the video description. */
   wikimediaAllowCcBy: boolean
+  /** Also CC BY-SA (most photos of real people and events), credited the same way. */
+  wikimediaAllowCcBySa: boolean
   aiImageRatio: number
   /** Burn word-by-word captions into long videos (shorts always have them) */
   captionsEnabled: boolean

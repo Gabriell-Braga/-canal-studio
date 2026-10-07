@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Canal Studio compliance summary</title>
+    <style>
+      @page { size: A4; margin: 18mm 16mm; }
+      body { margin: 0; color: #1c1f26; font: 10.5pt/1.45 'Segoe UI', system-ui, sans-serif; }
+      h1 { font-size: 19pt; margin: 0 0 2pt; }
+      .sub { color: #5d6472; margin-bottom: 12pt; }
+      h2 { font-size: 12.5pt; margin: 14pt 0 4pt; color: #24408f; }
+      table { width: 100%; border-collapse: collapse; margin: 4pt 0; }
+      th, td { text-align: left; vertical-align: top; border: 1px solid #d5d9e0; padding: 4pt 6pt; }
+      th { background: #f1f3f6; }
+      code { font: 9.5pt Consolas, monospace; }
+      ul { margin: 2pt 0; padding-left: 16pt; }
+      li { margin: 1.5pt 0; }
+      a { color: #24408f; }
+    </style>
+  </head>
+  <body>
+    <h1>Canal Studio: YouTube API compliance summary</h1>
+    <div class="sub">
+      Google Cloud project ID <code>project-7c0dd44f-35ae-4636-9fa</code> · Contact: gabribragandrade@gmail.com · October 2026
+    </div>
+
+    <h2>1. What the app is</h2>
+    <p>
+      Canal Studio is a private Windows desktop app. Its only user is the developer, who uses it to
+      produce documentary videos for their own YouTube channels. It has no public sign-up, no
+      accounts and no backend server. Website, privacy policy and terms:
+      <a href="https://gabriell-braga.github.io/-canal-studio/">gabriell-braga.github.io/-canal-studio</a>.
+    </p>
+
+    <h2>2. OAuth scopes and why each one is needed</h2>
+    <table>
+      <tr><th>Scope</th><th>Used for</th></tr>
+      <tr><td><code>youtube.upload</code></td><td>Upload the videos the owner approved (<code>videos.insert</code>).</td></tr>
+      <tr><td><code>youtube.force-ssl</code></td><td>Set the custom thumbnail (<code>thumbnails.set</code>) and upload English subtitles (<code>captions.insert</code>).</td></tr>
+      <tr><td><code>youtube.readonly</code></td><td>Read the owner's channel name and picture (<code>channels.list</code>).</td></tr>
+      <tr><td><code>yt-analytics.readonly</code></td><td>Show views, watch time, average view duration and subscribers gained of the owner's own videos (<code>reports.query</code>).</td></tr>
+    </table>
+
+    <h2>3. API calls and expected volume</h2>
+    <table>
+      <tr><th>Endpoint</th><th>When</th><th>Calls per day</th></tr>
+      <tr><td><code>videos.insert</code></td><td>Once per approved video, as private with <code>status.publishAt</code> and <code>status.containsSyntheticMedia = true</code></td><td>3 to 6</td></tr>
+      <tr><td><code>thumbnails.set</code></td><td>Once per uploaded long video</td><td>1 to 2</td></tr>
+      <tr><td><code>captions.insert</code></td><td>Once per uploaded video</td><td>3 to 6</td></tr>
+      <tr><td><code>channels.list</code></td><td>When a channel is connected or refreshed</td><td>fewer than 10</td></tr>
+      <tr><td><code>reports.query</code> (Analytics)</td><td>When the owner opens the statistics screen</td><td>fewer than 50</td></tr>
+    </table>
+    <p>The default quota is enough. The audit is requested so that uploads are no longer locked as private and the scheduled publish time works.</p>
+
+    <h2>4. Human oversight</h2>
+    <ul>
+      <li>The owner reviews, edits and approves every script, with AI fact-check warnings shown next to it.</li>
+      <li>The owner watches and approves every finished video, its title, description, thumbnail and publish time.</li>
+      <li>Nothing is uploaded without both approvals. Uploads are scheduled, and the owner can still edit or cancel them in YouTube Studio.</li>
+      <li>Every upload sets the altered or synthetic content disclosure, because narration and some images are AI-generated.</li>
+      <li>Stock media comes from Pixabay, Pexels and Wikimedia Commons under licenses that allow this use. Authors are credited in the description when the license requires it.</li>
+    </ul>
+
+    <h2>5. Data handling</h2>
+    <ul>
+      <li><b>Storage:</b> OAuth tokens are encrypted with Windows DPAPI (Electron safeStorage) and kept in a local SQLite database on the owner's PC. Cached channel statistics stay in the same database.</li>
+      <li><b>Sharing:</b> YouTube and Google data goes only between the PC and Google's APIs. It is never sent to another service, sold, used for advertising or used to train AI models.</li>
+      <li><b>Other services:</b> the Claude API (optional) receives only the topic and the script text. Stock media sites receive only search keywords.</li>
+      <li><b>Display:</b> the app shows statistics only for the owner's own channels, only to the owner.</li>
+      <li><b>Refresh and retention:</b> cached statistics are refreshed from the API when the owner opens the statistics screen, and each record keeps the time of its last update. Deleting the app data folder removes them.</li>
+      <li><b>Revocation:</b> Disconnect in the app deletes the stored tokens. Access can also be revoked at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+    </ul>
+
+    <h2>6. Policies</h2>
+    <ul>
+      <li>Privacy policy: <a href="https://gabriell-braga.github.io/-canal-studio/privacy.html">gabriell-braga.github.io/-canal-studio/privacy.html</a> (links to the YouTube Terms of Service and the Google Privacy Policy).</li>
+      <li>Terms of service: <a href="https://gabriell-braga.github.io/-canal-studio/terms.html">gabriell-braga.github.io/-canal-studio/terms.html</a> (users agree to be bound by the YouTube Terms of Service).</li>
+      <li>The app name does not contain "YouTube" and the app does not use YouTube branding.</li>
+    </ul>
+
+    <p style="margin-top:12pt">Attached separately: architecture diagram, user flow diagram, screenshots of the OAuth consent, upload and statistics screens.</p>
+  </body>
+</html>

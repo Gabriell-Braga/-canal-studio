@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Canal Studio user flow</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #fff; color: #1c1f26; font: 15px/1.4 'Segoe UI', system-ui, sans-serif; }
+      #canvas { width: 1600px; padding: 24px 40px 36px; }
+      h1 { margin: 0; font-size: 28px; }
+      .sub { color: #5d6472; margin: 6px 0 22px; }
+      .row { display: grid; grid-template-columns: 70px 620px 1fr; gap: 0 24px; align-items: stretch; }
+      .num { display: flex; flex-direction: column; align-items: center; }
+      .dot { width: 40px; height: 40px; border-radius: 50%; background: #3b6fd8; color: #fff; font-weight: 700; display: grid; place-items: center; margin-top: 14px; }
+      .gate .dot { background: #c2413a; }
+      .line { flex: 1; width: 3px; background: #c9ced6; margin: 4px 0; }
+      .row:last-child .line { display: none; }
+      .card { border: 1.5px solid #c9ced6; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; background: #fff; }
+      .gate .card { border-color: #c2413a; background: #fdeeed; }
+      .card b { font-size: 16px; }
+      .card div { color: #3b4250; font-size: 14px; margin-top: 3px; }
+      .api { margin-bottom: 14px; align-self: center; font-size: 13.5px; color: #1f6b3d; }
+      .api code { font: 13px Consolas, monospace; background: #ecf8f0; border: 1px solid #b9e2c7; border-radius: 6px; padding: 1px 6px; }
+      .api.none { color: #8a909b; }
+      .legend { display: flex; gap: 28px; margin: 0 0 18px; font-size: 14px; color: #3b4250; }
+      .legend span::before { content: ''; display: inline-block; width: 14px; height: 14px; border-radius: 50%; margin-right: 8px; vertical-align: -2px; background: var(--c); }
+    </style>
+  </head>
+  <body>
+    <div id="canvas">
+      <h1>Canal Studio: user flow</h1>
+      <div class="sub">One user: the channel owner. Nothing reaches YouTube without two human approvals.</div>
+      <div class="legend">
+        <span style="--c:#3b6fd8">Automatic step or owner action</span>
+        <span style="--c:#c2413a">Human approval gate (reject sends the item back for edits)</span>
+        <span style="--c:#2e9d5a">Google / YouTube API call</span>
+      </div>
+
+      <div class="row"><div class="num"><div class="dot">1</div><div class="line"></div></div>
+        <div class="card"><b>Connect YouTube</b><div>The owner clicks Connect YouTube. The browser opens Google's consent screen; the owner picks the channel account and grants the scopes. The app receives the code on 127.0.0.1 and stores the tokens encrypted with DPAPI.</div></div>
+        <div class="api">Google OAuth 2.0 · <code>channels.list</code> (channel name and picture)</div></div>
+
+      <div class="row"><div class="num"><div class="dot">2</div><div class="line"></div></div>
+        <div class="card"><b>Choose a topic</b><div>The owner adds or picks a documentary topic for one of the connected channels.</div></div>
+        <div class="api none">No YouTube API call</div></div>
+
+      <div class="row"><div class="num"><div class="dot">3</div><div class="line"></div></div>
+        <div class="card"><b>AI drafts and fact-checks the script</b><div>A language model (Claude API or local Ollama) drafts the narration and flags claims that need checking.</div></div>
+        <div class="api none">No YouTube API call (only topic and script text are sent)</div></div>
+
+      <div class="row gate"><div class="num"><div class="dot">4</div><div class="line"></div></div>
+        <div class="card"><b>Owner reviews and approves the script</b><div>The owner reads the script and the fact-check warnings, edits it and approves it. A rejected script goes back to step 3.</div></div>
+        <div class="api none">No YouTube API call</div></div>
+
+      <div class="row"><div class="num"><div class="dot">5</div><div class="line"></div></div>
+        <div class="card"><b>Local production</b><div>On the owner's PC: narration (TTS), subtitles, licensed stock footage and AI images, video render, Shorts, thumbnail, title and description.</div></div>
+        <div class="api none">No YouTube API call</div></div>
+
+      <div class="row gate"><div class="num"><div class="dot">6</div><div class="line"></div></div>
+        <div class="card"><b>Owner approves the final video</b><div>The owner watches the video, checks title, description, thumbnail and publish time, and approves it. The altered or synthetic content disclosure is always on.</div></div>
+        <div class="api none">No YouTube API call</div></div>
+
+      <div class="row"><div class="num"><div class="dot">7</div><div class="line"></div></div>
+        <div class="card"><b>Scheduled upload</b><div>The upload queue sends the approved video as private with the chosen publish time, then sets the thumbnail and uploads the English subtitles.</div></div>
+        <div class="api"><code>videos.insert</code> · <code>thumbnails.set</code> · <code>captions.insert</code></div></div>
+
+      <div class="row"><div class="num"><div class="dot">8</div><div class="line"></div></div>
+        <div class="card"><b>YouTube publishes the video</b><div>At the scheduled time YouTube makes the video public (<code>status.publishAt</code>). The owner can still edit or cancel it in YouTube Studio.</div></div>
+        <div class="api none">Done by YouTube, no call from the app</div></div>
+
+      <div class="row"><div class="num"><div class="dot">9</div><div class="line"></div></div>
+        <div class="card"><b>Owner views channel statistics</b><div>The YouTube screen shows views, watch time, average view duration and subscribers gained for the owner's own videos.</div></div>
+        <div class="api"><code>reports.query</code> (YouTube Analytics API)</div></div>
+
+      <div class="row"><div class="num"><div class="dot">10</div><div class="line"></div></div>
+        <div class="card"><b>Disconnect at any time</b><div>Disconnect deletes the stored tokens from the PC. Access can also be revoked at myaccount.google.com/permissions.</div></div>
+        <div class="api none">No YouTube API call</div></div>
+    </div>
+  </body>
+</html>

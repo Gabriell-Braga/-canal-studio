@@ -122,6 +122,14 @@ Ao marcar `youtube.videos.insert`, o formulário pede uma quota própria:
 **Justification:**
 > I upload about 1 long video and 2 Shorts per day across my own channels, so 3 to 6 videos.insert calls per day. The default allocation is enough and I am not asking for more. I am submitting this audit only so that uploads are no longer locked as private and the scheduled publish time (status.publishAt) works. Every video is reviewed and approved by me before upload and carries the altered or synthetic content disclosure.
 
+Se o formulário pedir anexos extras, use os arquivos de `docs/auditoria/` (gere de novo com `node scripts/render-audit.mjs` depois de editar os `.html`):
+
+| Campo | Arquivo |
+|---|---|
+| Diagrama de arquitetura | `docs/auditoria/arquitetura.png` |
+| Diagramas de fluxo do utilizador | `docs/auditoria/fluxo.png` |
+| Outros materiais de apoio | `docs/auditoria/apoio.pdf` |
+
 Revise tudo e clique em **Enviar**. Guarde o e-mail de confirmação.
 
 ## 3. Roteiro do vídeo de tela (3 a 5 minutos)

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Canal Studio architecture</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #fff; color: #1c1f26; font: 15px/1.4 'Segoe UI', system-ui, sans-serif; }
+      #canvas { position: relative; width: 1600px; height: 1010px; }
+      h1 { position: absolute; left: 40px; top: 18px; margin: 0; font-size: 28px; }
+      .sub { position: absolute; left: 40px; top: 58px; color: #5d6472; font-size: 15px; }
+      .zone { position: absolute; border: 2px dashed #9aa1ad; border-radius: 14px; }
+      .zone > .label { position: absolute; top: -13px; left: 18px; background: #fff; padding: 0 8px; font-weight: 600; color: #3b4250; }
+      .group { position: absolute; border: 1.5px solid #c9ced6; border-radius: 12px; background: #f7f8fa; }
+      .group > .label { padding: 10px 16px 0; font-weight: 600; }
+      .box { position: absolute; border-radius: 10px; padding: 10px 14px; background: #fff; border: 1.5px solid #c9ced6; }
+      .box b { display: block; margin-bottom: 4px; font-size: 15.5px; }
+      .box small { color: #4a5160; font-size: 13.5px; display: block; }
+      .app { border-color: #3b6fd8; background: #eef3fd; }
+      .google { border-color: #2e9d5a; background: #ecf8f0; }
+      .other { border-color: #c98a1d; background: #fdf5e7; }
+      .local { border-color: #7b5bd6; background: #f3effc; }
+      .secure { border-color: #c2413a; background: #fdeeed; }
+      code { font: 12.5px Consolas, monospace; }
+      svg { position: absolute; inset: 0; pointer-events: none; }
+      .tag { position: absolute; font-size: 12.5px; color: #3b4250; background: #fff; padding: 1px 6px; border-radius: 6px; border: 1px solid #dfe3e8; }
+      .note { position: absolute; left: 40px; top: 962px; width: 1520px; font-size: 14px; color: #3b4250; }
+    </style>
+  </head>
+  <body>
+    <div id="canvas">
+      <h1>Canal Studio: architecture</h1>
+      <div class="sub">Private Windows desktop app. One user (the channel owner). No backend server.</div>
+
+      <div class="zone" style="left:40px; top:100px; width:1000px; height:840px">
+        <div class="label">Channel owner's Windows PC (everything below runs locally)</div>
+      </div>
+
+      <div class="group" style="left:70px; top:135px; width:940px; height:335px"><div class="label">Canal Studio (Electron app)</div></div>
+      <div class="box app" style="left:95px; top:185px; width:260px; height:140px">
+        <b>User interface (React)</b>
+        <small>Script review and approval, final video approval, upload queue, channel statistics, Connect / Disconnect YouTube</small>
+      </div>
+      <div class="box app" style="left:395px; top:185px; width:300px; height:255px">
+        <b>Main process (Node.js)</b>
+        <small>Production pipeline and job queue</small>
+        <small>OAuth 2.0 with loopback redirect (127.0.0.1)</small>
+        <small>YouTube client (googleapis)</small>
+        <small>Uploads only videos the owner approved</small>
+        <small>Sets the altered or synthetic content disclosure on every upload</small>
+      </div>
+      <div class="box app" style="left:735px; top:185px; width:250px; height:120px">
+        <b>Local database (SQLite)</b>
+        <small>Scripts, videos, upload status, cached statistics of the owner's channel</small>
+      </div>
+      <div class="box secure" style="left:735px; top:320px; width:250px; height:120px">
+        <b>Windows DPAPI (safeStorage)</b>
+        <small>Encrypts the OAuth tokens before they are stored. Deleted on Disconnect.</small>
+      </div>
+
+      <div class="group" style="left:70px; top:510px; width:940px; height:400px"><div class="label">Local AI and render services (same PC)</div></div>
+      <div class="box local" style="left:95px; top:560px; width:280px; height:150px">
+        <b>Python server (127.0.0.1:8765)</b>
+        <small>Kokoro TTS: narration</small>
+        <small>faster-whisper: timed subtitles</small>
+        <small>Image cutout for thumbnails</small>
+      </div>
+      <div class="box local" style="left:405px; top:560px; width:280px; height:150px">
+        <b>ComfyUI (127.0.0.1:8188)</b>
+        <small>Stable Diffusion XL: illustrations for scenes and thumbnails</small>
+      </div>
+      <div class="box local" style="left:715px; top:560px; width:270px; height:150px">
+        <b>Ollama (optional)</b>
+        <small>Local language model for script drafts</small>
+      </div>
+      <div class="box local" style="left:95px; top:740px; width:890px; height:140px">
+        <b>Remotion + ffmpeg</b>
+        <small>Render the final video, the Shorts and the thumbnail on the PC. The output files stay on the PC until the owner approves the upload.</small>
+      </div>
+
+      <div class="zone" style="left:1090px; top:100px; width:470px; height:445px">
+        <div class="label">Google (HTTPS)</div>
+      </div>
+      <div class="box google" style="left:1115px; top:135px; width:420px; height:120px">
+        <b>Google OAuth 2.0</b>
+        <small>Consent screen and tokens. Scopes: <code>youtube.upload</code>, <code>youtube.force-ssl</code>, <code>youtube.readonly</code>, <code>yt-analytics.readonly</code></small>
+      </div>
+      <div class="box google" style="left:1115px; top:270px; width:420px; height:130px">
+        <b>YouTube Data API v3</b>
+        <small><code>videos.insert</code> (private, <code>status.publishAt</code>, <code>containsSyntheticMedia</code>)</small>
+        <small><code>thumbnails.set</code>, <code>captions.insert</code>, <code>channels.list</code></small>
+      </div>
+      <div class="box google" style="left:1115px; top:415px; width:420px; height:105px">
+        <b>YouTube Analytics API</b>
+        <small><code>reports.query</code>: views, watch time and subscribers of the owner's own videos</small>
+      </div>
+
+      <div class="zone" style="left:1090px; top:580px; width:470px; height:360px">
+        <div class="label">Other services (receive no YouTube data)</div>
+      </div>
+      <div class="box other" style="left:1115px; top:615px; width:420px; height:130px">
+        <b>Anthropic Claude API (optional)</b>
+        <small>Receives only the video topic and the script text, to draft and fact-check scripts</small>
+      </div>
+      <div class="box other" style="left:1115px; top:765px; width:420px; height:145px">
+        <b>Pixabay, Pexels, Wikimedia Commons</b>
+        <small>Receive only search keywords. Return licensed stock footage and images. Authors are credited when the license requires it.</small>
+      </div>
+
+      <svg width="1600" height="1010">
+        <defs>
+          <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#3b4250" />
+          </marker>
+        </defs>
+        <g stroke="#3b4250" stroke-width="2" fill="none">
+          <path d="M355,255 L395,255" marker-end="url(#a)" marker-start="url(#a)" />
+          <path d="M695,245 L735,245" marker-end="url(#a)" marker-start="url(#a)" />
+          <path d="M695,380 L735,380" marker-end="url(#a)" />
+          <path d="M545,440 L545,555" marker-end="url(#a)" marker-start="url(#a)" />
+          <path d="M640,185 L640,150 L1110,150" marker-end="url(#a)" marker-start="url(#a)" />
+          <path d="M1075,150 L1075,467 L1110,467" marker-end="url(#a)" />
+          <path d="M1075,335 L1110,335" marker-end="url(#a)" />
+          <path d="M670,440 L670,490 L1060,490 L1060,680 L1110,680" marker-end="url(#a)" stroke-dasharray="6 5" />
+          <path d="M1060,680 L1060,835 L1110,835" marker-end="url(#a)" stroke-dasharray="6 5" />
+        </g>
+      </svg>
+      <div class="tag" style="left:356px; top:228px">IPC</div>
+      <div class="tag" style="left:390px; top:480px">local HTTP / processes</div>
+      <div class="tag" style="left:760px; top:139px">HTTPS, Google data only</div>
+      <div class="tag" style="left:760px; top:479px">HTTPS: topic + script text, search keywords</div>
+
+      <div class="note">
+        Solid arrows carry Google or YouTube data and go only to Google. Dashed arrows carry no YouTube data.
+        Tokens are encrypted with DPAPI and can be revoked in the app (Disconnect) or at myaccount.google.com/permissions.
+      </div>
+    </div>
+  </body>
+</html>

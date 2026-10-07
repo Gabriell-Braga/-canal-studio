@@ -38,6 +38,12 @@ export interface VideoProps {
   music: string | null
   musicVolume: number
   template: TemplateId
+  /** Black cards with the new year; empty for videos without years */
+  yearCards?: YearCard[]
+  /** Companies shown in the corner badges and the opening logo card (max 2) */
+  companies?: RenderCompany[]
+  /** Seconds the opening logo card stays up over the first scene; 0 = none */
+  introSec?: number
   [key: string]: unknown
 }
 
@@ -59,6 +65,9 @@ export interface ShortProps {
   brand?: Brand
   /** Hook text shown at the top for the whole short */
   headline: string
+  /** Logos shown big at the start and small next to the headline */
+  companies?: RenderCompany[]
+  yearCards?: YearCard[]
   cta: {
     audio: string
     duration: number
@@ -113,4 +122,78 @@ export interface RenderJob {
   short?: ShortProps
   stills?: { props: ThumbnailProps; out: string }[]
   concurrency?: number
+}
+
+/** Seconds of silence (and black year card) before a scene that jumps to a new year. */
+export const YEAR_CARD_SEC = 2.2
+
+/** A black card with the new year, shown in the silence before the scene. */
+export interface YearCard {
+  /** Scene start, seconds: the card ends here */
+  at: number
+  year: number
+  /** Year shown before, if any; the card counts from it */
+  from: number | null
+  duration: number
+}
+
+export interface RenderCompany {
+  name: string
+  logo: string | null
+  values: { year: number; usd: number }[]
+}
+
+/**
+ * Index of every scene that starts a new year (and gets a year card), with the year it
+ * leaves. Scenes without a year keep the last one.
+ */
+export function yearChanges(
+  years: (number | null)[]
+): Map<number, { year: number; from: number | null }> {
+  const out = new Map<number, { year: number; from: number | null }>()
+  let last: number | null = null
+  years.forEach((y, i) => {
+    if (!y || y === last) return
+    out.set(i, { year: y, from: last })
+    last = y
+  })
+  return out
+}
+
+/** "$2.5B", "$340M", "$1.2T", "$80K". */
+export function formatUsd(usd: number): string {
+  const abs = Math.abs(usd)
+  const units: [number, string][] = [
+    [1e12, 'T'],
+    [1e9, 'B'],
+    [1e6, 'M'],
+    [1e3, 'K']
+  ]
+  for (const [size, suffix] of units) {
+    if (abs >= size) {
+      const n = usd / size
+      return `${n >= 100 ? Math.round(n) : n.toFixed(1).replace(/\.0$/, '')}${suffix}`
+    }
+  }
+  return String(Math.round(usd))
+}
+
+/**
+ * Company value in a given year: interpolated between the known points (on a log scale, so
+ * growth looks steady), held after the last one. Null before the first point.
+ */
+export function valueAt(values: { year: number; usd: number }[], year: number): number | null {
+  const pts = [...values].sort((a, b) => a.year - b.year)
+  if (!pts.length || year < pts[0].year) return null
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const a = pts[i]
+    if (year < a.year) continue
+    const b = pts[i + 1]
+    if (!b || year === a.year) return a.usd
+    const t = (year - a.year) / (b.year - a.year)
+    if (a.usd > 0 && b.usd > 0)
+      return Math.exp(Math.log(a.usd) + t * (Math.log(b.usd) - Math.log(a.usd)))
+    return a.usd + t * (b.usd - a.usd)
+  }
+  return null
 }

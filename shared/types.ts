@@ -94,6 +94,22 @@ export interface ScriptScene {
   narration: string
   visual_keywords: string
   image_prompt: string
+  /** Year the scene takes place in; a change of year gets a black year card before the scene */
+  year?: number | null
+}
+
+/** Company value (market cap, or last private valuation) at a point in time */
+export interface CompanyValue {
+  year: number
+  usd: number
+}
+
+/** A company the video is about: its logo and value badge stay on screen */
+export interface ScriptCompany {
+  name: string
+  /** English Wikipedia article, used to find the logo on Wikidata */
+  wikipedia_title?: string
+  values: CompanyValue[]
 }
 
 export interface Script {
@@ -101,6 +117,11 @@ export interface Script {
   hook: string
   scenes: ScriptScene[]
   outro: string
+  /** Stock search for the hook: a real, recognizable image of the subject */
+  hook_visual_keywords?: string
+  outro_visual_keywords?: string
+  /** At most two; empty when the video is not about companies */
+  companies?: ScriptCompany[]
 }
 
 export type ReviewAlertKind = 'hook' | 'pacing' | 'repetition' | 'dubious_fact' | 'other'
@@ -182,6 +203,7 @@ export interface Scene {
   start_sec: number | null
   end_sec: number | null
   locked: boolean
+  year: number | null
 }
 
 export interface Job {

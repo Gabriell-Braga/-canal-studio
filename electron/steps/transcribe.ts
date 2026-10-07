@@ -59,7 +59,9 @@ export const transcribeStep: Step = {
     let t = 0
     timings.scenes.forEach((timing, i) => {
       const start = t
-      t += timing.duration + (i < timings.scenes.length - 1 ? timings.pauseSec : 0)
+      t +=
+        timing.duration +
+        (i < timings.scenes.length - 1 ? (timings.gaps?.[i] ?? timings.pauseSec) : 0)
       const end = i === timings.scenes.length - 1 ? timings.total : t
       const scene = scenes.find((s) => s.id === timing.sceneId)
       if (scene) updateScene(scene.id, { start_sec: round(start), end_sec: round(end) })

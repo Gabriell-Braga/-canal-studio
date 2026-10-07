@@ -76,6 +76,36 @@ export class Pipeline {
     this.scheduler.kick()
   }
 
+  /**
+   * Bring everything not on YouTube yet to the current video format (year cards, company
+   * badges, logo opening). Full videos get a new script, which goes back to script review;
+   * their unpublished shorts are dropped and cut again from the new render. Shorts of videos
+   * already on YouTube are cut again from the published video.
+   */
+  reprocessUnpublished(): { videos: number; shorts: number } {
+    let videos = 0
+    let shorts = 0
+    for (const v of listVideos()) {
+      if (v.kind !== 'long') continue
+      const stale = listShorts(v.id).filter((s) => !s.youtube_id)
+      for (const s of stale) {
+        cancelPendingJobs(s.id)
+        deleteVideo(s.id)
+      }
+      if (!v.youtube_id) {
+        if (!v.script || v.status === 'SCRIPT_GENERATING') continue
+        updateVideo(v.id, { scheduled_at: null })
+        this.redoScript(v.id)
+        videos++
+      } else if (stale.length && v.video_path) {
+        enqueueJob(v.id, 'short', 'night', 0, true, { count: stale.length })
+        shorts += stale.length
+      }
+    }
+    this.scheduler.kick()
+    return { videos, shorts }
+  }
+
   retryFrom(id: number, step: JobType): void {
     const video = getVideo(id)
     // A failed short is cut again from its full video.

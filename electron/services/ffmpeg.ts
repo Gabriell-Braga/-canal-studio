@@ -53,18 +53,23 @@ export function isValidFile(file: string | null | undefined, minBytes = 1024): f
 }
 
 /**
- * Join WAV files with `pauseSec` of silence between them, then apply two-pass loudnorm
- * to -14 LUFS. Output is 48 kHz mono 16-bit WAV.
+ * Join WAV files with silence between them (`pauses[i]` seconds after file i, or the same
+ * pause everywhere), then apply two-pass loudnorm to -14 LUFS. Output is 48 kHz mono 16-bit WAV.
  */
 export async function concatAndNormalize(
   files: string[],
-  pauseSec: number,
+  pauses: number | number[],
   out: string,
   workDir: string,
   signal?: AbortSignal
 ): Promise<void> {
-  const silence = join(workDir, `silence_${Math.round(pauseSec * 1000)}ms.wav`)
-  if (pauseSec > 0 && !isValidFile(silence, 44)) {
+  const gaps = files.map((_, i) => (typeof pauses === 'number' ? pauses : (pauses[i] ?? 0)))
+  const silences = new Map<number, string>()
+  for (const sec of new Set(gaps)) {
+    if (sec <= 0) continue
+    const silence = join(workDir, `silence_${Math.round(sec * 1000)}ms.wav`)
+    silences.set(sec, silence)
+    if (isValidFile(silence, 44)) continue
     await runTool(
       'ffmpeg',
       [
@@ -74,7 +79,7 @@ export async function concatAndNormalize(
         '-i',
         'anullsrc=r=24000:cl=mono',
         '-t',
-        String(pauseSec),
+        String(sec),
         '-c:a',
         'pcm_s16le',
         silence
@@ -86,7 +91,8 @@ export async function concatAndNormalize(
   const lines: string[] = []
   files.forEach((f, i) => {
     lines.push(`file '${f.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`)
-    if (pauseSec > 0 && i < files.length - 1) lines.push(`file '${silence.replace(/\\/g, '/')}'`)
+    const silence = silences.get(gaps[i])
+    if (silence && i < files.length - 1) lines.push(`file '${silence.replace(/\\/g, '/')}'`)
   })
   writeFileSync(list, lines.join('\n'))
   const joined = join(workDir, 'joined.wav')

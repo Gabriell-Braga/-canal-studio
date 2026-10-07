@@ -4,6 +4,7 @@ import { join } from 'path'
 import { listScenes, updateVideo } from '../db/repo'
 import { concatAndNormalize, isValidFile, probeDuration } from '../services/ffmpeg'
 import { pythonPost } from '../services/python'
+import { YEAR_CARD_SEC, yearChanges } from '../../shared/render'
 import type { Step } from './types'
 
 export interface SceneTiming {
@@ -14,6 +15,8 @@ export interface SceneTiming {
 
 export interface AudioTimings {
   pauseSec: number
+  /** Silence after each scene; longer before a scene that opens a new year (the year card) */
+  gaps?: number[]
   scenes: SceneTiming[]
   total: number
 }
@@ -58,25 +61,30 @@ export const audioStep: Step = {
     }
     ctx.log(`Áudio: ${generated} cena(s) geradas, ${scenes.length - generated} reaproveitadas`)
 
+    const changes = yearChanges(scenes.map((s) => s.year))
+    const gaps = scenes.map((_, i) => (changes.has(i + 1) ? YEAR_CARD_SEC : scenePauseSec))
+    if (changes.size) ctx.log(`${changes.size} mudança(s) de ano com cartão de transição`)
+
     const out = join(ctx.projectDir, 'narration.wav')
     const timingsFile = join(dir, 'timings.json')
     const previous = readTimings(ctx.projectDir)
     const sameInputs =
       previous &&
       previous.pauseSec === scenePauseSec &&
+      JSON.stringify(previous.gaps ?? null) === JSON.stringify(gaps) &&
       JSON.stringify(previous.scenes.map((s) => s.file)) ===
         JSON.stringify(timings.map((s) => s.file))
     if (!sameInputs || !isValidFile(out)) {
       await concatAndNormalize(
         timings.map((t) => t.file),
-        scenePauseSec,
+        gaps,
         out,
         dir,
         ctx.signal
       )
     }
     const total = await probeDuration(out)
-    const data: AudioTimings = { pauseSec: scenePauseSec, scenes: timings, total }
+    const data: AudioTimings = { pauseSec: scenePauseSec, gaps, scenes: timings, total }
     writeFileSync(timingsFile, JSON.stringify(data, null, 2))
     updateVideo(videoId, { audio_path: out })
     ctx.log(`Narração: ${(total / 60).toFixed(1)} min, normalizada a -14 LUFS`)

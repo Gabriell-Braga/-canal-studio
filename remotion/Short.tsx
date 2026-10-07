@@ -12,10 +12,13 @@ import {
   useVideoConfig
 } from 'remotion'
 import type { RenderScene, ShortProps } from '../shared/render'
+import { LogoIntro, LogoTile, YearCards } from './Overlays'
 import { brandTextShadow, template } from './templates'
 import { KenBurns, toPhrases } from './Video'
 
 const FADE_SEC = 0.35
+/** The short opens on the company logo so the viewer knows the subject at once. */
+export const SHORT_INTRO_SEC = 1.6
 // Tall crop of the 16:9 media: fills most of the phone screen, Ken Burns keeps it moving.
 const MEDIA_HEIGHT = 1040
 const MEDIA_TOP = 400
@@ -157,8 +160,26 @@ function Headline({ text, props }: { text: string; props: ShortProps }): React.J
   const { fps } = useVideoConfig()
   const look = shortLook(props)
   const enter = spring({ frame, fps, config: { damping: 16 } })
+  const companies = props.companies ?? []
   return (
-    <AbsoluteFill style={{ justifyContent: 'flex-start', alignItems: 'center', paddingTop: 170 }}>
+    <AbsoluteFill style={{ justifyContent: 'flex-start', alignItems: 'center', paddingTop: 150 }}>
+      {companies.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 18,
+            marginBottom: 18,
+            opacity: enter,
+            transform: `scale(${0.7 + 0.3 * enter})`
+          }}
+        >
+          {companies.slice(0, 2).map((c, i) => (
+            <div key={i} style={{ boxShadow: '0 12px 30px rgba(0,0,0,0.5)', borderRadius: 18 }}>
+              <LogoTile company={c} height={90} width={200} />
+            </div>
+          ))}
+        </div>
+      )}
       <div
         style={{
           transform: `translateY(${(1 - enter) * -40}px)`,
@@ -281,7 +302,21 @@ export const Short: React.FC<ShortProps> = (props) => {
             </Sequence>
           )
         })}
-        <Headline text={props.headline} props={props} />
+        {!!props.yearCards?.length && (
+          <YearCards cards={props.yearCards} accent={shortLook(props).accent} />
+        )}
+        {props.companies?.length ? (
+          <>
+            <Sequence durationInFrames={Math.round(SHORT_INTRO_SEC * fps)}>
+              <LogoIntro companies={props.companies} seconds={SHORT_INTRO_SEC} vertical />
+            </Sequence>
+            <Sequence from={Math.round((SHORT_INTRO_SEC - 0.4) * fps)}>
+              <Headline text={props.headline} props={props} />
+            </Sequence>
+          </>
+        ) : (
+          <Headline text={props.headline} props={props} />
+        )}
         {props.captions && <ShortCaptions words={props.words} props={props} />}
         <Audio
           src={props.narration}

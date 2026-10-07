@@ -16,7 +16,7 @@ import windowIcon from '../../resources/icon.ico?asset'
 import type { Settings } from '../../shared/types'
 import { closeDb, openDb } from '../db'
 import { changes, listChannels } from '../db/repo'
-import { getSettings } from '../db/settings'
+import { getSettings, getState, setState } from '../db/settings'
 import { Pipeline } from '../pipeline'
 import { Scheduler, type QueueEvent } from '../queue/scheduler'
 import { refreshPath } from '../services/exec'
@@ -282,6 +282,12 @@ app.whenReady().then(async () => {
   })
   const pipeline = new Pipeline(scheduler)
   pipeline.approveAllShorts()
+  // Once: videos made before year cards and company badges are made again in the new format.
+  if (!getState('reprocess.yearCards', false) && process.env.CANAL_FAKE_STEPS !== '1') {
+    const done = pipeline.reprocessUnpublished()
+    console.log(`Reprocess: ${done.videos} video(s), ${done.shorts} short(s)`)
+    setState('reprocess.yearCards', true)
+  }
   pipeline.refreshAllShortThumbs()
   registerIpc(pipeline, scheduler, applySettings)
   forwardChanges()

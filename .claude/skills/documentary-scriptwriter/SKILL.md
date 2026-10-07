@@ -29,6 +29,15 @@ Split the narration into scenes of 10 to 20 seconds (25 to 50 words). For each s
 - `visual_keywords`: 2 to 4 plain English words a stock footage search would match (e.g. "old video store", "dvd mail envelope").
 - `image_prompt`: one or two plain sentences describing a single photograph: subject, place, era, time of day, light and camera framing (e.g. "A crowded 1920s New York stock exchange floor, men in suits shouting, morning light through tall windows, wide shot"). Be historically accurate to the scene's period. Never include brand names, company names, logos, signs, captions or any written words: the image model would paint them as lettering. Describe what is visible instead ("a video rental store with blue and yellow colors", not the chain's name).
 
+## On-screen graphics
+
+The video draws a black year card whenever the story jumps to a new year, keeps the current year at the top and shows each company's logo and value in the top corners. So:
+
+- Give each scene its `year`. When the year changes, the narration says it out loud, phrased differently each time ("By 1984...", "Fast forward to 1997.", "Eleven years later, in 1995,").
+- List the companies (at most two) with `wikipedia_title` and their value in dollars per year. Only figures you are confident about.
+- The hook names the subject in its first sentence; `hook_visual_keywords` finds a real, recognizable photo of it.
+- Every 60 to 90 seconds, weave in one surprising, little-known true detail tied to the topic.
+
 ## Fact-check reviews
 
 When reviewing a script, check every name, date, number and quote. With web search available, verify each against reliable sources (official records, major news outlets, encyclopedias, the company's own filings). For each problem give the exact phrase, what is wrong, the correction and the source URL. Also flag weak hooks, pacing problems and repetition. Write the alert messages in Brazilian Portuguese for the channel owner; keep quotes from the script in English.

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { Script } from '../../shared/types'
 import { getVideo, replaceScenes, updateVideo } from '../db/repo'
+import { formatUsd } from '../../shared/render'
 import { generateStructured, llmLabel, type LlmCall } from '../services/llm'
 import type { Step, StepContext } from './types'
 
@@ -12,12 +13,36 @@ export const scriptSchema = z.object({
       z.object({
         narration: z.string().min(1),
         visual_keywords: z.string(),
-        image_prompt: z.string()
+        image_prompt: z.string(),
+        year: z.number().int().nullable()
       })
     )
     .min(2),
-  outro: z.string()
+  outro: z.string(),
+  hook_visual_keywords: z.string(),
+  outro_visual_keywords: z.string(),
+  companies: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        wikipedia_title: z.string(),
+        values: z.array(z.object({ year: z.number().int(), usd: z.number() }))
+      })
+    )
+    .max(2)
 })
+
+/**
+ * Rules the render depends on (years, companies, a real opening image). They are appended to
+ * the channel's prompt, which the user can edit, so they always apply.
+ */
+export const STRUCTURE_RULES = `
+Extra rules:
+- Opening: the hook must make clear right away which company, person or thing the video is about (name it in the first sentence). hook_visual_keywords: 2–4 English words for a REAL, instantly recognizable photo of that subject (its famous product, headquarters, founder or storefront), different from the first scene's visual_keywords. outro_visual_keywords: same idea for the ending, different from the last scene.
+- Years: give every scene the year it takes place in (year, a number), or null when it has no clear moment in time. Keep years in story order where possible. Whenever a scene moves to a different year than the previous scene with a year, its narration MUST say that year out loud, phrased in a varied way each time (e.g. "By 1984...", "Fast forward to 1997.", "In the spring of 2001,", "Eleven years later, in 1995,", "1976. A garage in Los Altos."). Never repeat the same phrasing twice.
+- Curiosities: every 60–90 seconds of narration, drop in one surprising, little-known but true detail tightly tied to the topic (a strange decision, a near miss, a hidden connection, an odd number) that makes the viewer say "I didn't know that". Weave it into the story; do not announce it as a "fun fact".
+- companies: the companies the video is about, at most 2 (the main one first; e.g. a story about Xerox and Apple lists both). Empty array when the video is not about companies. For each: name (short, as people say it), wikipedia_title (exact English Wikipedia article title, e.g. "Apple Inc.") and values: the company's value in US dollars (market capitalization when public, otherwise its latest known private valuation) at each year the script mentions, plus its founding year with value 0. One entry per year, numbers in plain dollars (e.g. 2500000000 for 2.5 billion). Only use figures you are confident about; leave a year out rather than guess.
+`
 
 export const reviewSchema = z.object({
   alerts: z
@@ -43,11 +68,29 @@ export function scriptWordCount(script: Script): number {
 }
 
 export function scriptAsText(script: Script): string {
+  const companies = (script.companies ?? []).map(
+    (c) =>
+      `COMPANY VALUE SHOWN ON SCREEN, ${c.name}: ${c.values.map((v) => `${v.year} $${formatUsd(v.usd)}`).join(', ')}`
+  )
   return [
     `HOOK: ${script.hook}`,
-    ...script.scenes.map((s, i) => `SCENE ${i + 1}: ${s.narration}`),
-    `OUTRO: ${script.outro}`
+    ...script.scenes.map((s, i) => `SCENE ${i + 1}${s.year ? ` (${s.year})` : ''}: ${s.narration}`),
+    `OUTRO: ${script.outro}`,
+    ...companies
   ].join('\n')
+}
+
+/** Scenes that jump to a new year without saying it: the year card would contradict the voice. */
+export function unspokenYears(script: Script): { scene: number; year: number }[] {
+  const out: { scene: number; year: number }[] = []
+  let last: number | null = null
+  script.scenes.forEach((s, i) => {
+    if (!s.year) return
+    if (s.year !== last && !s.narration.includes(String(s.year)))
+      out.push({ scene: i + 1, year: s.year })
+    last = s.year
+  })
+  return out
 }
 
 const expandSchema = z.object({ narrations: z.array(z.string().min(1)) })
@@ -90,7 +133,7 @@ export async function expandScript(
 Full outline (for context, do not repeat other scenes):
 ${outline}
 
-Rewrite EACH of the following scenes so its narration is about ${ask} words (at least ${perScene}). Keep the same facts, order and meaning; add concrete details, context and tension in short spoken sentences. Do not add greetings or "in this video". Do not invent precise numbers or quotes you are unsure about.
+Rewrite EACH of the following scenes so its narration is about ${ask} words (at least ${perScene}). Keep the same facts, order and meaning; add concrete details, context and tension in short spoken sentences. Keep every year the scene mentions. Do not add greetings or "in this video". Do not invent precise numbers or quotes you are unsure about.
 ${numbered}
 
 Return ONLY JSON: {"narrations": ["scene ${start + 1} text", ...]} with exactly ${batch.length} items.`,
@@ -132,12 +175,13 @@ export const scriptStep: Step = {
     }
 
     ctx.log(`Gerando roteiro com ${llmLabel(settings)} (~${words} palavras)`)
-    const prompt = fillPrompt(settings.scriptPrompt, {
-      topic,
-      minutes,
-      words,
-      scenes: Math.max(3, Math.round((minutes * 60) / 15))
-    })
+    const prompt =
+      fillPrompt(settings.scriptPrompt, {
+        topic,
+        minutes,
+        words,
+        scenes: Math.max(3, Math.round((minutes * 60) / 15))
+      }) + STRUCTURE_RULES
     const script = await generateStructured(prompt, scriptSchema, call)
     ctx.log(`Primeira versão: ${script.scenes.length} cenas e ${scriptWordCount(script)} palavras`)
     ctx.progress(0.4)
@@ -160,6 +204,13 @@ export const scriptStep: Step = {
     } catch (error) {
       ctx.log(`Auto-revisão falhou: ${(error as Error).message}`, 'warn')
       alerts = [{ kind: 'other', message: 'A auto-revisão falhou; revise o roteiro manualmente.' }]
+    }
+    const silent = unspokenYears(script)
+    if (silent.length) {
+      alerts.unshift({
+        kind: 'other',
+        message: `O narrador não diz o ano em ${silent.length} mudança(s) de ano (cenas ${silent.map((x) => `${x.scene}: ${x.year}`).join(', ')}). Cite o ano na narração ou corrija o ano da cena.`
+      })
     }
     if (count < words * 0.7) {
       alerts.unshift({

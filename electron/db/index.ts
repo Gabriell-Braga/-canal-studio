@@ -134,6 +134,9 @@ const migrations: string[] = [
   `,
   `
   ALTER TABLE channels ADD COLUMN avatar_path TEXT;
+  `,
+  `
+  ALTER TABLE scenes ADD COLUMN year INTEGER;
   `
 ]
 

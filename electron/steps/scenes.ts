@@ -12,6 +12,9 @@ import { pickRelevant } from './relevance'
 import { pythonPost } from '../services/python'
 import type { Step } from './types'
 
+/** Hook and first scene: real photos or footage, never AI images, when a bank has anything. */
+const REAL_OPENING = 2
+
 function sceneDuration(s: Scene): number {
   return s.start_sec !== null && s.end_sec !== null ? s.end_sec - s.start_sec : 12
 }
@@ -159,6 +162,7 @@ export const scenesStep: Step = {
     const dir = join(ctx.projectDir, 'scenes')
     mkdirSync(dir, { recursive: true })
     const scenes = listScenes(videoId)
+    const subject = getVideo(videoId).script?.companies?.[0]?.name ?? ''
     const wantAi = aiIndexes(scenes.length, s.aiImageRatio)
     const needAi: Scene[] = []
     const wantStock: Scene[] = []
@@ -177,12 +181,24 @@ export const scenesStep: Step = {
         kept++
         continue
       }
-      if (wantAi.has(i) || !providers.length) {
+      // The opening scenes always use real media: the first thing on screen sets the tone.
+      if ((wantAi.has(i) && i >= REAL_OPENING) || !providers.length) {
         needAi.push(scene)
         continue
       }
       try {
-        const found = await sceneCandidates(scene, s, used, (m) => ctx.log(m, 'warn'), ctx.signal)
+        let found = await sceneCandidates(scene, s, used, (m) => ctx.log(m, 'warn'), ctx.signal)
+        if (!found.length && i < REAL_OPENING && subject) {
+          found = await gatherCandidates(
+            subject,
+            sceneDuration(scene),
+            s,
+            used,
+            4,
+            undefined,
+            ctx.signal
+          )
+        }
         if (found.length) {
           candidates.set(scene.id, found)
           wantStock.push(scene)
@@ -201,7 +217,12 @@ export const scenesStep: Step = {
         ctx.log(m, 'warn')
       )
       for (const [k, scene] of wantStock.entries()) {
-        const pick = picks.get(scene.id)
+        // An opening scene keeps the best search hit rather than falling back to an AI image.
+        const pick =
+          picks.get(scene.id) ??
+          (scene.index < REAL_OPENING
+            ? candidates.get(scene.id)?.find((c) => !used.has(c.source))
+            : undefined)
         // No fitting option, or the same file already chosen for another scene.
         if (!pick || used.has(pick.source)) {
           needAi.push(scene)

@@ -15,6 +15,7 @@ import { isValidFile, probeDuration } from '../services/ffmpeg'
 import { runRender } from '../services/remotion'
 import { readWords } from './transcribe'
 import { writeSrt } from '../services/captions'
+import { renderCompanies, yearCardsFor } from './overlays'
 import type { Step } from './types'
 
 const MUSIC_EXT = ['.mp3', '.wav', '.m4a', '.ogg']
@@ -76,6 +77,16 @@ export const renderStep: Step = {
     const words = readWords(pd)
     // Long videos get real YouTube subtitles from this file; burned-in captions are optional.
     writeSrt(words, join(pd, 'captions.srt'))
+    const companies = await renderCompanies(video, ctx)
+    const yearCards = yearCardsFor(scenes, pd)
+    if (companies.length || yearCards.length)
+      ctx.log(
+        `Sobreposições: ${companies.map((c) => `${c.name}${c.logo ? '' : ' (sem logo)'}`).join(', ') || 'sem empresas'}; ${yearCards.length} cartão(ões) de ano`
+      )
+    const firstScene = scenes[0]
+    const introSec = companies.length
+      ? Math.min(3, Math.max(0, (firstScene.end_sec ?? 3) - (firstScene.start_sec ?? 0) - 0.5))
+      : 0
     const props: VideoProps = {
       fps: 30,
       durationSec: (await probeDuration(video.audio_path as string)) + 0.5,
@@ -85,7 +96,10 @@ export const renderStep: Step = {
       captions: ctx.settings.captionsEnabled,
       music: music ? url(pd, music) : null,
       musicVolume: ctx.settings.musicVolume,
-      template: (video.template as TemplateId) ?? 'documentary'
+      template: (video.template as TemplateId) ?? 'documentary',
+      companies,
+      yearCards,
+      introSec
     }
 
     // Skip when the same inputs already produced a valid video.

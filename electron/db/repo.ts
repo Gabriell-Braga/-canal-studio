@@ -270,7 +270,8 @@ function toScene(r: Row): Scene {
     asset_credit: (r.asset_credit as string) ?? null,
     start_sec: (r.start_sec as number) ?? null,
     end_sec: (r.end_sec as number) ?? null,
-    locked: Boolean(r.locked)
+    locked: Boolean(r.locked),
+    year: (r.year as number) ?? null
   }
 }
 
@@ -288,26 +289,30 @@ export function getScene(id: number): Scene {
 
 /** Narration for the whole video: hook, scenes, outro. Hook and outro become their own scenes. */
 export function replaceScenes(videoId: number, script: Script): Scene[] {
+  // The hook and outro get their own search words when the script has them, so the opening
+  // does not show the same kind of image as the first scene.
   const rows = [
     {
       narration: script.hook,
-      visual_keywords: script.scenes[0]?.visual_keywords ?? '',
-      image_prompt: script.scenes[0]?.image_prompt ?? ''
+      visual_keywords: script.hook_visual_keywords || script.scenes[0]?.visual_keywords || '',
+      image_prompt: script.scenes[0]?.image_prompt ?? '',
+      year: null
     },
     ...script.scenes,
     {
       narration: script.outro,
-      visual_keywords: script.scenes.at(-1)?.visual_keywords ?? '',
-      image_prompt: script.scenes.at(-1)?.image_prompt ?? ''
+      visual_keywords: script.outro_visual_keywords || script.scenes.at(-1)?.visual_keywords || '',
+      image_prompt: script.scenes.at(-1)?.image_prompt ?? '',
+      year: null
     }
   ].filter((s) => s.narration.trim())
   const insert = db().prepare(
-    'INSERT INTO scenes (video_id, "index", narration, visual_keywords, image_prompt) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO scenes (video_id, "index", narration, visual_keywords, image_prompt, year) VALUES (?, ?, ?, ?, ?, ?)'
   )
   db().transaction(() => {
     db().prepare('DELETE FROM scenes WHERE video_id = ?').run(videoId)
     rows.forEach((s, i) =>
-      insert.run(videoId, i, s.narration.trim(), s.visual_keywords, s.image_prompt)
+      insert.run(videoId, i, s.narration.trim(), s.visual_keywords, s.image_prompt, s.year ?? null)
     )
   })()
   notify('videos')

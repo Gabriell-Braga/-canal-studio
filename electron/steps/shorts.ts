@@ -10,6 +10,7 @@ import { generateStructured } from '../services/llm'
 import { pythonPost } from '../services/python'
 import { runRender } from '../services/remotion'
 import { readWords } from './transcribe'
+import { renderCompanies, yearCardsFor } from './overlays'
 import type { Step, StepContext } from './types'
 
 /** Shorts above ~60 s lose reach; the end card adds ~4 s. */
@@ -212,7 +213,7 @@ Scenes with their times:
 ${list}
 
 Choose ${count} different segments of CONSECUTIVE scenes, each ${MIN_SEGMENT}–${MAX_SEGMENT} seconds long, that work on their own: they open with a strong, surprising line, keep tension and stop on a cliffhanger that makes people want the full video. Do not overlap segments. Avoid the final call to subscribe.
-For each give: first_scene and last_scene (the # numbers), headline (2–6 words shown on screen, curiosity, no hashtags), title (YouTube Shorts title, max 70 characters, no hashtags) and description (one sentence).
+For each give: first_scene and last_scene (the # numbers), headline (2–6 words shown on screen that NAME the company or subject and spark curiosity, e.g. "XEROX GAVE APPLE ITS FUTURE", no hashtags), title (YouTube Shorts title, max 70 characters, no hashtags) and description (one sentence).
 Return ONLY JSON: {"segments": [...]}`,
         segmentsSchema,
         { settings: s, signal: ctx.signal, temperature: 0.5 }
@@ -253,6 +254,8 @@ Return ONLY JSON: {"segments": [...]}`,
     const thumb = chosenThumb(video)
     const words = readWords(ctx.projectDir)
     const root = ctx.projectDir
+    const companies = await renderCompanies(video, ctx)
+    const allCards = yearCardsFor(listScenes(videoId), root)
 
     for (const [k, seg] of segments.entries()) {
       if (ctx.signal.aborted) throw new Error('Cancelado')
@@ -290,6 +293,10 @@ Return ONLY JSON: {"segments": [...]}`,
           outline: s.brandOutline
         },
         headline: seg.headline.toUpperCase(),
+        companies,
+        yearCards: allCards
+          .filter((c) => c.at > seg.start && c.at < seg.end)
+          .map((c) => ({ ...c, at: c.at - seg.start })),
         cta: {
           audio: url(root, ctaAudio),
           duration: ctaDuration,

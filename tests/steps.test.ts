@@ -20,7 +20,8 @@ function scene(i: number, start: number, end: number): Scene {
     asset_credit: null,
     start_sec: start,
     end_sec: end,
-    locked: false
+    locked: false,
+    year: null
   }
 }
 

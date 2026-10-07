@@ -23,7 +23,11 @@ export default function ScriptEditor({ video, onDone, onCancel }: Props): React.
     .split(/\s+/)
     .filter(Boolean).length
 
-  function setScene(i: number, key: keyof Script['scenes'][number], value: string): void {
+  function setScene(
+    i: number,
+    key: keyof Script['scenes'][number],
+    value: string | number | null
+  ): void {
     setScript((s) => ({
       ...s,
       scenes: s.scenes.map((scene, j) => (j === i ? { ...scene, [key]: value } : scene))
@@ -37,7 +41,12 @@ export default function ScriptEditor({ video, onDone, onCancel }: Props): React.
   function addScene(after: number): void {
     setScript((s) => {
       const scenes = [...s.scenes]
-      scenes.splice(after + 1, 0, { narration: '', visual_keywords: '', image_prompt: '' })
+      scenes.splice(after + 1, 0, {
+        narration: '',
+        visual_keywords: '',
+        image_prompt: '',
+        year: s.scenes[after]?.year ?? null
+      })
       return { ...s, scenes }
     })
   }
@@ -105,7 +114,15 @@ export default function ScriptEditor({ video, onDone, onCancel }: Props): React.
             value={scene.narration}
             onChange={(e) => setScene(i, 'narration', e.target.value)}
           />
-          <div className="mt-2 grid grid-cols-3 gap-2">
+          <div className="mt-2 grid grid-cols-[6rem_1fr_2fr] gap-2">
+            <input
+              className={inputClass}
+              type="number"
+              placeholder="ano"
+              title="Ano da cena: quando muda, o vídeo mostra um cartão preto com o novo ano"
+              value={scene.year ?? ''}
+              onChange={(e) => setScene(i, 'year', e.target.value ? Number(e.target.value) : null)}
+            />
             <input
               className={inputClass}
               placeholder="visual keywords"
@@ -113,7 +130,7 @@ export default function ScriptEditor({ video, onDone, onCancel }: Props): React.
               onChange={(e) => setScene(i, 'visual_keywords', e.target.value)}
             />
             <input
-              className={`${inputClass} col-span-2`}
+              className={inputClass}
               placeholder="image prompt"
               value={scene.image_prompt}
               onChange={(e) => setScene(i, 'image_prompt', e.target.value)}

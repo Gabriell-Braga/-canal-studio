@@ -11,6 +11,7 @@ import {
   useVideoConfig
 } from 'remotion'
 import type { RenderScene, RenderWord, VideoProps } from '../shared/render'
+import { LogoIntro, TopBadges, YearCards } from './Overlays'
 import { template, type TemplateStyle } from './templates'
 
 const FADE_SEC = 0.5
@@ -191,6 +192,7 @@ export const Video: React.FC<VideoProps> = (props) => {
   const style = template(props.template)
   const fade = Math.round(FADE_SEC * fps)
   const musicFade = Math.round(2 * fps)
+  const accent = typeof style.highlight.color === 'string' ? style.highlight.color : '#ffd166'
 
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
@@ -206,6 +208,22 @@ export const Video: React.FC<VideoProps> = (props) => {
       })}
       <Vignette strength={style.vignette} />
       {props.captions && <Captions words={props.words} style={style} />}
+      {!!props.companies?.length && !!props.introSec && (
+        <Sequence durationInFrames={Math.round(props.introSec * fps)}>
+          <LogoIntro companies={props.companies} seconds={props.introSec} />
+        </Sequence>
+      )}
+      {!!props.yearCards?.length && (
+        <>
+          <TopBadges
+            companies={props.companies ?? []}
+            cards={props.yearCards}
+            accent={accent}
+            hideUntil={props.introSec ?? 0}
+          />
+          <YearCards cards={props.yearCards} accent={accent} />
+        </>
+      )}
       <Audio src={props.narration} />
       {props.music && (
         <Audio

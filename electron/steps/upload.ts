@@ -1,7 +1,7 @@
 import { join } from 'path'
-import { getVideo, listVideos, updateVideo } from '../db/repo'
+import { getVideo, listShorts, listVideos, updateVideo } from '../db/repo'
 import { isValidFile, runTool } from '../services/ffmpeg'
-import { nextFreeSlot } from '../queue/slots'
+import { nextFreeSlot, shortSlotAfter } from '../queue/slots'
 import { canUploadCaptions, setThumbnail, uploadCaptions, uploadVideo } from '../services/youtube'
 import type { Settings, Video } from '../../shared/types'
 import type { Step, StepContext } from './types'
@@ -24,12 +24,18 @@ export const uploadStep: Step = {
       }
       const link = `https://youtu.be/${parent.youtube_id}`
       description = `▶ Watch the full video: ${link}\n\n${description}\n\n#shorts`.trim()
-      if (parent.scheduled_at && video.scheduled_at && video.scheduled_at < parent.scheduled_at) {
-        video = updateVideo(videoId, {
-          scheduled_at: new Date(
-            new Date(parent.scheduled_at).getTime() + 24 * 3600_000
-          ).toISOString()
-        })
+      // The full video's time can move after the short was approved, and the short's own time
+      // can pass while it waits; either way take the next short slot after the full video.
+      const parentAt = parent.scheduled_at
+      const earliest = Math.max(
+        new Date(parentAt ?? 0).getTime() + 30 * 60_000,
+        Date.now() + 15 * 60_000
+      )
+      if (parentAt && (!video.scheduled_at || new Date(video.scheduled_at).getTime() < earliest)) {
+        const taken = listShorts(parent.id)
+          .filter((x) => x.id !== videoId && x.scheduled_at)
+          .map((x) => x.scheduled_at as string)
+        video = updateVideo(videoId, { scheduled_at: shortSlotAfter(parentAt, taken) })
       }
     }
 

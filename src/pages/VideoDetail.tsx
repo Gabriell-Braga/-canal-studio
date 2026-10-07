@@ -418,11 +418,11 @@ function PublishTab({
 
   useEffect(() => {
     if (!video.scheduled_at)
-      api.videos.nextSlot(video.channel_id).then(
+      api.videos.suggestedSlot(video.id).then(
         (s) => setWhen(toLocalInput(s)),
         () => undefined
       )
-  }, [video.scheduled_at, video.channel_id])
+  }, [video.scheduled_at, video.id])
 
   const locked = ['SCHEDULED', 'PUBLISHED'].includes(video.status) && !!video.youtube_id
 
@@ -530,7 +530,9 @@ function PublishTab({
             hint={
               video.scheduled_at
                 ? `Agendado: ${formatDate(video.scheduled_at)}`
-                : 'Sugestão: próximo horário livre'
+                : video.kind === 'short'
+                  ? 'Sugestão: 30 min depois do vídeo completo'
+                  : 'Sugestão: próximo horário livre'
             }
           >
             <input
@@ -620,8 +622,8 @@ function ShortsTab({
           <div className="font-medium text-ink-100">Gerar shorts deste vídeo</div>
           <p className="mt-1 text-sm text-ink-400">
             A IA escolhe os trechos mais fortes (18–52 s), monta em vertical 9:16 com legendas e
-            fecha com uma tela “assista ao vídeo completo” narrada na voz do canal. Os shorts saem no
-            mesmo dia do vídeo completo: o primeiro meia hora depois dele, os outros de meia em
+            fecha com uma tela “assista ao vídeo completo” narrada na voz do canal. Os shorts saem
+            no mesmo dia do vídeo completo: o primeiro meia hora depois dele, os outros de meia em
             meia hora.
           </p>
         </div>

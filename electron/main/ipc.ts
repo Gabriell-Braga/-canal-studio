@@ -156,7 +156,7 @@ export function registerIpc(
   handle('videos:retryFrom', (id: number, step: JobType) => pipeline.retryFrom(id, step))
   handle('videos:approveFinal', (id: number) => pipeline.approveFinal(id))
   handle('videos:rejectFinal', (id: number, step: JobType) => pipeline.rejectFinal(id, step))
-  handle('videos:nextSlot', (channelId: number) => pipeline.nextSlot(channelId))
+  handle('videos:suggestedSlot', (id: number) => pipeline.suggestedSlot(id))
   handle('videos:rerender', (id: number) => pipeline.rerender(id))
   handle('videos:generateShorts', (id: number, count: number) => pipeline.generateShorts(id, count))
   handle('videos:shorts', (id: number) => listShorts(id))

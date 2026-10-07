@@ -39,7 +39,7 @@ const api: Api = {
     generateShorts: invoke('videos:generateShorts'),
     shorts: invoke('videos:shorts'),
     rejectFinal: invoke('videos:rejectFinal'),
-    nextSlot: invoke('videos:nextSlot')
+    suggestedSlot: invoke('videos:suggestedSlot')
   },
   scenes: {
     update: invoke('scenes:update'),

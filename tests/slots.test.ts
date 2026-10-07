@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextFreeSlot, zonedToUtc } from '../electron/queue/slots'
+import { nextFreeSlot, shortSlotAfter, zonedToUtc } from '../electron/queue/slots'
 
 const slots = [
   { weekday: 1, time: '14:00' },
@@ -29,5 +29,26 @@ describe('publish slots', () => {
   it('skips a slot less than one hour away', () => {
     const from = new Date('2026-10-07T17:30:00Z')
     expect(nextFreeSlot(slots, 'America/New_York', [], from)).toBe('2026-10-09T18:00:00.000Z')
+  })
+})
+
+describe('short slots', () => {
+  const parentAt = '2026-10-10T18:00:00.000Z'
+  const from = new Date('2026-10-07T12:00:00Z')
+
+  it('puts the first short 30 minutes after the full video', () => {
+    expect(shortSlotAfter(parentAt, [], from)).toBe('2026-10-10T18:30:00.000Z')
+  })
+
+  it('puts the next short 30 minutes after the previous one', () => {
+    expect(shortSlotAfter(parentAt, ['2026-10-10T18:30:00.000Z'], from)).toBe(
+      '2026-10-10T19:00:00.000Z'
+    )
+  })
+
+  it('skips times less than 15 minutes away', () => {
+    expect(shortSlotAfter(parentAt, [], new Date('2026-10-10T18:20:00Z'))).toBe(
+      '2026-10-10T19:00:00.000Z'
+    )
   })
 })

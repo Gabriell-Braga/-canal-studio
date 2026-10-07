@@ -86,3 +86,19 @@ export function nextFreeSlot(
   }
   throw new Error('Nenhum horário livre encontrado')
 }
+
+/**
+ * Shorts go out 30 minutes apart, the first one 30 minutes after the full video, so each
+ * links to a video that is already public. Skips times other shorts use and times less than
+ * 15 minutes away (YouTube needs publishAt in the future).
+ */
+export function shortSlotAfter(parentAt: string, taken: string[], from: Date = new Date()): string {
+  const step = 30 * 60_000
+  const base = new Date(parentAt).getTime()
+  const minTime = from.getTime() + 15 * 60_000
+  const takenSet = new Set(taken.map((t) => new Date(t).getTime()))
+  for (let k = 1; ; k++) {
+    const slot = base + k * step
+    if (slot > minTime && !takenSet.has(slot)) return new Date(slot).toISOString()
+  }
+}

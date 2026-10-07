@@ -14,7 +14,7 @@ import {
 import { getSettings } from './db/settings'
 import { generateStructured } from './services/llm'
 import { scriptSchema } from './steps/script'
-import { nextFreeSlot } from './queue/slots'
+import { nextFreeSlot, shortSlotAfter } from './queue/slots'
 import type { Scheduler } from './queue/scheduler'
 
 /** User actions that move a video through the pipeline. Shared by IPC handlers and tests. */
@@ -160,24 +160,21 @@ ${JSON.stringify(v.script)}`,
     this.scheduler.kick()
   }
 
-  /**
-   * Shorts go out the same day as the full video, 30 minutes apart starting 30 minutes after
-   * it, so each one links to a video that is already public.
-   */
+  /** Publish time of a short, anchored on its full video (see shortSlotAfter). */
   shortSlot(short: Video): string {
-    const step = 30 * 60_000
     const parent = short.parent_id ? getVideo(short.parent_id) : null
-    const base = new Date(parent?.scheduled_at ?? Date.now() + 3600_000)
-    const siblings = listShorts(short.parent_id ?? 0).filter(
-      (x) => x.id !== short.id && x.scheduled_at
-    )
-    const taken = new Set(siblings.map((x) => new Date(x.scheduled_at as string).getTime()))
-    for (let k = 1; k < 200; k++) {
-      const slot = new Date(base.getTime() + k * step)
-      if (slot.getTime() > Date.now() + 3600_000 && !taken.has(slot.getTime()))
-        return slot.toISOString()
-    }
-    return new Date(Date.now() + 3600_000).toISOString()
+    // A full video not approved yet will take the channel's next free slot.
+    const parentAt = parent?.scheduled_at ?? this.nextSlot(short.channel_id)
+    const taken = listShorts(short.parent_id ?? 0)
+      .filter((x) => x.id !== short.id && x.scheduled_at)
+      .map((x) => x.scheduled_at as string)
+    return shortSlotAfter(parentAt, taken)
+  }
+
+  /** What the publish form suggests before the video has its own time. */
+  suggestedSlot(id: number): string {
+    const v = getVideo(id)
+    return v.kind === 'short' ? this.shortSlot(v) : this.nextSlot(v.channel_id)
   }
 
   /** After swapping scenes: render again and come straight back to the final review. */

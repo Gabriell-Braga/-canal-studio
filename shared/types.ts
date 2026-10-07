@@ -410,7 +410,8 @@ export interface Api {
     generateShorts: (id: number, count: number) => Promise<void>
     shorts: (id: number) => Promise<Video[]>
     rejectFinal: (id: number, fromStep: JobType) => Promise<void>
-    nextSlot: (channelId: number) => Promise<string>
+    /** Publish time to suggest: next free slot, or 30 min after the full video for a short. */
+    suggestedSlot: (id: number) => Promise<string>
   }
   scenes: {
     update: (

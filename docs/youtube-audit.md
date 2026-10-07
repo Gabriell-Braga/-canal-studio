@@ -148,6 +148,8 @@ Não mostre o *Client secret* nem os tokens na gravação.
 
 ## 4. Depois do envio
 
+Formulário enviado em 7 de outubro de 2026.
+
 - A resposta chega por e-mail, normalmente em semanas, às vezes em meses. Se pedirem ajustes, responda no mesmo e-mail e reenvie.
 - Até lá, o app sobe os vídeos normalmente e avisa no log que ficaram privados. Publique ou agende cada um no YouTube Studio.
 - Quando a auditoria for aprovada, marque **Configurações gerais → YouTube → "O projeto passou na auditoria da API do YouTube"**. O aviso some.

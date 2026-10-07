@@ -459,6 +459,15 @@ export function updateJob(
   return getJob(id)
 }
 
+/** Manual queue order: the first id runs first. Ids that are no longer pending are skipped. */
+export function reorderPendingJobs(ids: number[]): void {
+  const stmt = db().prepare("UPDATE jobs SET priority = ? WHERE id = ? AND status = 'pending'")
+  db().transaction(() => {
+    ids.forEach((id, i) => stmt.run(ids.length - i, id))
+  })()
+  notify('jobs')
+}
+
 /** Crash recovery: jobs left `running` by a previous session go back to the queue. */
 export function resetRunningJobs(): number {
   const info = db()

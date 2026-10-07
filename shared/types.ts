@@ -428,6 +428,8 @@ export interface Api {
     pause: () => Promise<void>
     resume: () => Promise<void>
     cancelJob: (id: number) => Promise<void>
+    /** Pending job ids in the new order; the first runs first */
+    reorder: (ids: number[]) => Promise<void>
     logs: (afterId?: number) => Promise<LogEntry[]>
   }
   settings: {

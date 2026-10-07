@@ -18,6 +18,7 @@ import {
   listVideos,
   logsAfter,
   logsForVideo,
+  reorderPendingJobs,
   replaceScenes,
   updateScene,
   updateVideo,
@@ -223,6 +224,10 @@ export function registerIpc(
   handle('queue:pause', () => scheduler.pause())
   handle('queue:resume', () => scheduler.resume())
   handle('queue:cancelJob', (id: number) => scheduler.cancel(id))
+  handle('queue:reorder', (ids: number[]) => {
+    reorderPendingJobs(ids)
+    scheduler.kick()
+  })
   handle('queue:logs', (afterId?: number) => logsAfter(afterId ?? 0))
 
   handle('settings:get', (channelId?: number) => getSettings(channelId))

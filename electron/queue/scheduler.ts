@@ -333,6 +333,7 @@ export class Scheduler {
       return
     }
     const next = NEXT[job.type]
-    if (next) enqueueJob(video.id, next, job.run_mode)
+    // Keep the priority so a video moved up the queue stays up for its next steps.
+    if (next) enqueueJob(video.id, next, job.run_mode, job.priority)
   }
 }

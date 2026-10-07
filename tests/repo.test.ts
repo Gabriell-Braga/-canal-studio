@@ -3,7 +3,9 @@ import {
   createVideo,
   enqueueJob,
   getVideo,
+  jobsByStatus,
   listScenes,
+  reorderPendingJobs,
   replaceScenes,
   resetRunningJobs,
   updateJob,
@@ -50,6 +52,15 @@ describe('repo', () => {
     expect(b.id).toBe(a.id)
     updateJob(a.id, { status: 'running' })
     expect(resetRunningJobs()).toBe(1)
+  })
+
+  it('reorders pending jobs by hand', () => {
+    const ids = ['A', 'B', 'C'].map(
+      (topic) =>
+        enqueueJob(createVideo({ topic, durationMin: 1, synthetic: true }).id, 'audio', 'night').id
+    )
+    reorderPendingJobs([ids[2], ids[0], ids[1]])
+    expect(jobsByStatus('pending').map((j) => j.id)).toEqual([ids[2], ids[0], ids[1]])
   })
 
   it('merges settings with defaults', () => {

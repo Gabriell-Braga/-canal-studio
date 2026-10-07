@@ -54,6 +54,7 @@ const api: Api = {
     pause: invoke('queue:pause'),
     resume: invoke('queue:resume'),
     cancelJob: invoke('queue:cancelJob'),
+    reorder: invoke('queue:reorder'),
     logs: invoke('queue:logs')
   },
   settings: {

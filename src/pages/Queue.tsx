@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { GripVertical } from 'lucide-react'
 import { JOB_LABELS, type Job, type LogEntry, type Video } from '../../shared/types'
 import { Button, Card, ChannelAvatar, PageHeader } from '../components/ui'
 import { useChannel } from '../lib/channel'
@@ -8,21 +9,28 @@ function JobRow({
   job,
   video,
   onCancel,
-  onOpen
+  onOpen,
+  drag
 }: {
   job: Job
   video?: Video
   onCancel?: () => void
   onOpen?: (id: number) => void
+  /** Present on the pending list: the row can be dragged to change the queue order */
+  drag?: { dragging: boolean } & React.LiHTMLAttributes<HTMLLIElement>
 }): React.JSX.Element {
   const { channels } = useChannel()
   const channel = channels.find((c) => c.id === video?.channel_id)
   const waiting = job.run_after && new Date(job.run_after) > new Date()
+  const { dragging, ...dragProps } = drag ?? { dragging: false }
   return (
     <li
-      className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.02]"
+      className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.02] ${drag ? 'cursor-grab active:cursor-grabbing' : ''} ${dragging ? 'opacity-40' : ''}`}
       data-testid={`job-${job.status}`}
+      draggable={!!drag}
+      {...dragProps}
     >
+      {drag && <GripVertical size={14} className="-ml-2 shrink-0 text-ink-600" />}
       <span className="w-24 shrink-0 font-medium text-ink-100">{JOB_LABELS[job.type]}</span>
       {channel && (
         <span title={channel.name}>
@@ -78,6 +86,10 @@ export default function Queue({ onOpen }: { onOpen: (id: number) => void }): Rea
   const [logs, setLogs] = useState<LogEntry[]>([])
   const lastId = useRef(0)
   const logBox = useRef<HTMLDivElement>(null)
+  // Drag preview of the pending list. It is kept while dragging, then
+  // only until fresh queue state replaces the snapshot it was made from.
+  const [dragId, setDragId] = useState<number | null>(null)
+  const [preview, setPreview] = useState<{ ids: number[]; base: unknown } | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -101,6 +113,22 @@ export default function Queue({ onOpen }: { onOpen: (id: number) => void }): Rea
 
   if (!state) return <p className="text-ink-500">Carregando…</p>
   const byId = new Map(videos.map((v) => [v.id, v]))
+  const pendingById = new Map(state.pending.map((j) => [j.id, j]))
+  const order = preview && (dragId !== null || preview.base === state) ? preview.ids : null
+  const pending = order
+    ? [
+        ...order.flatMap((id) => pendingById.get(id) ?? []),
+        ...state.pending.filter((j) => !order.includes(j.id))
+      ]
+    : state.pending
+  const moveOver = (targetId: number): void => {
+    if (dragId === null || dragId === targetId) return
+    const ids = pending.map((j) => j.id).filter((id) => id !== dragId)
+    const from = pending.findIndex((j) => j.id === dragId)
+    const to = pending.findIndex((j) => j.id === targetId)
+    ids.splice(ids.indexOf(targetId) + (from < to ? 1 : 0), 0, dragId)
+    setPreview({ ids, base: state })
+  }
   const vramPct = state.vram ? Math.round((state.vram.used / state.vram.total) * 100) : 0
 
   return (
@@ -186,13 +214,34 @@ export default function Queue({ onOpen }: { onOpen: (id: number) => void }): Rea
       <h2 className="mb-2 font-semibold">Próximas</h2>
       <Card className="mb-6">
         <ul className="divide-y divide-ink-800">
-          {state.pending.map((j) => (
+          {pending.map((j) => (
             <JobRow
               onOpen={onOpen}
               key={j.id}
               job={j}
               video={byId.get(j.video_id)}
               onCancel={() => api.queue.cancelJob(j.id)}
+              drag={{
+                dragging: dragId === j.id,
+                title: 'Arraste para mudar a ordem da fila',
+                onDragStart: (e) => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  setPreview(null)
+                  setDragId(j.id)
+                },
+                onDragOver: (e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  moveOver(j.id)
+                },
+                onDrop: (e) => e.preventDefault(),
+                onDragEnd: (e) => {
+                  // Esc or a drop outside the list keeps the old order.
+                  if (e.dataTransfer.dropEffect === 'none') setPreview(null)
+                  else if (order) void api.queue.reorder(pending.map((p) => p.id))
+                  setDragId(null)
+                }
+              }}
             />
           ))}
           {!state.pending.length && <li className="px-4 py-3 text-sm text-ink-500">Fila vazia.</li>}

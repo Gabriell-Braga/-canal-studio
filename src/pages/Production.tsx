@@ -14,7 +14,18 @@ import { Banner, Button, Card, inputClass, PageHeader } from '../components/ui'
 import { api, errorText, formatDate, mediaUrl, useLive } from '../lib/api'
 import { useChannel } from '../lib/channel'
 
-const COLUMNS: { title: string; statuses: VideoStatus[]; attention?: boolean }[] = [
+/** Publish time in ms; videos without one go last. */
+function releaseTime(v: { scheduled_at: string | null }): number {
+  return v.scheduled_at ? new Date(v.scheduled_at).getTime() : Number.MAX_SAFE_INTEGER
+}
+
+const COLUMNS: {
+  title: string
+  statuses: VideoStatus[]
+  attention?: boolean
+  /** Sort by publish time, the next one to go out first */
+  byRelease?: boolean
+}[] = [
   { title: 'Temas', statuses: ['TOPIC_QUEUED', 'SCRIPT_GENERATING'] },
   { title: 'Revisar roteiro', statuses: ['SCRIPT_REVIEW'], attention: true },
   {
@@ -22,7 +33,7 @@ const COLUMNS: { title: string; statuses: VideoStatus[]; attention?: boolean }[]
     statuses: ['PRODUCTION_QUEUED', 'AUDIO', 'SCENES', 'RENDERING', 'THUMBNAIL']
   },
   { title: 'Revisão final', statuses: ['FINAL_REVIEW'], attention: true },
-  { title: 'Agendado / publicado', statuses: ['SCHEDULED', 'PUBLISHED'] }
+  { title: 'Agendado / publicado', statuses: ['SCHEDULED', 'PUBLISHED'], byRelease: true }
 ]
 
 interface Props {
@@ -194,6 +205,7 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
       <div className="grid grid-cols-[repeat(auto-fit,minmax(176px,1fr))] gap-3">
         {COLUMNS.map((col) => {
           const items = videos.filter((v) => col.statuses.includes(v.status))
+          if (col.byRelease) items.sort((a, b) => releaseTime(a) - releaseTime(b))
           return (
             <div key={col.title} className="flex min-w-0 flex-col">
               <div className="mb-2 flex items-center justify-between px-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400">

@@ -44,6 +44,10 @@ export interface VideoProps {
   companies?: RenderCompany[]
   /** Seconds the opening logo card stays up over the first scene; 0 = none */
   introSec?: number
+  /** The hook's punch line, big on screen until the hook ends (seconds) */
+  teaser?: { text: string; end: number }
+  /** The channel's own intro, between the hook and the story */
+  channelIntro?: ChannelIntroProps & { start: number; duration: number }
   [key: string]: unknown
 }
 
@@ -112,8 +116,24 @@ export function thumbKindOf(path: string): ThumbKind | null {
   return kind && kind in THUMB_KIND_LABELS ? (kind as ThumbKind) : null
 }
 
+/** Shortest channel intro; a narrated tagline can make it longer. */
+export const CHANNEL_INTRO_SEC = 4
+
+/** The channel's intro card: its picture, name and tagline in its own colors. */
+export interface ChannelIntroProps {
+  name: string
+  avatar: string | null
+  tagline: string
+  primary: string
+  secondary: string
+  font: string
+  /** Preview length when rendered alone, seconds */
+  duration?: number
+  [key: string]: unknown
+}
+
 export interface RenderJob {
-  mode: 'video' | 'short' | 'stills'
+  mode: 'video' | 'short' | 'stills' | 'intro'
   /** Root folder the file server exposes; props reference files as {{root}}/relative/path */
   root: string
   entry: string
@@ -121,6 +141,7 @@ export interface RenderJob {
   video?: VideoProps
   short?: ShortProps
   stills?: { props: ThumbnailProps; out: string }[]
+  intro?: ChannelIntroProps
   concurrency?: number
 }
 

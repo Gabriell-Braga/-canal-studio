@@ -1,12 +1,42 @@
-import { relative } from 'path'
+import { copyFileSync, existsSync, mkdirSync } from 'fs'
+import { dirname, extname, join, relative } from 'path'
 import { z } from 'zod'
-import { yearChanges, type RenderCompany, type YearCard } from '../../shared/render'
-import type { Scene, ScriptCompany, Video } from '../../shared/types'
-import { updateVideo } from '../db/repo'
+import {
+  YEAR_CARD_SEC,
+  yearChanges,
+  type ChannelIntroProps,
+  type RenderCompany,
+  type YearCard
+} from '../../shared/render'
+import type { Scene, ScriptCompany, Settings, Video } from '../../shared/types'
+import { getChannel, updateVideo } from '../db/repo'
 import { generateStructured } from '../services/llm'
 import { fetchLogos } from '../services/logos'
 import { readTimings } from './audio'
 import type { StepContext } from './types'
+
+/**
+ * The channel's intro card. The channel picture is copied next to the files the render
+ * reads (its file server only sees that folder).
+ */
+export function channelIntroProps(channelId: number, s: Settings, root: string): ChannelIntroProps {
+  const channel = getChannel(channelId)
+  let avatar: string | null = null
+  if (channel.avatar_path && existsSync(channel.avatar_path)) {
+    const copy = join(root, 'intro', `avatar${extname(channel.avatar_path)}`)
+    mkdirSync(dirname(copy), { recursive: true })
+    copyFileSync(channel.avatar_path, copy)
+    avatar = url(root, copy)
+  }
+  return {
+    name: channel.name,
+    avatar,
+    tagline: s.introTagline.trim(),
+    primary: s.brandPrimary,
+    secondary: s.brandSecondary,
+    font: s.brandFont
+  }
+}
 
 function url(root: string, file: string): string {
   return `{{root}}/${relative(root, file).split('\\').join('/').split('/').map(encodeURIComponent).join('/')}`
@@ -67,7 +97,8 @@ export function yearCardsFor(scenes: Scene[], projectDir: string): YearCard[] {
     const gap = timings.gaps[i - 1]
     const at = scenes[i].start_sec
     if (!gap || gap < 1 || at === null) continue
-    cards.push({ at, year: change.year, from: change.from, duration: gap })
+    // The first card can share its silence with the channel intro; it takes the end of it.
+    cards.push({ at, year: change.year, from: change.from, duration: Math.min(gap, YEAR_CARD_SEC) })
   }
   return cards
 }

@@ -148,6 +148,21 @@ async function main(): Promise<void> {
       })
     }
 
+    if (job.mode === 'intro' && job.intro) {
+      const inputProps = withBase(job.intro, base)
+      const composition = await selectComposition({ serveUrl, id: 'ChannelIntro', inputProps })
+      await renderMedia({
+        serveUrl,
+        composition,
+        inputProps,
+        codec: 'h264',
+        crf: 20,
+        outputLocation: job.out,
+        concurrency,
+        onProgress: ({ progress }) => emit({ type: 'progress', value: progress })
+      })
+    }
+
     if (job.mode === 'stills' && job.stills) {
       for (const [i, still] of job.stills.entries()) {
         const inputProps = withBase(still.props, base)

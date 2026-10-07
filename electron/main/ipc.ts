@@ -33,7 +33,10 @@ import {
 import type { Pipeline } from '../pipeline'
 import type { Scheduler } from '../queue/scheduler'
 import { checkAll, installService, startService } from '../services/checks'
-import { channelMusicDir, dataDir, projectDir, setDataDir } from './paths'
+import { channelDir, channelMusicDir, dataDir, projectDir, setDataDir } from './paths'
+import { channelIntroProps } from '../steps/overlays'
+import { runRender } from '../services/remotion'
+import { CHANNEL_INTRO_SEC } from '../../shared/render'
 import { channelSummaries } from './channels'
 import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scenes'
 import { freeComfy } from '../services/comfy'
@@ -288,6 +291,22 @@ export function registerIpc(
     if (!colors) throw new Error('Não deu para tirar cores da foto do canal')
     setSettings({ brandPrimary: colors.primary, brandSecondary: colors.secondary }, id)
     return colors
+  })
+  handle('channels:introPreview', async (id: number, patch: Partial<Settings>) => {
+    const s = { ...getSettings(id), ...patch }
+    const root = channelDir(id)
+    const out = join(root, 'intro-preview.mp4')
+    await runRender(
+      {
+        mode: 'intro',
+        root,
+        out,
+        intro: { ...channelIntroProps(id, s, root), duration: CHANNEL_INTRO_SEC }
+      },
+      join(root, 'intro-job.json'),
+      {}
+    )
+    return out
   })
   handle('channels:openMusicDir', async (id: number) => {
     await shell.openPath(channelMusicDir(id))

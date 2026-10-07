@@ -280,6 +280,8 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
   const [sampling, setSampling] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
+  const [introVideo, setIntroVideo] = useState<string | null>(null)
+  const [introBusy, setIntroBusy] = useState(false)
 
   useEffect(() => {
     api.settings.get(channelId).then(setS)
@@ -322,6 +324,23 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
       setMessage({ kind: 'info', text: 'Cores tiradas da foto do canal.' })
     } catch (e) {
       setMessage({ kind: 'error', text: errorText(e) })
+    }
+  }
+
+  async function previewIntro(): Promise<void> {
+    setIntroBusy(true)
+    try {
+      const file = await api.channels.introPreview(channel.id, {
+        introTagline: s!.introTagline,
+        brandPrimary: s!.brandPrimary,
+        brandSecondary: s!.brandSecondary,
+        brandFont: s!.brandFont
+      })
+      setIntroVideo(mediaUrl(file, Date.now()))
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) })
+    } finally {
+      setIntroBusy(false)
     }
   }
 
@@ -1016,6 +1035,59 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
             </Field>
           </div>
         </Section>
+
+        {scope === 'channel' && (
+          <Section
+            title="Intro do canal"
+            scope="channel"
+            description="Vinheta com a foto, o nome e as cores do canal, entre a chamada inicial e o resto do vídeo."
+          >
+            <label className={`${inlineCheckClass} text-ink-200`}>
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={s.introEnabled}
+                onChange={(e) => set('introEnabled', e.target.checked)}
+              />
+              Usar a intro nos próximos vídeos
+            </label>
+            <label className={`${inlineCheckClass} text-ink-200`}>
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={s.introNarrate}
+                onChange={(e) => set('introNarrate', e.target.checked)}
+              />
+              Narrador lê a frase do canal
+            </label>
+            <div className="md:col-span-2">
+              <Field
+                label="Frase do canal (em inglês)"
+                hint="Aparece embaixo do nome. Ex.: Business stories nobody told you."
+              >
+                <input
+                  className={inputClass}
+                  value={s.introTagline}
+                  onChange={(e) => set('introTagline', e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="space-y-3 md:col-span-2">
+              <Button onClick={previewIntro} disabled={introBusy}>
+                {introBusy ? 'Gerando prévia…' : 'Gerar prévia da intro'}
+              </Button>
+              {introVideo && (
+                <video
+                  key={introVideo}
+                  src={introVideo}
+                  controls
+                  autoPlay
+                  className="w-full max-w-2xl rounded-lg border border-ink-700"
+                />
+              )}
+            </div>
+          </Section>
+        )}
 
         <Section
           title="YouTube (Google Cloud)"

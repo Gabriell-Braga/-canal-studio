@@ -303,6 +303,12 @@ export interface Settings {
   shortsCount: number
   shortsCta: string
   shortsAuto: boolean
+  /** Channel intro between the hook and the story */
+  introEnabled: boolean
+  /** Short line under the channel name, e.g. "Business stories nobody told you" */
+  introTagline: string
+  /** The narrator reads the tagline during the intro */
+  introNarrate: boolean
   googleClientId: string
   googleClientSecret: string
   /** The Google Cloud project passed the YouTube API audit, so uploads can go public */
@@ -337,7 +343,10 @@ export const CHANNEL_SETTING_KEYS = [
   'brandAuto',
   'shortsCount',
   'shortsCta',
-  'shortsAuto'
+  'shortsAuto',
+  'introEnabled',
+  'introTagline',
+  'introNarrate'
 ] as const satisfies readonly (keyof Settings)[]
 
 export type ChannelSettingKey = (typeof CHANNEL_SETTING_KEYS)[number]
@@ -408,6 +417,8 @@ export interface Api {
     musicDir: (id: number) => Promise<string>
     /** Colors from the YouTube picture; saved as the channel's brand colors */
     brandFromAvatar: (id: number) => Promise<{ primary: string; secondary: string }>
+    /** Render the channel intro alone (with unsaved settings); returns the video file path */
+    introPreview: (id: number, patch: Partial<Settings>) => Promise<string>
     openMusicDir: (id: number) => Promise<void>
   }
   services: {

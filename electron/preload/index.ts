@@ -11,6 +11,7 @@ const api: Api = {
   channels: {
     list: invoke('channels:list'),
     create: invoke('channels:create'),
+    introPreview: invoke('channels:introPreview'),
     update: invoke('channels:update'),
     remove: invoke('channels:remove'),
     musicDir: invoke('channels:musicDir'),

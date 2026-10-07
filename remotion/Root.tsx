@@ -1,6 +1,7 @@
 import React from 'react'
 import { Composition, Still } from 'remotion'
 import type { ShortProps, ThumbnailProps, VideoProps } from '../shared/render'
+import { ChannelIntro } from './ChannelIntro'
 import { Short } from './Short'
 import { Thumbnail } from './Thumbnail'
 import { Video } from './Video'
@@ -68,6 +69,25 @@ export const Root: React.FC = () => (
           1,
           Math.ceil((props.segmentDuration + props.cta.duration + 0.4) * props.fps)
         )
+      })}
+    />
+    <Composition
+      id="ChannelIntro"
+      component={ChannelIntro}
+      width={1920}
+      height={1080}
+      fps={30}
+      durationInFrames={120}
+      defaultProps={{
+        name: 'Channel',
+        avatar: null,
+        tagline: 'Stories nobody told you',
+        primary: '#ffd34d',
+        secondary: '#ffffff',
+        font: 'Impact'
+      }}
+      calculateMetadata={({ props }) => ({
+        durationInFrames: Math.round((props.duration ?? 4) * 30)
       })}
     />
     <Still

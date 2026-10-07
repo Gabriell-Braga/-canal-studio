@@ -15,7 +15,8 @@ import { isValidFile, probeDuration } from '../services/ffmpeg'
 import { runRender } from '../services/remotion'
 import { readWords } from './transcribe'
 import { writeSrt } from '../services/captions'
-import { renderCompanies, yearCardsFor } from './overlays'
+import { channelIntroProps, renderCompanies, yearCardsFor } from './overlays'
+import { readTimings } from './audio'
 import type { Step } from './types'
 
 const MUSIC_EXT = ['.mp3', '.wav', '.m4a', '.ogg']
@@ -87,6 +88,12 @@ export const renderStep: Step = {
     const introSec = companies.length
       ? Math.min(3, Math.max(0, (firstScene.end_sec ?? 3) - (firstScene.start_sec ?? 0) - 0.5))
       : 0
+    const timings = readTimings(pd)
+    const channelIntro = timings?.intro
+      ? { ...channelIntroProps(video.channel_id, ctx.settings, pd), ...timings.intro }
+      : undefined
+    const hookEnd = firstScene.end_sec ?? 0
+    const teaserText = video.script?.teaser?.trim()
     const props: VideoProps = {
       fps: 30,
       durationSec: (await probeDuration(video.audio_path as string)) + 0.5,
@@ -99,7 +106,11 @@ export const renderStep: Step = {
       template: (video.template as TemplateId) ?? 'documentary',
       companies,
       yearCards,
-      introSec
+      introSec,
+      teaser: teaserText
+        ? { text: teaserText, end: Math.max(0, (channelIntro?.start ?? hookEnd) - 0.2) }
+        : undefined,
+      channelIntro
     }
 
     // Skip when the same inputs already produced a valid video.

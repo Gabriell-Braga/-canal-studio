@@ -11,6 +11,7 @@ import {
   useVideoConfig
 } from 'remotion'
 import type { RenderScene, RenderWord, VideoProps } from '../shared/render'
+import { ChannelIntroCard, Teaser } from './ChannelIntro'
 import { LogoIntro, TopBadges, YearCards } from './Overlays'
 import { template, type TemplateStyle } from './templates'
 
@@ -211,6 +212,24 @@ export const Video: React.FC<VideoProps> = (props) => {
       {!!props.companies?.length && !!props.introSec && (
         <Sequence durationInFrames={Math.round(props.introSec * fps)}>
           <LogoIntro companies={props.companies} seconds={props.introSec} />
+        </Sequence>
+      )}
+      {props.teaser && props.teaser.end > 1 && (
+        <Sequence durationInFrames={Math.round(props.teaser.end * fps)}>
+          <Teaser
+            text={props.teaser.text}
+            seconds={props.teaser.end}
+            accent={accent}
+            delay={props.companies?.length ? Math.min(1.2, props.introSec ?? 0) : 0.3}
+          />
+        </Sequence>
+      )}
+      {props.channelIntro && (
+        <Sequence
+          from={Math.round(props.channelIntro.start * fps)}
+          durationInFrames={Math.round(props.channelIntro.duration * fps)}
+        >
+          <ChannelIntroCard intro={props.channelIntro} seconds={props.channelIntro.duration} />
         </Sequence>
       )}
       {!!props.yearCards?.length && (

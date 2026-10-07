@@ -728,3 +728,31 @@ async function brand({ launch, api, shot, log }) {
 }
 
 scenarios.brand = brand
+
+/** Review: "Corrigir selecionados com IA" counts the selected scripts that have alerts and runs on each. */
+async function fixSelected({ launch, api, shot, log, waitUntil }) {
+  const { app, page } = await launch()
+  await api(page, 'videos.addTopics', 1, ['First topic', 'Second topic'], 1)
+  await api(page, 'videos.generateScripts', 1)
+  await waitUntil(
+    async () => {
+      const vs = await api(page, 'videos.list', 1)
+      return vs.length === 2 && vs.every((v) => v.status === 'SCRIPT_REVIEW') && vs
+    },
+    { label: 'fake scripts', timeoutMs: 90_000 }
+  )
+  await page.getByTestId('nav-review').click()
+  await page.getByTestId('review-item').nth(1).waitFor()
+  const button = page.getByTestId('fix-selected')
+  assert(await button.isDisabled(), 'disabled with nothing selected')
+  await page.getByTestId('select-all').click()
+  assert((await button.textContent()).includes('(2)'), 'counts 2 selected scripts')
+  await shot(page, 'fix-selected')
+  await button.click()
+  await page.getByText(/corrigido\(s\)/).waitFor({ timeout: 120_000 })
+  await shot(page, 'fix-selected-done')
+  log(await page.getByText(/corrigido\(s\)/).textContent())
+  await app.close()
+}
+
+scenarios.fixSelected = fixSelected

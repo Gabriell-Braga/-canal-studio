@@ -34,11 +34,14 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
   const [editing, setEditing] = useState<number | null>(null)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [fixing, setFixing] = useState<number | null>(null)
+  const [batch, setBatch] = useState<{ done: number; total: number } | null>(null)
   const [deleting, setDeleting] = useState<Video | null>(null)
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
 
   const visibleSelected = [...selected].filter((id) => videos.some((v) => v.id === id))
   const allSelected = videos.length > 0 && visibleSelected.length === videos.length
+  const fixable = (v: Video): boolean => v.review_alerts.some((a) => a.kind !== 'other')
+  const selectedFixable = videos.filter((v) => selected.has(v.id) && fixable(v))
 
   function toggle(id: number): void {
     setSelected((s) => {
@@ -74,6 +77,31 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
     }
   }
 
+  /** One at a time: the model runs on a single GPU, and a failure must not stop the others. */
+  async function fixSelected(): Promise<void> {
+    const ids = selectedFixable.map((v) => v.id)
+    const failed: string[] = []
+    setBatch({ done: 0, total: ids.length })
+    for (const [i, id] of ids.entries()) {
+      setFixing(id)
+      try {
+        await api.videos.fixScript(id)
+      } catch (e) {
+        const v = videos.find((x) => x.id === id)
+        failed.push(`${v?.title ?? v?.topic ?? id}: ${errorText(e)}`)
+      }
+      setBatch({ done: i + 1, total: ids.length })
+    }
+    setFixing(null)
+    setBatch(null)
+    const ok = ids.length - failed.length
+    setMessage(
+      failed.length
+        ? { kind: 'error', text: `${ok} corrigido(s); falharam: ${failed.join(' · ')}` }
+        : { kind: 'info', text: `${ok} roteiro(s) corrigido(s) pela IA. Releia antes de aprovar.` }
+    )
+  }
+
   async function redo(id: number): Promise<void> {
     try {
       await api.videos.redoScript(id)
@@ -100,10 +128,20 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
               {allSelected ? 'Desmarcar todos' : 'Selecionar todos'}
             </Button>
             <Button
+              data-testid="fix-selected"
+              onClick={fixSelected}
+              disabled={!selectedFixable.length || fixing !== null}
+            >
+              <Wand2 size={14} />
+              {batch
+                ? `Corrigindo ${Math.min(batch.done + 1, batch.total)}/${batch.total}…`
+                : `Corrigir selecionados com IA (${selectedFixable.length})`}
+            </Button>
+            <Button
               data-testid="approve-selected"
               variant="primary"
               onClick={approve}
-              disabled={!visibleSelected.length}
+              disabled={!visibleSelected.length || fixing !== null}
             >
               Aprovar selecionados ({visibleSelected.length})
             </Button>
@@ -230,7 +268,7 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
                         <Button size="sm" variant="danger" onClick={() => setDeleting(v)}>
                           <Trash2 size={14} /> Excluir
                         </Button>
-                        {v.review_alerts.some((a) => a.kind !== 'other') && (
+                        {fixable(v) && (
                           <Button
                             size="sm"
                             variant="primary"

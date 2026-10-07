@@ -63,7 +63,11 @@ function fakeStep(type: JobType): Step {
           outro: 'Subscribe.'
         }
         replaceScenes(videoId, script)
-        updateVideo(videoId, { script, title: 'Test video' })
+        updateVideo(videoId, {
+          script,
+          title: 'Test video',
+          review_alerts: [{ kind: 'hook', message: 'Test alert.', quote: 'A test hook.' }]
+        })
       }
       if (type === 'render') updateVideo(videoId, { video_path: `${ctx.projectDir}\\fake.mp4` })
     }

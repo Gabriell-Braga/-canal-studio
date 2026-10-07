@@ -28,7 +28,7 @@ export async function fillRealSubjects(
     const batch = scenes.slice(start, start + BATCH * 2)
     const listing = batch.map((sc, i) => `SCENE ${i}: "${sc.narration}"`).join('\n')
     const { subjects } = await generateStructured(
-      `These scenes come from a YouTube documentary about "${topic}". For each scene that is about a specific real person, product, place or event, give real_subject: the words that find a real photo of it on Wikimedia Commons, proper names first, plus the year or event when it helps (e.g. "Steve Jobs iPhone Macworld 2007", "Apple I computer", "Xerox Alto"). Use "" when the scene is generic.
+      `These scenes come from a YouTube documentary about "${topic}". For each scene that is about a specific real person, product, device, place or event, give real_subject: the words that find a real photo of it on Wikimedia Commons, proper names first, plus the year or event when it helps (e.g. "Steve Jobs iPhone Macworld 2007", "Apple I computer", "Xerox Alto"). A scene that mentions a specific computer, phone, console, chip, car or gadget always gets its exact maker and model (e.g. "IBM PC 5150", "Nokia 3310"). Use "" when the scene is generic.
 
 ${listing}
 
@@ -75,7 +75,7 @@ export async function pickRelevant(
       .join('\n\n')
     try {
       const { picks } = await generateStructured(
-        `You pick B-roll for a YouTube documentary about "${topic}". For each scene, choose the option whose description best matches what the narration is talking about at that moment (place, era, object, action). Prefer video over photo when both fit. When a scene is about a real person, product or event, a [real photo] that actually shows it beats any stock clip; stock of a different situation does not fit (a concert or a random speaker for a product keynote, a random office for a famous company), so answer -1 rather than pick it. Answer -1 when no option clearly fits: a wrong image is worse than a generated one. Modern footage does not fit a scene about the distant past unless it shows a place or object that still looks the same.
+        `You pick B-roll for a YouTube documentary about "${topic}". For each scene, choose the option whose description best matches what the narration is talking about at that moment (place, era, object, action). Prefer video over photo when both fit. When a scene is about a real person, product, device or event, a [real photo] that actually shows it beats any stock clip; stock of a different situation does not fit (a concert or a random speaker for a product keynote, a random office for a famous company), so answer -1 rather than pick it. Answer -1 when no option clearly fits: a wrong image is worse than a generated one. Modern footage does not fit a scene about the distant past unless it shows a place or object that still looks the same.
 
 ${listing}
 

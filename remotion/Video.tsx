@@ -188,6 +188,37 @@ export function Vignette({ strength }: { strength: number }): React.JSX.Element 
   )
 }
 
+const END_FADE_SEC = 2
+
+/** Slow fade to black at the end of the narration; stays black for YouTube's end screen. */
+function EndScreen({ at }: { at: number }): React.JSX.Element {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const opacity = interpolate(frame, [at * fps - fps / 2, at * fps + END_FADE_SEC * fps], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp'
+  })
+  return <AbsoluteFill style={{ backgroundColor: 'black', opacity }} />
+}
+
+/**
+ * Music under the narration, then louder on its own over the end screen, fading out at the very
+ * end. Without an end screen it just fades in and out.
+ */
+function musicCurve(
+  f: number,
+  fps: number,
+  total: number,
+  fade: number,
+  endScreenAt?: number
+): number {
+  const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const
+  const edges = interpolate(f, [0, fade, total - fade * 2, total], [0, 1, 1, 0], clamp)
+  if (endScreenAt === undefined) return edges
+  const at = endScreenAt * fps
+  return edges * interpolate(f, [at - fps, at + 2 * fps], [1, 2.2], clamp)
+}
+
 export const Video: React.FC<VideoProps> = (props) => {
   const { fps, durationInFrames } = useVideoConfig()
   const style = template(props.template)
@@ -199,7 +230,11 @@ export const Video: React.FC<VideoProps> = (props) => {
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
       {props.scenes.map((scene, i) => {
         const from = Math.max(0, Math.round(scene.start * fps) - (i ? fade : 0))
-        const to = Math.round(scene.end * fps)
+        // The last image stays under the fade to black instead of cutting out.
+        const last = i === props.scenes.length - 1 && props.endScreenAt !== undefined
+        const to = Math.round(
+          (last ? (props.endScreenAt as number) + END_FADE_SEC : scene.end) * fps
+        )
         const frames = Math.max(1, to - from + (i < props.scenes.length - 1 ? fade : 0))
         return (
           <Sequence key={i} from={from} durationInFrames={frames}>
@@ -243,18 +278,16 @@ export const Video: React.FC<VideoProps> = (props) => {
           <YearCards cards={props.yearCards} accent={accent} />
         </>
       )}
+      {props.endScreenAt !== undefined && <EndScreen at={props.endScreenAt} />}
       <Audio src={props.narration} />
       {props.music && (
         <Audio
           src={props.music}
           loop
           volume={(f) =>
-            props.musicVolume *
-            interpolate(
-              f,
-              [0, musicFade, durationInFrames - musicFade * 2, durationInFrames],
-              [0, 1, 1, 0],
-              { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+            Math.min(
+              1,
+              props.musicVolume * musicCurve(f, fps, durationInFrames, musicFade, props.endScreenAt)
             )
           }
         />

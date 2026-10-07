@@ -9,7 +9,7 @@ import {
   writeFileSync
 } from 'fs'
 import { extname, join, relative } from 'path'
-import type { TemplateId, VideoProps } from '../../shared/render'
+import { END_SCREEN_SEC, type TemplateId, type VideoProps } from '../../shared/render'
 import { getVideo, listScenes, updateVideo } from '../db/repo'
 import { isValidFile, probeDuration } from '../services/ffmpeg'
 import { runRender } from '../services/remotion'
@@ -94,9 +94,12 @@ export const renderStep: Step = {
       : undefined
     const hookEnd = firstScene.end_sec ?? 0
     const teaserText = video.script?.teaser?.trim()
+    const narrationSec = await probeDuration(video.audio_path as string)
     const props: VideoProps = {
       fps: 30,
-      durationSec: (await probeDuration(video.audio_path as string)) + 0.5,
+      // Black screen with only the music at the end, where YouTube shows the end screen.
+      durationSec: narrationSec + 0.5 + END_SCREEN_SEC,
+      endScreenAt: narrationSec + 0.5,
       narration: url(pd, video.audio_path as string),
       scenes: renderScenes,
       words,

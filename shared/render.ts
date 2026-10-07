@@ -48,6 +48,8 @@ export interface VideoProps {
   teaser?: { text: string; end: number }
   /** The channel's own intro, between the hook and the story */
   channelIntro?: ChannelIntroProps & { start: number; duration: number }
+  /** Black end screen after the narration: starts at this second and runs to the end */
+  endScreenAt?: number
   [key: string]: unknown
 }
 
@@ -148,6 +150,13 @@ export interface RenderJob {
   intro?: ChannelIntroProps
   concurrency?: number
 }
+
+/** Black screen with only the music after the narration, for YouTube's end screen (5–20 s). */
+export const END_SCREEN_SEC = 20
+
+/** Longer silence before the outro and a slower voice, so the ending does not feel rushed. */
+export const OUTRO_PAUSE_SEC = 1.6
+export const OUTRO_SPEED = 0.92
 
 /** Seconds of silence (and black year card) before a scene that jumps to a new year. */
 export const YEAR_CARD_SEC = 2.2

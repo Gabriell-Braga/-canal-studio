@@ -1,11 +1,17 @@
 import { createHash } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { listScenes, updateVideo } from '../db/repo'
+import { getVideo, listScenes, updateVideo } from '../db/repo'
 import { concatAndNormalize, isValidFile, probeDuration, runTool } from '../services/ffmpeg'
 import type { Settings } from '../../shared/types'
 import { pythonPost } from '../services/python'
-import { CHANNEL_INTRO_SEC, YEAR_CARD_SEC, yearChanges } from '../../shared/render'
+import {
+  CHANNEL_INTRO_SEC,
+  OUTRO_PAUSE_SEC,
+  OUTRO_SPEED,
+  YEAR_CARD_SEC,
+  yearChanges
+} from '../../shared/render'
 import type { Step } from './types'
 
 export interface SceneTiming {
@@ -80,15 +86,23 @@ export const audioStep: Step = {
     const scenes = listScenes(videoId)
     if (!scenes.length) throw new Error('Vídeo sem cenas; gere o roteiro primeiro')
 
+    // The outro is the last scene: read slower and after a longer silence.
+    const outro = getVideo(videoId).script?.outro?.trim()
+    const outroIndex =
+      outro && scenes.length > 2 && scenes.at(-1)?.narration.trim() === outro
+        ? scenes.length - 1
+        : -1
+
     const timings: SceneTiming[] = []
     let generated = 0
     for (const [i, scene] of scenes.entries()) {
       if (ctx.signal.aborted) throw new Error('Cancelado')
-      const file = sceneFile(dir, scene.index, scene.narration, voice, voiceSpeed)
+      const speed = i === outroIndex ? voiceSpeed * OUTRO_SPEED : voiceSpeed
+      const file = sceneFile(dir, scene.index, scene.narration, voice, speed)
       if (!isValidFile(file)) {
         await pythonPost(
           '/tts',
-          { text: scene.narration, voice, speed: voiceSpeed, out_path: file },
+          { text: scene.narration, voice, speed, out_path: file },
           ctx.signal
         )
         generated++
@@ -99,7 +113,13 @@ export const audioStep: Step = {
     ctx.log(`Áudio: ${generated} cena(s) geradas, ${scenes.length - generated} reaproveitadas`)
 
     const changes = yearChanges(scenes.map((s) => s.year))
-    const gaps = scenes.map((_, i) => (changes.has(i + 1) ? YEAR_CARD_SEC : scenePauseSec))
+    const gaps = scenes.map((_, i) =>
+      changes.has(i + 1)
+        ? YEAR_CARD_SEC
+        : i + 1 === outroIndex
+          ? Math.max(scenePauseSec, OUTRO_PAUSE_SEC)
+          : scenePauseSec
+    )
     if (changes.size) ctx.log(`${changes.size} mudança(s) de ano com cartão de transição`)
 
     // The channel intro goes right after the hook: hook, pause, intro, then the story.

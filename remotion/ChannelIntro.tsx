@@ -18,9 +18,11 @@ import type { ChannelIntroProps } from '../shared/render'
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const
 
 const SLICES = 7
-const LOGO = 300
+const LOGO = 260
+/** The picture has empty margin around the mark, so the text tucks in under its edge. */
+const GAP = -4
 
-/** The channel picture cut into vertical strips that fly in from above and below and lock together. */
+/** The channel picture cut into vertical strips that slide in flat from above and below. */
 function AssemblingLogo({
   src,
   frame,
@@ -30,14 +32,13 @@ function AssemblingLogo({
   frame: number
   fps: number
 }): React.JSX.Element {
-  const settle = spring({ frame: frame - 24, fps, config: { damping: 14, stiffness: 90 } })
   return (
     <div
       style={{
         position: 'relative',
         width: LOGO,
         height: LOGO,
-        transform: `scale(${1.08 - 0.08 * settle})`,
+        flexShrink: 0,
         // Soft edge: the picture melts into the card, which has the same color.
         maskImage: 'radial-gradient(circle, black 52%, transparent 71%)',
         WebkitMaskImage: 'radial-gradient(circle, black 52%, transparent 71%)'
@@ -47,7 +48,7 @@ function AssemblingLogo({
         const p = spring({
           frame: frame - 2 - i * 2,
           fps,
-          config: { damping: 15, stiffness: 140, mass: 0.8 }
+          config: { damping: 18, stiffness: 150, mass: 0.7 }
         })
         const from = i % 2 === 0 ? -1 : 1
         const left = (i / SLICES) * 100
@@ -64,8 +65,7 @@ function AssemblingLogo({
               objectFit: 'cover',
               // A hair of overlap so no seam shows once the strips meet.
               clipPath: `inset(0 ${Math.max(0, right - 0.3)}% 0 ${Math.max(0, left - 0.3)}%)`,
-              transform: `translateY(${(1 - p) * from * 140}%) rotate(${(1 - p) * from * 8}deg)`,
-              opacity: Math.min(1, p * 2)
+              transform: `translateY(${(1 - p) * from * 120}%)`
             }}
           />
         )
@@ -74,42 +74,30 @@ function AssemblingLogo({
   )
 }
 
-/** Each letter drops into place, one after the other. */
-function AssembledText({
-  text,
+/** A line of text that slides out from behind the logo, from the left. */
+function SlideIn({
   frame,
   fps,
   start,
+  children,
   style
 }: {
-  text: string
   frame: number
   fps: number
   start: number
+  children: React.ReactNode
   style: React.CSSProperties
 }): React.JSX.Element {
+  const p = spring({
+    frame: frame - Math.round(start * fps),
+    fps,
+    config: { damping: 20, stiffness: 110 }
+  })
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', ...style }}>
-      {[...text].map((ch, i) => {
-        const p = spring({
-          frame: frame - start - i * 1.2,
-          fps,
-          config: { damping: 13, stiffness: 160 }
-        })
-        return (
-          <span
-            key={i}
-            style={{
-              display: 'inline-block',
-              whiteSpace: 'pre',
-              opacity: p,
-              transform: `translateY(${(1 - p) * -60}px) scale(${0.6 + 0.4 * p})`
-            }}
-          >
-            {ch}
-          </span>
-        )
-      })}
+    <div style={{ overflow: 'hidden', paddingRight: 20 }}>
+      <div style={{ ...style, transform: `translateX(${(p - 1) * 105}%)`, whiteSpace: 'nowrap' }}>
+        {children}
+      </div>
     </div>
   )
 }
@@ -137,68 +125,81 @@ export function ChannelIntroCard({
   // The whole card sits on the color of the channel picture, so the picture blends in.
   const bg = intro.background ?? intro.primary
   const font = `"${intro.font}", "Segoe UI Black", "Arial Black", sans-serif`
-  const line = interpolate(t, [1.1, 1.7], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) })
-  const tag = interpolate(t, [1.5, 2.0], [0, 1], clamp)
-  const sched = spring({ frame: frame - Math.round(2.1 * fps), fps, config: { damping: 14 } })
-  const drift = interpolate(t, [0, seconds], [1, 1.05])
-  const shine = interpolate(t, [0.9, 2.2], [-40, 140], clamp)
+  const nameSize = 100
+  const tagSize = 42
+  // The logo builds in the middle of the screen, then slides left to make room for the text.
+  const textWidth = Math.max(
+    intro.name.length * nameSize * 0.66,
+    intro.tagline.length * tagSize * 0.5
+  )
+  const shift = intro.avatar ? (textWidth + GAP) / 2 : 0
+  const move = interpolate(t, [0.45, 1.0], [1, 0], {
+    ...clamp,
+    easing: Easing.inOut(Easing.cubic)
+  })
+  const sched = spring({ frame: frame - Math.round(1.8 * fps), fps, config: { damping: 14 } })
   return (
     <AbsoluteFill style={{ opacity: fade, backgroundColor: bg, overflow: 'hidden' }}>
       <AbsoluteFill
         style={{
-          transform: `scale(${drift})`,
-          background: 'radial-gradient(circle at 50% 120%, rgba(0,0,0,0.45) 0%, transparent 60%)'
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background: `linear-gradient(105deg, transparent ${shine - 10}%, rgba(255,255,255,0.12) ${shine}%, transparent ${shine + 10}%)`
+          background: 'radial-gradient(circle at 50% 120%, rgba(0,0,0,0.4) 0%, transparent 60%)'
         }}
       />
       <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>
-        {intro.avatar && <AssemblingLogo src={intro.avatar} frame={frame} fps={fps} />}
-        <AssembledText
-          text={intro.name.toUpperCase()}
-          frame={frame}
-          fps={fps}
-          start={Math.round(0.65 * fps)}
-          style={{
-            marginTop: 36,
-            fontFamily: font,
-            fontWeight: 900,
-            fontSize: 104,
-            lineHeight: 1,
-            letterSpacing: 5,
-            color: intro.secondary,
-            textShadow: '0 8px 30px rgba(0,0,0,0.35)'
-          }}
-        />
-        <div
-          style={{
-            marginTop: 26,
-            height: 4,
-            width: 460 * line,
-            borderRadius: 2,
-            background: intro.secondary,
-            opacity: 0.85
-          }}
-        />
-        {intro.tagline && (
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          {intro.avatar && (
+            <div
+              style={{
+                position: 'relative',
+                zIndex: 1,
+                transform: `translateX(${shift * move}px)`
+              }}
+            >
+              <AssemblingLogo src={intro.avatar} frame={frame} fps={fps} />
+            </div>
+          )}
           <div
             style={{
-              marginTop: 22,
-              fontFamily: '"Segoe UI", Arial, sans-serif',
-              fontSize: 44,
-              fontWeight: 600,
-              letterSpacing: 1.5,
-              color: intro.secondary,
-              opacity: tag * 0.92,
-              transform: `translateY(${(1 - tag) * 18}px)`
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              marginLeft: intro.avatar ? GAP : 0
             }}
           >
-            {intro.tagline}
+            <SlideIn
+              frame={frame}
+              fps={fps}
+              start={0.75}
+              style={{
+                fontFamily: font,
+                fontWeight: 900,
+                fontSize: nameSize,
+                lineHeight: 1,
+                letterSpacing: 3,
+                color: intro.secondary,
+                textTransform: 'uppercase'
+              }}
+            >
+              {intro.name}
+            </SlideIn>
+            {intro.tagline && (
+              <SlideIn
+                frame={frame}
+                fps={fps}
+                start={1.0}
+                style={{
+                  fontFamily: '"Segoe UI", Arial, sans-serif',
+                  fontSize: tagSize,
+                  fontWeight: 600,
+                  color: intro.secondary,
+                  opacity: 0.92
+                }}
+              >
+                {intro.tagline}
+              </SlideIn>
+            )}
           </div>
-        )}
+        </div>
       </AbsoluteFill>
       {intro.schedule && (
         <AbsoluteFill

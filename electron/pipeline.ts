@@ -278,7 +278,8 @@ ${JSON.stringify(v.script)}`,
     const s = getSettings(channelId)
     const taken = listVideos(channelId)
       .filter((v) => v.kind === 'long')
-      .filter((v) => v.scheduled_at && ['SCHEDULED', 'PUBLISHED'].includes(v.status))
+      // Any video holding a time keeps it, even one in ERROR waiting to be sent again.
+      .filter((v) => v.scheduled_at)
       .map((v) => v.scheduled_at as string)
     return nextFreeSlot(s.publishSlots, s.publishTimezone, taken)
   }

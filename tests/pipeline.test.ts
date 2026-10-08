@@ -107,3 +107,18 @@ describe('shorts show the picked thumbnail', () => {
     expect(jobsForVideo(id).find((j) => j.type === 'short')?.args).toEqual({ count: 2 })
   })
 })
+
+describe('publish slots', () => {
+  beforeEach(() => {
+    freshDb()
+  })
+
+  it('never gives a video the time of one in ERROR waiting to be sent again', () => {
+    const pipeline = new Pipeline(scheduler)
+    const failed = finishedVideo()
+    const first = pipeline.approveFinal(failed).scheduled_at
+    updateVideo(failed, { status: 'ERROR' })
+    const next = pipeline.approveFinal(finishedVideo()).scheduled_at
+    expect(next).not.toBe(first)
+  })
+})

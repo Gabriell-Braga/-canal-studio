@@ -55,13 +55,7 @@ export const uploadStep: Step = {
     ) {
       const s = ctx.settings
       const taken = listVideos(video.channel_id)
-        .filter(
-          (v) =>
-            v.id !== videoId &&
-            v.kind === 'long' &&
-            v.scheduled_at &&
-            ['SCHEDULED', 'PUBLISHED'].includes(v.status)
-        )
+        .filter((v) => v.id !== videoId && v.kind === 'long' && v.scheduled_at)
         .map((v) => v.scheduled_at as string)
       const slot = nextFreeSlot(s.publishSlots, s.publishTimezone, taken)
       ctx.log(

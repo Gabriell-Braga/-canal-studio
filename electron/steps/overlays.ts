@@ -3,6 +3,7 @@ import { dirname, extname, join, relative } from 'path'
 import { z } from 'zod'
 import {
   YEAR_CARD_SEC,
+  plausibleValue,
   yearChanges,
   type ChannelIntroProps,
   type RenderCompany,
@@ -14,6 +15,7 @@ import { getChannel, updateVideo } from '../db/repo'
 import { generateStructured } from '../services/llm'
 import { fetchLogos } from '../services/logos'
 import { readTimings } from './audio'
+import { polishSettings } from './polish'
 import type { StepContext } from './types'
 
 /**
@@ -68,33 +70,68 @@ function url(root: string, file: string): string {
 }
 
 const companiesSchema = z.object({
-  companies: z.array(z.object({ name: z.string().min(1), wikipedia_title: z.string() })).max(2)
+  companies: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        wikipedia_title: z.string(),
+        values: z.array(z.object({ year: z.number().int(), usd: z.number().nullable() }))
+      })
+    )
+    .max(2)
 })
 
 /**
- * Companies of a script written before scripts listed them: asked once from the topic and
- * saved in the script. Without values, so only the logos show.
+ * Companies and their value at every year the video shows, checked once by Claude: the
+ * script writer often lists the wrong company, too few years or invented figures.
+ * Values that no company could have had that year are dropped, so the badge hides instead.
  */
 async function companiesOf(video: Video, ctx: StepContext): Promise<ScriptCompany[]> {
   const script = video.script
   if (!script) return []
-  if (script.companies) return script.companies
-  let companies: ScriptCompany[] = []
+  if (script.companiesChecked) return script.companies ?? []
+  const years = [...new Set(script.scenes.map((s) => s.year).filter((y): y is number => !!y))]
+  years.sort((a, b) => a - b)
+  let companies: ScriptCompany[]
   try {
     const found = await generateStructured(
-      `A YouTube documentary is about: "${video.topic}" (title: "${video.title ?? ''}").
+      `A YouTube documentary: "${video.title ?? video.topic}" (topic: "${video.topic}").
 Opening: "${script.hook}"
-List the companies the video is about, at most 2, main one first; an empty list when it is not about companies. For each give name (short, as people say it) and wikipedia_title (exact English Wikipedia article title, e.g. "Apple Inc.").
+Years the video shows: ${years.join(', ') || 'none'}
+${
+  script.companies?.length
+    ? `The writer listed: ${script.companies.map((c) => c.name).join(', ')} (may be wrong).
+`
+    : ''
+}
+List the companies the video is about, at most 2, main one first. Companies named in the title come first and must be included (a title "X vs Y" or "X ... Y" lists X and Y). Empty list when it is not about companies.
+For each: name (short, as people say it), wikipedia_title (exact English Wikipedia article title, e.g. "Apple Inc."), and values: one entry for EVERY year listed above, with usd = the company's market capitalization in US dollars at the end of that year (plain number, e.g. 2500000000), or, when it was private or not traded, its valuation that year (funding round, IPO or acquisition price, or a parent's purchase price). Use the historical figure for that year, rounded to 2 significant figures, from public records. usd is null only when the company did not exist yet, was already gone, or no figure for it was ever reported; do not invent numbers, but a well-documented approximate figure is better than null.
 Return ONLY JSON: {"companies": [...]}`,
       companiesSchema,
-      { settings: ctx.settings, signal: ctx.signal, temperature: 0.1, effort: 'low' }
+      {
+        settings: { ...polishSettings(ctx.settings), claudeModel: 'opus' },
+        signal: ctx.signal,
+        temperature: 0,
+        effort: 'medium'
+      }
     )
-    companies = found.companies.map((c) => ({ ...c, values: [] }))
+    companies = found.companies.map((c) => ({
+      name: c.name,
+      wikipedia_title: c.wikipedia_title,
+      values: c.values.filter(
+        (v): v is { year: number; usd: number } => v.usd !== null && plausibleValue(v.year, v.usd)
+      )
+    }))
   } catch (error) {
-    ctx.log(`Não foi possível identificar as empresas: ${(error as Error).message}`, 'warn')
+    if (ctx.signal.aborted) throw error
+    // Better no badges than wrong ones.
+    ctx.log(`Não foi possível conferir as empresas: ${(error as Error).message}`, 'warn')
     return []
   }
-  updateVideo(video.id, { script: { ...script, companies } })
+  updateVideo(video.id, { script: { ...script, companies, companiesChecked: true } })
+  ctx.log(
+    `Empresas conferidas: ${companies.map((c) => `${c.name} (${c.values.length} ano(s) com valor)`).join(', ') || 'nenhuma'}`
+  )
   return companies
 }
 

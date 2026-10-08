@@ -126,6 +126,8 @@ export interface Script {
   outro_visual_keywords?: string
   /** At most two; empty when the video is not about companies */
   companies?: ScriptCompany[]
+  /** Claude checked the companies and gave a value for every year of the script */
+  companiesChecked?: boolean
   /** Claude's final edit already ran on this script */
   polished?: boolean
 }

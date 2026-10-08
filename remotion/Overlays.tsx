@@ -352,11 +352,9 @@ function prevState(
   return prev ? { card: prev, since: t - (prev.at + CARD_TAIL_SEC * 0.5) } : null
 }
 
-function interpolateValue(from: number | null, to: number | null, p: number): number | null {
-  if (to === null) return null
-  const a = from ?? 0
-  if (a > 0 && to > 0) return Math.exp(Math.log(a) + p * (Math.log(to) - Math.log(a)))
-  return a + p * (to - a)
+function interpolateValue(from: number | null, to: number, p: number): number {
+  if (from === null) return to
+  return Math.exp(Math.log(from) + p * (Math.log(to) - Math.log(from)))
 }
 
 function CompanyBadge({
@@ -377,15 +375,17 @@ function CompanyBadge({
     easing: Easing.out(Easing.back(1.6))
   })
   const to = valueAt(company.values, card.year)
+  // No known value for this year: no badge rather than a dash or a made-up number.
+  if (to === null) return null
   const from = card.from ? valueAt(company.values, card.from) : null
   const p = interpolate(since, [BADGE_IN_SEC * 0.6, BADGE_IN_SEC * 0.6 + COUNT_SEC], [0, 1], {
     ...clamp,
     easing: Easing.out(Easing.cubic)
   })
   const value = interpolateValue(from, to, p)
-  const counting = p > 0 && p < 1 && from !== null && to !== null && from !== to
-  const up = to !== null && from !== null && to > from
-  const showChange = from !== null && to !== null && from > 0 && to > 0 && from !== to
+  const counting = p > 0 && p < 1 && from !== null && from !== to
+  const up = from !== null && to > from
+  const showChange = from !== null && from !== to
   return (
     <div
       style={{
@@ -434,7 +434,7 @@ function CompanyBadge({
             minWidth: 170
           }}
         >
-          {value === null ? '—' : `$${formatUsd(value)}`}
+          {`$${formatUsd(value)}`}
           {showChange && (
             <TrendChip
               from={from as number}

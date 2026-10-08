@@ -12,7 +12,7 @@ const patchSchema = z.object({
 })
 
 /** Claude does the final pass even when Ollama wrote the script; Sonnet keeps it cheap. */
-function polishSettings(s: Settings): Settings {
+export function polishSettings(s: Settings): Settings {
   return {
     ...s,
     llmProvider: s.llmProvider === 'claude-api' ? 'claude-api' : 'claude-code',

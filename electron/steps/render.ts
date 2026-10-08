@@ -92,6 +92,14 @@ export const renderStep: Step = {
     const channelIntro = timings?.intro
       ? { ...channelIntroProps(video.channel_id, ctx.settings, pd), ...timings.intro }
       : undefined
+    if (channelIntro && scenes[1]?.start_sec != null) {
+      // Hold the intro until the year card (or the next scene) is fully over it, so the
+      // hook's image never flashes between them. The card fades in over 0.3 s, the intro
+      // fades out over its last 0.4 s, underneath.
+      const card = yearCards.find((c) => c.at === scenes[1].start_sec)
+      const until = card ? card.at - card.duration + 0.7 : scenes[1].start_sec + 0.4
+      channelIntro.duration = Math.max(channelIntro.duration, until - channelIntro.start)
+    }
     const hookEnd = firstScene.end_sec ?? 0
     const teaserText = video.script?.teaser?.trim()
     const narrationSec = await probeDuration(video.audio_path as string)

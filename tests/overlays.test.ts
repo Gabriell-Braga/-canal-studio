@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatUsd, valueAt, yearChanges } from '../shared/render'
+import { formatUsd, plausibleValue, valueAt, yearChanges } from '../shared/render'
 import { unspokenYears } from '../electron/steps/script'
 
 describe('year cards', () => {
@@ -43,13 +43,25 @@ describe('company values', () => {
     { year: 2000, usd: 18e9 }
   ]
 
-  it('holds, interpolates and stays empty before the first point', () => {
+  it('interpolates between known values and stays empty outside them', () => {
     expect(valueAt(values, 1970)).toBeNull()
+    // Founding value 0 is not a value: no $0 badge, no climb from zero.
+    expect(valueAt(values, 1978)).toBeNull()
     expect(valueAt(values, 1980)).toBe(1.8e9)
-    expect(valueAt(values, 2020)).toBe(18e9)
+    expect(valueAt(values, 2000)).toBe(18e9)
+    // Not held after the last known year (Sears 1906 must not stay on screen until 2018).
+    expect(valueAt(values, 2020)).toBeNull()
     const mid = valueAt(values, 1990) as number
     expect(mid).toBeGreaterThan(1.8e9)
     expect(mid).toBeLessThan(18e9)
+  })
+
+  it('rejects values no company could have had that year', () => {
+    expect(plausibleValue(1985, 220e9)).toBe(false)
+    expect(plausibleValue(1985, 3e9)).toBe(true)
+    expect(plausibleValue(2000, 500e9)).toBe(true)
+    expect(plausibleValue(2024, 3.3e12)).toBe(true)
+    expect(plausibleValue(2010, 0)).toBe(false)
   })
 
   it('formats like a ticker', () => {

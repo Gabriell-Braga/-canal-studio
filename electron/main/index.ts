@@ -15,7 +15,7 @@ import icon from '../../resources/icon.png?asset'
 import windowIcon from '../../resources/icon.ico?asset'
 import type { Settings } from '../../shared/types'
 import { closeDb, openDb } from '../db'
-import { changes, listChannels } from '../db/repo'
+import { changes, listChannels, updateVideo, videosByStatus } from '../db/repo'
 import { getSettings, getState, setState } from '../db/settings'
 import { Pipeline } from '../pipeline'
 import { Scheduler, type QueueEvent } from '../queue/scheduler'
@@ -287,6 +287,19 @@ app.whenReady().then(async () => {
     const done = pipeline.reprocessAll()
     console.log(`Reprocess: ${done.videos} video(s), ${done.replaced} to replace on YouTube`)
     setState('reprocess.teaser', true)
+  }
+  // Once: videos in final review render again with checked company values and no gap
+  // after the channel intro. Scenes stay as they are.
+  if (!getState('reprocess.badges3', false) && process.env.CANAL_FAKE_STEPS !== '1') {
+    const videos = [...videosByStatus('FINAL_REVIEW'), ...videosByStatus('RENDERING')].filter(
+      (v) => v.kind === 'long' && v.script && v.thumbnail_paths.length
+    )
+    for (const v of videos) {
+      updateVideo(v.id, { script: { ...v.script!, companiesChecked: false } })
+      pipeline.rerender(v.id)
+    }
+    console.log(`Re-render for badges: ${videos.length} video(s)`)
+    setState('reprocess.badges3', true)
   }
   pipeline.refreshAllShortThumbs()
   registerIpc(pipeline, scheduler, applySettings)

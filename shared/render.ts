@@ -217,17 +217,36 @@ export function formatUsd(usd: number): string {
  * growth looks steady), held after the last one. Null before the first point.
  */
 export function valueAt(values: { year: number; usd: number }[], year: number): number | null {
-  const pts = [...values].sort((a, b) => a.year - b.year)
-  if (!pts.length || year < pts[0].year) return null
-  for (let i = pts.length - 1; i >= 0; i--) {
-    const a = pts[i]
-    if (year < a.year) continue
-    const b = pts[i + 1]
-    if (!b || year === a.year) return a.usd
-    const t = (year - a.year) / (b.year - a.year)
-    if (a.usd > 0 && b.usd > 0)
-      return Math.exp(Math.log(a.usd) + t * (Math.log(b.usd) - Math.log(a.usd)))
-    return a.usd + t * (b.usd - a.usd)
-  }
-  return null
+  // 0 or less means "not valued yet": never shown, never interpolated from.
+  const pts = values.filter((v) => v.usd > 0).sort((a, b) => a.year - b.year)
+  const exact = pts.find((p) => p.year === year)
+  if (exact) return exact.usd
+  const b = pts.findIndex((p) => p.year > year)
+  // Before the first known value or after the last one: unknown, not held.
+  if (b <= 0) return null
+  const a = pts[b - 1]
+  const t = (year - a.year) / (pts[b].year - a.year)
+  return Math.exp(Math.log(a.usd) + t * (Math.log(pts[b].usd) - Math.log(a.usd)))
+}
+
+/**
+ * Generous ceiling for any company's value in a year (about twice the largest company then),
+ * so a made-up figure like Intel at $220B in 1985 never reaches the screen.
+ */
+// ponytail: coarse era table, replace with real market-cap data if a source gets wired in.
+export function plausibleValue(year: number, usd: number): boolean {
+  const caps: [number, number][] = [
+    [1920, 3e9],
+    [1950, 1e10],
+    [1970, 6e10],
+    [1987, 1.2e11],
+    [1995, 3e11],
+    [2010, 7e11],
+    [2018, 1.1e12],
+    [2020, 1.6e12],
+    [2023, 3.2e12],
+    [Infinity, 8e12]
+  ]
+  const cap = caps.find(([until]) => year < until)?.[1] ?? Infinity
+  return usd > 0 && usd <= cap
 }

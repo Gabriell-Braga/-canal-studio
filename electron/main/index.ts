@@ -8,7 +8,7 @@ import {
   nativeImage,
   powerSaveBlocker
 } from 'electron'
-import { statSync } from 'fs'
+import { existsSync, readdirSync, rmSync, statSync } from 'fs'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -300,6 +300,23 @@ app.whenReady().then(async () => {
     }
     console.log(`Re-render for badges: ${videos.length} video(s)`)
     setState('reprocess.badges3', true)
+  }
+  // Once: unpublished videos that drew a dark track (now moved to musica/_sombrias)
+  // get a new track and render again.
+  if (!getState('reprocess.music', false) && process.env.CANAL_FAKE_STEPS !== '1') {
+    let count = 0
+    for (const v of [...videosByStatus('FINAL_REVIEW'), ...videosByStatus('RENDERING')]) {
+      const dark = join(channelMusicDir(v.channel_id), '_sombrias')
+      const music = join(projectDir(v.id), 'music.mp3')
+      if (v.kind !== 'long' || !existsSync(dark) || !existsSync(music)) continue
+      const size = statSync(music).size
+      if (!readdirSync(dark).some((f) => statSync(join(dark, f)).size === size)) continue
+      rmSync(music)
+      pipeline.rerender(v.id)
+      count++
+    }
+    console.log(`Re-render for music: ${count} video(s)`)
+    setState('reprocess.music', true)
   }
   pipeline.refreshAllShortThumbs()
   registerIpc(pipeline, scheduler, applySettings)

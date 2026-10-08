@@ -1,19 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
 import { GripVertical } from 'lucide-react'
+import { formatDuration, jobEta } from '../../shared/eta'
 import { JOB_LABELS, type Job, type LogEntry, type Video } from '../../shared/types'
 import { Button, Card, ChannelAvatar, PageHeader } from '../components/ui'
 import { useChannel } from '../lib/channel'
 import { api, formatDate, useLive } from '../lib/api'
 
+function secondsSince(iso: string | null, now: number): number {
+  return iso ? Math.max(0, (now - new Date(iso).getTime()) / 1000) : 0
+}
+
+/** Seconds left for a job: running ones from their progress, waiting ones from past runs. */
+function secondsLeft(job: Job, typical: number | undefined, now: number): number | null {
+  if (job.status === 'running')
+    return jobEta(job.progress, secondsSince(job.started_at, now), typical)
+  return typical ?? null
+}
+
 function JobRow({
   job,
   video,
+  typical,
+  now,
   onCancel,
   onOpen,
   drag
 }: {
   job: Job
   video?: Video
+  /** Median seconds this step took on recent videos */
+  typical?: number
+  now: number
   onCancel?: () => void
   onOpen?: (id: number) => void
   /** Present on the pending list: the row can be dragged to change the queue order */
@@ -49,27 +66,49 @@ function JobRow({
         {video?.title ?? video?.topic ?? `#${job.video_id}`}
       </button>
       {job.status === 'running' && (
-        <div className="h-1.5 w-32 overflow-hidden rounded bg-ink-800">
-          <div
-            className="h-full bg-brand-500 transition-all"
-            style={{ width: `${Math.round((job.progress ?? 0) * 100)}%` }}
-          />
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 w-32 overflow-hidden rounded bg-ink-800">
+            <div
+              className="h-full bg-brand-500 transition-all"
+              style={{ width: `${Math.round((job.progress ?? 0) * 100)}%` }}
+            />
+          </div>
+          <span className="w-10 text-right text-xs tabular-nums text-ink-200">
+            {Math.round((job.progress ?? 0) * 100)}%
+          </span>
         </div>
       )}
       <span className="w-20 text-right text-xs text-ink-500">{job.gpu ? 'GPU' : 'CPU'}</span>
       <span className="w-24 text-right text-xs text-ink-500">
         {job.run_mode === 'night' ? 'madrugada' : 'agora'}
       </span>
-      <span className="w-40 text-right text-xs text-ink-500">
-        {job.status === 'pending'
-          ? waiting
-            ? `nova tentativa ${formatDate(job.run_after)}`
-            : job.attempts
-              ? `tentativa ${job.attempts + 1}/${job.max_attempts}`
-              : 'aguardando'
-          : job.status === 'running'
-            ? `desde ${formatDate(job.started_at)}`
-            : `${job.status} ${formatDate(job.finished_at)}`}
+      <span className="w-48 text-right text-xs leading-tight text-ink-500 tabular-nums">
+        {job.status === 'pending' ? (
+          <>
+            {waiting
+              ? `nova tentativa ${formatDate(job.run_after)}`
+              : job.attempts
+                ? `tentativa ${job.attempts + 1}/${job.max_attempts}`
+                : 'aguardando'}
+            <br />
+            {typical ? `leva ~${formatDuration(typical)}` : 'sem histórico de tempo'}
+          </>
+        ) : job.status === 'running' ? (
+          <RunningTime job={job} typical={typical} now={now} />
+        ) : (
+          <>
+            {job.status} {formatDate(job.finished_at)}
+            {job.status === 'done' && job.started_at && job.finished_at && (
+              <>
+                <br />
+                levou{' '}
+                {formatDuration(
+                  (new Date(job.finished_at).getTime() - new Date(job.started_at).getTime()) / 1000
+                )}
+              </>
+            )}
+          </>
+        )}
       </span>
       {onCancel && (
         <Button size="sm" variant="ghost" onClick={onCancel}>
@@ -80,11 +119,43 @@ function JobRow({
   )
 }
 
+function RunningTime({
+  job,
+  typical,
+  now
+}: {
+  job: Job
+  typical?: number
+  now: number
+}): React.JSX.Element {
+  const left = secondsLeft(job, typical, now)
+  return (
+    <span title={typical ? `Mediana das últimas execuções: ${formatDuration(typical)}` : undefined}>
+      <span className="text-ink-300">{formatDuration(secondsSince(job.started_at, now))}</span>{' '}
+      decorridos
+      <br />
+      {left === null ? (
+        'calculando restante…'
+      ) : (
+        <>
+          faltam <span className="text-brand-200">~{formatDuration(left)}</span>
+        </>
+      )}
+    </span>
+  )
+}
+
 export default function Queue({ onOpen }: { onOpen: (id: number) => void }): React.JSX.Element {
   const { data: state } = useLive(() => api.queue.state(), ['jobs', 'settings'], [], 3000)
   const { data: videos = [] } = useLive(() => api.videos.list(), ['videos'])
   const [logs, setLogs] = useState<LogEntry[]>([])
   const lastId = useRef(0)
+  // Elapsed and remaining times tick every second between queue refreshes.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
   const logBox = useRef<HTMLDivElement>(null)
   // Drag preview of the pending list. It is kept while dragging, then
   // only until fresh queue state replaces the snapshot it was made from.
@@ -129,6 +200,11 @@ export default function Queue({ onOpen }: { onOpen: (id: number) => void }): Rea
     ids.splice(ids.indexOf(targetId) + (from < to ? 1 : 0), 0, dragId)
     setPreview({ ids, base: state })
   }
+  const typicalOf = (j: Job): number | undefined =>
+    state.typicalSec[`${j.type}:${byId.get(j.video_id)?.kind ?? 'long'}`]
+  const work = [...state.running, ...state.pending].map((j) => secondsLeft(j, typicalOf(j), now))
+  const workKnown = work.reduce<number>((sum, sec) => sum + (sec ?? 0), 0)
+  const workUnknown = work.filter((sec) => sec === null).length
   const vramPct = state.vram ? Math.round((state.vram.used / state.vram.total) * 100) : 0
 
   return (
@@ -190,6 +266,15 @@ export default function Queue({ onOpen }: { onOpen: (id: number) => void }): Rea
         <Card className="p-4">
           <div className="text-xs uppercase text-ink-500">Na fila</div>
           <div className="mt-1 text-xl font-semibold">{state.pending.length}</div>
+          {workKnown > 0 && (
+            <div
+              className="mt-1 text-xs text-ink-500"
+              title="Soma do restante das tarefas rodando e da duração típica das que esperam. Não conta a espera pela janela da madrugada."
+            >
+              ~{formatDuration(workKnown)} de trabalho
+              {workUnknown > 0 && ` · ${workUnknown} sem histórico`}
+            </div>
+          )}
         </Card>
       </div>
 
@@ -202,6 +287,8 @@ export default function Queue({ onOpen }: { onOpen: (id: number) => void }): Rea
               key={j.id}
               job={j}
               video={byId.get(j.video_id)}
+              typical={typicalOf(j)}
+              now={now}
               onCancel={() => api.queue.cancelJob(j.id)}
             />
           ))}
@@ -220,6 +307,8 @@ export default function Queue({ onOpen }: { onOpen: (id: number) => void }): Rea
               key={j.id}
               job={j}
               video={byId.get(j.video_id)}
+              typical={typicalOf(j)}
+              now={now}
               onCancel={() => api.queue.cancelJob(j.id)}
               drag={{
                 dragging: dragId === j.id,
@@ -273,7 +362,7 @@ export default function Queue({ onOpen }: { onOpen: (id: number) => void }): Rea
       <Card>
         <ul className="divide-y divide-ink-800">
           {state.recent.map((j) => (
-            <JobRow onOpen={onOpen} key={j.id} job={j} video={byId.get(j.video_id)} />
+            <JobRow onOpen={onOpen} key={j.id} job={j} video={byId.get(j.video_id)} now={now} />
           ))}
         </ul>
       </Card>

@@ -7,6 +7,7 @@ import {
   getJob,
   jobsByStatus,
   recentJobs,
+  typicalJobSeconds,
   resetRunningJobs,
   updateJob,
   updateVideo,
@@ -139,6 +140,7 @@ export class Scheduler {
       running: jobsByStatus('running'),
       pending: jobsByStatus('pending'),
       recent: recentJobs(),
+      typicalSec: typicalJobSeconds(),
       vram: (await this.opts.getVram?.()) ?? null
     }
   }

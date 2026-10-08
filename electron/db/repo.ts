@@ -13,6 +13,7 @@ import type {
   VideoStatus
 } from '../../shared/types'
 import { db, now } from './index'
+import { median } from '../../shared/eta'
 
 /** Main-process change feed; the IPC layer forwards it to the UI. */
 export const changes = new EventEmitter()
@@ -431,6 +432,31 @@ export function jobsByStatus(status: JobStatus, limit = 200): Job[] {
       .prepare(`SELECT * FROM jobs WHERE status = ? ORDER BY ${order} LIMIT ?`)
       .all(status, limit) as Row[]
   ).map(toJob)
+}
+
+/**
+ * Median seconds of the last 15 finished runs of each step, keyed "type:kind" (a short's
+ * render is not a full video's). Runs under a second were skipped, not done.
+ */
+export function typicalJobSeconds(): Record<string, number> {
+  const rows = db()
+    .prepare(
+      `SELECT j.type || ':' || v.kind AS key,
+              (julianday(j.finished_at) - julianday(j.started_at)) * 86400 AS sec
+       FROM jobs j JOIN videos v ON v.id = j.video_id
+       WHERE j.status = 'done' AND j.started_at IS NOT NULL AND j.finished_at IS NOT NULL
+       ORDER BY j.finished_at DESC`
+    )
+    .all() as { key: string; sec: number }[]
+  const runs: Record<string, number[]> = {}
+  for (const r of rows) {
+    if (r.sec < 1) continue
+    const list = (runs[r.key] ??= [])
+    if (list.length < 15) list.push(r.sec)
+  }
+  const out: Record<string, number> = {}
+  for (const [key, list] of Object.entries(runs)) out[key] = median(list) as number
+  return out
 }
 
 export function recentJobs(limit = 30): Job[] {

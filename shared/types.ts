@@ -375,6 +375,8 @@ export interface QueueState {
   running: Job[]
   pending: Job[]
   recent: Job[]
+  /** Median seconds of recent runs per step, keyed "type:kind" */
+  typicalSec: Record<string, number>
   vram: { used: number; total: number } | null
 }
 

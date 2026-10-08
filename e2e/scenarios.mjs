@@ -329,7 +329,24 @@ async function phase4({ launch, api, shot, log, waitUntil, dataDir }) {
   await app.close()
 }
 
-export const scenarios = { phase1, phase2, phase3, phase4 }
+/** Queue screen with a running job: percent, elapsed and remaining time (CANAL_FAKE_STEPS=1). */
+async function queueEta({ launch, api, shot, waitUntil }) {
+  const { page } = await launch()
+  await api(page, 'videos.addTopics', 1, ['ETA test A', 'ETA test B'], 1)
+  await api(page, 'videos.generateScripts', 1)
+  await api(page, 'queue.runNow')
+  await page.getByTestId('nav-queue').click()
+  await page.getByTestId('queue-status').waitFor()
+  await waitUntil(async () => (await api(page, 'queue.state')).running.length > 0, {
+    label: 'running job',
+    timeoutMs: 60_000,
+    everyMs: 300
+  })
+  await new Promise((r) => setTimeout(r, 1500))
+  await shot(page, 'queue-eta')
+}
+
+export const scenarios = { phase1, phase2, phase3, phase4, queueEta }
 
 /**
  * Fase 5 (reuse the data folder of a phase4 run, CANAL_DATA_DIR): open the finished video,

@@ -318,6 +318,27 @@ app.whenReady().then(async () => {
     console.log(`Re-render for music: ${count} video(s)`)
     setState('reprocess.music', true)
   }
+  // Once: every full video not public yet renders again so the channel logo fades with the
+  // rest of the intro. Scheduled copies were deleted on YouTube by hand, so they lose their
+  // id and go back to final review for a new upload. A dark track is swapped here too.
+  if (!getState('reprocess.introfade', false) && process.env.CANAL_FAKE_STEPS !== '1') {
+    const videos = ['FINAL_REVIEW', 'RENDERING', 'SCHEDULED'] as const
+    let count = 0
+    for (const v of videos.flatMap((s) => videosByStatus(s))) {
+      if (v.kind !== 'long' || !v.script || !v.thumbnail_paths.length) continue
+      const dark = join(channelMusicDir(v.channel_id), '_sombrias')
+      const music = join(projectDir(v.id), 'music.mp3')
+      if (existsSync(dark) && existsSync(music)) {
+        const size = statSync(music).size
+        if (readdirSync(dark).some((f) => statSync(join(dark, f)).size === size)) rmSync(music)
+      }
+      if (v.youtube_id) updateVideo(v.id, { youtube_id: null, scheduled_at: null })
+      pipeline.rerender(v.id)
+      count++
+    }
+    console.log(`Re-render for intro fade: ${count} video(s)`)
+    setState('reprocess.introfade', true)
+  }
   pipeline.refreshAllShortThumbs()
   registerIpc(pipeline, scheduler, applySettings)
   forwardChanges()

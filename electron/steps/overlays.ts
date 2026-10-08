@@ -115,13 +115,23 @@ Return ONLY JSON: {"companies": [...]}`,
         effort: 'medium'
       }
     )
-    companies = found.companies.map((c) => ({
-      name: c.name,
-      wikipedia_title: c.wikipedia_title,
-      values: c.values.filter(
-        (v): v is { year: number; usd: number } => v.usd !== null && plausibleValue(v.year, v.usd)
-      )
-    }))
+    // A company the video never names would put its logo on someone else's story.
+    const text = [video.title, video.topic, script.hook, ...script.scenes.map((s) => s.narration)]
+      .join(' ')
+      .toLowerCase()
+    companies = found.companies
+      .filter((c) => {
+        const named = text.includes(c.name.trim().toLowerCase())
+        if (!named) ctx.log(`Empresa ${c.name} não aparece no roteiro; sem badge dela`, 'warn')
+        return named
+      })
+      .map((c) => ({
+        name: c.name,
+        wikipedia_title: c.wikipedia_title,
+        values: c.values.filter(
+          (v): v is { year: number; usd: number } => v.usd !== null && plausibleValue(v.year, v.usd)
+        )
+      }))
   } catch (error) {
     if (ctx.signal.aborted) throw error
     // Better no badges than wrong ones.

@@ -38,11 +38,13 @@ async function itemFromSearch(name: string, signal?: AbortSignal): Promise<strin
     limit: '5',
     search: name
   })
-  const data = await getJson<{ search?: { id: string; description?: string }[] }>(
-    `https://www.wikidata.org/w/api.php?${params}`,
-    signal
+  const data = await getJson<{
+    search?: { id: string; label?: string; description?: string }[]
+  }>(`https://www.wikidata.org/w/api.php?${params}`, signal)
+  // Only an item named exactly like the company: a near match shows another brand's logo.
+  const hits = (data.search ?? []).filter(
+    (h) => h.label?.toLowerCase() === name.trim().toLowerCase()
   )
-  const hits = data.search ?? []
   const company = hits.find((h) =>
     /company|corporation|manufacturer|brand|business|conglomerate|retailer|enterprise|firm/i.test(
       h.description ?? ''
@@ -67,9 +69,16 @@ async function logoFile(item: string, signal?: AbortSignal): Promise<string | nu
   return best?.mainsnak?.datavalue?.value ?? null
 }
 
-/** File name for a company's logo inside the project. */
-export function logoPath(projectDir: string, index: number): string {
-  return join(projectDir, 'logos', `logo_${index}.png`)
+/**
+ * File name for a company's logo inside the project, named after the company: a file kept by
+ * position showed the old company's logo once the script listed other companies.
+ */
+export function logoPath(projectDir: string, company: ScriptCompany): string {
+  const key = (company.wikipedia_title || company.name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+  return join(projectDir, 'logos', `logo_${key || 'company'}.png`)
 }
 
 /**
@@ -85,8 +94,8 @@ export async function fetchLogos(
 ): Promise<(string | null)[]> {
   mkdirSync(join(projectDir, 'logos'), { recursive: true })
   const out: (string | null)[] = []
-  for (const [i, company] of companies.entries()) {
-    const file = logoPath(projectDir, i)
+  for (const company of companies) {
+    const file = logoPath(projectDir, company)
     if (isValidFile(file, 200)) {
       out.push(file)
       continue

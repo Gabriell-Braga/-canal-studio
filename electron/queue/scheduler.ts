@@ -207,6 +207,7 @@ export class Scheduler {
     for (const job of pending) {
       if (job.run_after && job.run_after > date.toISOString()) continue
       if (job.type === 'upload' && this.waitsForParent(job.video_id)) continue
+      if (job.type === 'upload' && this.waitsForEarlier(job.video_id)) continue
       if (job.run_mode === 'night' && !nightOpen && !forceRun) continue
       if (job.gpu ? gpuBusy : cpuCount >= MAX_CPU_JOBS) continue
       if (job.run_mode === 'night' && !forceRun && !this.claimNightSlot(job, s.maxVideosPerNight)) {
@@ -231,6 +232,21 @@ export class Scheduler {
     return [...jobsByStatus('pending'), ...jobsByStatus('running')].some(
       (j) => j.video_id === v.parent_id && j.type === 'upload'
     )
+  }
+
+  /**
+   * Uploads go out in release order: while a video that publishes earlier still has its
+   * upload queued or running (quota retry included), later ones wait. Running out of quota
+   * then leaves the last days empty, never a day in the middle.
+   */
+  private waitsForEarlier(videoId: number): boolean {
+    const at = findVideo(videoId)?.scheduled_at
+    if (!at) return false
+    return [...jobsByStatus('pending'), ...jobsByStatus('running')].some((j) => {
+      if (j.type !== 'upload' || j.video_id === videoId) return false
+      const other = findVideo(j.video_id)?.scheduled_at
+      return !!other && other < at
+    })
   }
 
   /** A video counts against the nightly limit when its first production step starts. */
@@ -287,6 +303,16 @@ export class Scheduler {
           error_message: 'Etapa cancelada',
           error_step: job.type
         })
+      } else if (job.type === 'upload' && message.startsWith('Cota diária')) {
+        // Out of quota is not a failure: keep the job (and its place in release order) and
+        // check again in an hour, without spending an attempt.
+        const retryAt = new Date(this.clock().getTime() + 60 * 60_000)
+        updateJob(job.id, {
+          status: 'pending',
+          run_after: retryAt.toISOString(),
+          attempts: job.attempts
+        })
+        log(`${message}. Nova verificação às ${retryAt.toLocaleTimeString('pt-BR')}`, 'warn')
       } else if (attempt < job.max_attempts) {
         const retryAt = new Date(this.clock().getTime() + backoffMs(attempt))
         updateJob(job.id, { status: 'pending', run_after: retryAt.toISOString() })

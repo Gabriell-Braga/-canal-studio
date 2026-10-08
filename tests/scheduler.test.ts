@@ -184,6 +184,51 @@ describe('scheduler', () => {
     expect(getVideo(v.id).status).toBe('SCRIPT_REVIEW')
   })
 
+  it('uploads in release order, even when the earlier one is waiting to retry', async () => {
+    const s = makeScheduler()
+    const early = createVideo({ topic: 'E', durationMin: 1, synthetic: true })
+    const late = createVideo({ topic: 'L', durationMin: 1, synthetic: true })
+    updateVideo(early.id, { status: 'SCHEDULED', scheduled_at: '2026-10-10T18:00:00.000Z' })
+    updateVideo(late.id, { status: 'SCHEDULED', scheduled_at: '2026-10-11T18:00:00.000Z' })
+    const lateJob = enqueueJob(late.id, 'upload', 'now', 9)
+    const earlyJob = enqueueJob(early.id, 'upload', 'now')
+    updateJob(earlyJob.id, { run_after: '2026-10-07T00:00:00.000Z' })
+    await drain(s)
+    expect(getJob(lateJob.id).status).toBe('pending')
+
+    clock = new Date(2026, 9, 7, 12, 0)
+    await drain(s)
+    expect(getJob(earlyJob.id).status).toBe('done')
+    expect(getJob(lateJob.id).status).toBe('done')
+  })
+
+  it('keeps an upload out of quota pending without spending attempts', async () => {
+    const s = new Scheduler({
+      steps: {
+        upload: {
+          type: 'upload',
+          status: 'SCHEDULED',
+          async run() {
+            throw new Error('Cota diária da API do YouTube esgotada; o upload fica para amanhã')
+          }
+        }
+      },
+      projectDir: () => tmpdir(),
+      clock: () => clock
+    })
+    schedulers.push(s)
+    const v = createVideo({ topic: 'Q', durationMin: 1, synthetic: true })
+    updateVideo(v.id, { status: 'SCHEDULED', scheduled_at: '2026-10-10T18:00:00.000Z' })
+    const job = enqueueJob(v.id, 'upload', 'now')
+    for (let i = 0; i < 4; i++) {
+      await drain(s)
+      clock = new Date(clock.getTime() + 2 * 60 * 60_000)
+    }
+    expect(getJob(job.id).status).toBe('pending')
+    expect(getJob(job.id).attempts).toBe(0)
+    expect(getVideo(v.id).status).toBe('SCHEDULED')
+  })
+
   it('pauses and resumes', async () => {
     const s = makeScheduler()
     s.pause()

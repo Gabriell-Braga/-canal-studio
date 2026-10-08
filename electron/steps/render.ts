@@ -1,25 +1,17 @@
 import { createHash } from 'crypto'
-import {
-  copyFileSync,
-  existsSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync
-} from 'fs'
-import { extname, join, relative } from 'path'
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
+import { join, relative } from 'path'
 import { END_SCREEN_SEC, type TemplateId, type VideoProps } from '../../shared/render'
+import type { Scene, Video } from '../../shared/types'
 import { getVideo, listScenes, updateVideo } from '../db/repo'
 import { isValidFile, probeDuration } from '../services/ffmpeg'
-import { runRender } from '../services/remotion'
+import { remotionCodeHash, runRender } from '../services/remotion'
 import { readWords } from './transcribe'
 import { writeSrt } from '../services/captions'
 import { channelIntroProps, renderCompanies, yearCardsFor } from './overlays'
 import { readTimings } from './audio'
-import type { Step } from './types'
-
-const MUSIC_EXT = ['.mp3', '.wav', '.m4a', '.ogg']
+import { musicTurn, planMusic, prepareMusic } from './music'
+import type { Step, StepContext } from './types'
 
 let musicFolderFor: (channelId: number) => string = () => ''
 export function configureMusic(resolve: (channelId: number) => string): void {
@@ -31,20 +23,37 @@ function url(projectDir: string, file: string): string {
   return `{{root}}/${relative(projectDir, file).split('\\').join('/').split('/').map(encodeURIComponent).join('/')}`
 }
 
-/** Copy one track from dados/musica into the project (stable per video). */
-function pickMusic(projectDir: string, videoId: number, channelId: number): string | null {
-  const musicFolder = musicFolderFor(channelId)
-  const existing = readdirSync(projectDir).find((f) => f.startsWith('music.'))
-  if (existing) return join(projectDir, existing)
-  if (!musicFolder || !existsSync(musicFolder)) return null
-  const tracks = readdirSync(musicFolder).filter((f) =>
-    MUSIC_EXT.includes(extname(f).toLowerCase())
+/** Opening, dramatic and closing tracks, placed on the scenes of the script. */
+async function musicFor(
+  video: Video,
+  scenes: Scene[],
+  durationSec: number,
+  ctx: StepContext
+): Promise<Awaited<ReturnType<typeof prepareMusic>>> {
+  const folder = musicFolderFor(video.channel_id)
+  if (!folder || !existsSync(folder)) return []
+  let turn = video.script?.music_turn
+  if (video.script && turn === undefined) {
+    try {
+      turn = await musicTurn(video.script, video.topic, ctx)
+      // Fresh copy: the company check may have changed the script since this step began.
+      const script = getVideo(video.id).script ?? video.script
+      updateVideo(video.id, { script: { ...script, music_turn: turn } })
+    } catch (e) {
+      if (ctx.signal.aborted) throw e
+      ctx.log(
+        `Sem ponto de virada da música (${(e as Error).message}); sem trilha dramática`,
+        'warn'
+      )
+    }
+  }
+  const turnScene = turn ? scenes.find((s) => s.index === turn) : undefined
+  const outro = video.script?.outro && scenes.length > 2 ? scenes[scenes.length - 1] : undefined
+  const parts = planMusic(turnScene?.start_sec ?? null, outro?.start_sec ?? null, durationSec)
+  ctx.log(
+    `Música em ${parts.length} parte(s): ${parts.map((p) => `${p.mood} ${Math.round(p.from)}s`).join(', ')}${turn ? ` (virada na cena ${turn})` : ''}`
   )
-  if (!tracks.length) return null
-  const track = tracks[videoId % tracks.length]
-  const out = join(projectDir, `music${extname(track).toLowerCase()}`)
-  copyFileSync(join(musicFolder, track), out)
-  return out
+  return prepareMusic(parts, folder, video.id, ctx)
 }
 
 export const renderStep: Step = {
@@ -58,9 +67,6 @@ export const renderStep: Step = {
     const missing = scenes.filter((s) => !isValidFile(s.asset_path) || s.start_sec === null)
     if (missing.length)
       throw new Error(`${missing.length} cena(s) sem mídia ou tempo; refaça as cenas`)
-
-    const music = pickMusic(pd, videoId, video.channel_id)
-    if (!music) ctx.log('Sem música na pasta do canal; vídeo sairá só com narração', 'warn')
 
     const renderScenes = await Promise.all(
       scenes.map(async (s, i) => {
@@ -103,16 +109,26 @@ export const renderStep: Step = {
     const hookEnd = firstScene.end_sec ?? 0
     const teaserText = video.script?.teaser?.trim()
     const narrationSec = await probeDuration(video.audio_path as string)
+    const durationSec = narrationSec + 0.5 + END_SCREEN_SEC
+    const music = await musicFor(video, scenes, durationSec, ctx)
+    if (!music.length) ctx.log('Sem música na pasta do canal; vídeo sairá só com narração', 'warn')
     const props: VideoProps = {
       fps: 30,
       // Black screen with only the music at the end, where YouTube shows the end screen.
-      durationSec: narrationSec + 0.5 + END_SCREEN_SEC,
+      durationSec,
       endScreenAt: narrationSec + 0.5,
       narration: url(pd, video.audio_path as string),
       scenes: renderScenes,
       words,
       captions: ctx.settings.captionsEnabled,
-      music: music ? url(pd, music) : null,
+      music: await Promise.all(
+        music.map(async (m) => ({
+          src: url(pd, m.file),
+          from: m.part.from,
+          to: m.part.to,
+          duration: await probeDuration(m.file)
+        }))
+      ),
       musicVolume: ctx.settings.musicVolume,
       template: (video.template as TemplateId) ?? 'documentary',
       companies,
@@ -126,7 +142,11 @@ export const renderStep: Step = {
 
     // Skip when the same inputs already produced a valid video.
     const out = join(pd, 'video.mp4')
-    const hash = createHash('sha1').update(JSON.stringify(props)).digest('hex')
+    // The drawing code counts too, so a fix in remotion/ renders the video again.
+    const hash = createHash('sha1')
+      .update(JSON.stringify(props))
+      .update(remotionCodeHash())
+      .digest('hex')
     const hashFile = join(pd, 'render.hash')
     if (
       isValidFile(out, 100_000) &&

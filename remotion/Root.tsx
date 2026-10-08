@@ -13,7 +13,7 @@ const defaultVideo: VideoProps = {
   scenes: [],
   words: [],
   captions: true,
-  music: null,
+  music: [],
   musicVolume: 0.12,
   template: 'documentary'
 }

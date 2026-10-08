@@ -139,13 +139,13 @@ export function ChannelIntroCard({
   })
   const sched = spring({ frame: frame - Math.round(1.8 * fps), fps, config: { damping: 14 } })
   return (
-    // Each layer fades on its own: Chrome drops the parent's opacity on the masked logo,
-    // which then lingered at full strength after the rest of the card was gone.
-    <AbsoluteFill style={{ overflow: 'hidden' }}>
-      <AbsoluteFill style={{ opacity: fade, backgroundColor: bg }} />
+    // isolation keeps the logo's zIndex inside the card, or the logo stays on top of the
+    // year card that fades in over the end of the intro.
+    <AbsoluteFill
+      style={{ opacity: fade, backgroundColor: bg, overflow: 'hidden', isolation: 'isolate' }}
+    >
       <AbsoluteFill
         style={{
-          opacity: fade,
           background: 'radial-gradient(circle at 50% 120%, rgba(0,0,0,0.4) 0%, transparent 60%)'
         }}
       />
@@ -156,7 +156,6 @@ export function ChannelIntroCard({
               style={{
                 position: 'relative',
                 zIndex: 1,
-                opacity: fade,
                 transform: `translateX(${shift * move}px)`
               }}
             >
@@ -168,7 +167,6 @@ export function ChannelIntroCard({
               display: 'flex',
               flexDirection: 'column',
               gap: 10,
-              opacity: fade,
               marginLeft: intro.avatar ? GAP : 0
             }}
           >
@@ -226,7 +224,7 @@ export function ChannelIntroCard({
               letterSpacing: 3,
               textTransform: 'uppercase',
               color: intro.secondary,
-              opacity: sched * fade,
+              opacity: sched,
               transform: `translateY(${(1 - sched) * 30}px)`
             }}
           >

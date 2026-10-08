@@ -20,6 +20,7 @@
     "test:e2e": "npm run build && node e2e/run.mjs",
     "typecheck:remotion": "tsc --noEmit -p tsconfig.remotion.json --composite false",
     "test:live": "vitest run --config vitest.live.config.ts",
+    "test:intro": "node scripts/check-intro-fade.mjs",
     "deploy:desktop": "powershell -ExecutionPolicy Bypass -File scripts/deploy-desktop.ps1"
   },
   "dependencies": {

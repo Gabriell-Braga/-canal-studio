@@ -28,6 +28,17 @@ export interface RenderWord {
   end: number
 }
 
+export type MusicMood = 'open' | 'drama' | 'final'
+
+/** One background track, playing from `from` to `to` seconds; neighbors cross-fade. */
+export interface MusicTrack {
+  src: string
+  from: number
+  to: number
+  /** Length of the file, seconds: it repeats to fill its part */
+  duration: number
+}
+
 export interface VideoProps {
   fps: number
   durationSec: number
@@ -35,7 +46,8 @@ export interface VideoProps {
   scenes: RenderScene[]
   words: RenderWord[]
   captions: boolean
-  music: string | null
+  /** Up to three tracks in order: opening, dramatic, closing */
+  music: MusicTrack[]
   musicVolume: number
   template: TemplateId
   /** Black cards with the new year; empty for videos without years */

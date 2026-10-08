@@ -16,6 +16,7 @@ import { LogoIntro, TopBadges, YearCards } from './Overlays'
 import { template, type TemplateStyle } from './templates'
 
 const FADE_SEC = 0.5
+const MUSIC_CROSS_SEC = 1.5
 
 export function KenBurns({
   src,
@@ -280,18 +281,45 @@ export const Video: React.FC<VideoProps> = (props) => {
       )}
       {props.endScreenAt !== undefined && <EndScreen at={props.endScreenAt} />}
       <Audio src={props.narration} />
-      {props.music && (
-        <Audio
-          src={props.music}
-          loop
-          volume={(f) =>
-            Math.min(
-              1,
-              props.musicVolume * musicCurve(f, fps, durationInFrames, musicFade, props.endScreenAt)
-            )
-          }
-        />
-      )}
+      {props.music.map((track, i) => {
+        // Neighbors cross-fade over 3 s around the change.
+        const cross = Math.round(MUSIC_CROSS_SEC * fps)
+        const last = i === props.music.length - 1
+        const from = i ? Math.max(0, Math.round(track.from * fps) - cross) : 0
+        const to = last ? durationInFrames : Math.round(track.to * fps) + cross
+        const fadeIn = i ? [from, from + 2 * cross] : [-2, -1]
+        const fadeOut = last ? [durationInFrames + 1, durationInFrames + 2] : [to - 2 * cross, to]
+        // Repeats laid out by hand: with <Audio loop> the volume frame restarts on every
+        // repeat, which would replay the fades each time the track comes around.
+        const len = Math.max(fps, Math.floor(track.duration * fps))
+        return Array.from({ length: Math.ceil((to - from) / len) }, (_, k) => {
+          const start = from + k * len
+          return (
+            <Sequence
+              key={`${i}-${k}`}
+              from={start}
+              durationInFrames={Math.min(len, to - start)}
+              layout="none"
+            >
+              <Audio
+                src={track.src}
+                volume={(f) => {
+                  const g = f + start
+                  const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const
+                  const local =
+                    interpolate(g, fadeIn, [0, 1], clamp) * interpolate(g, fadeOut, [1, 0], clamp)
+                  return Math.min(
+                    1,
+                    props.musicVolume *
+                      local *
+                      musicCurve(g, fps, durationInFrames, musicFade, props.endScreenAt)
+                  )
+                }}
+              />
+            </Sequence>
+          )
+        })
+      })}
     </AbsoluteFill>
   )
 }

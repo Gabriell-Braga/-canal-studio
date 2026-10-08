@@ -1,6 +1,7 @@
 import { spawn } from 'child_process'
-import { writeFileSync } from 'fs'
-import { join } from 'path'
+import { createHash } from 'crypto'
+import { readdirSync, readFileSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
 import type { RenderJob } from '../../shared/render'
 
 let entryPoint = ''
@@ -8,6 +9,16 @@ let entryPoint = ''
 /** remotion/index.ts in the project (dev) or in the unpacked resources (installed app). */
 export function configureRemotion(appRoot: string): void {
   entryPoint = join(appRoot, 'remotion', 'index.ts')
+}
+
+/** Hash of the drawing code in remotion/, so a change there renders videos again. */
+export function remotionCodeHash(): string {
+  const dir = dirname(entryPoint)
+  const hash = createHash('sha1')
+  for (const f of readdirSync(dir, { withFileTypes: true })) {
+    if (f.isFile()) hash.update(f.name).update(readFileSync(join(dir, f.name)))
+  }
+  return hash.digest('hex')
 }
 
 /**

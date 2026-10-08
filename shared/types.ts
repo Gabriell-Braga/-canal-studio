@@ -130,6 +130,8 @@ export interface Script {
   companiesChecked?: boolean
   /** Claude's final edit already ran on this script */
   polished?: boolean
+  /** Scene (1-based) where the dramatic music starts; 0 = the story never turns bad */
+  music_turn?: number
 }
 
 export type ReviewAlertKind = 'hook' | 'pacing' | 'repetition' | 'dubious_fact' | 'other'

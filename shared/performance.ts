@@ -122,3 +122,46 @@ export function growthCurve(
   }
   return points
 }
+
+/**
+ * Views per day from live snapshots (difference between the counter at the start and end of
+ * each day), for the days Analytics has not delivered yet. Today is partial: up to the last
+ * snapshot. A day is skipped when no snapshot covers its start (unless the video came out that day).
+ * ponytail: UTC days, while Analytics uses Pacific days; the seam can shift a few hours of views.
+ */
+export function liveDaily(snapshots: Snapshot[], release: string): Daily {
+  if (!snapshots.length) return []
+  const r = Date.parse(release)
+  const lastAt = Date.parse(snapshots[snapshots.length - 1].at)
+  const out: Daily = []
+  for (
+    let d = snapshots[0].at.slice(0, 10);
+    d <= snapshots[snapshots.length - 1].at.slice(0, 10);
+    d = addDays(d, 1)
+  ) {
+    const t0 = Date.parse(`${d}T00:00:00Z`)
+    const v0 = t0 <= r ? 0 : snapshotAt(snapshots, t0)
+    const v1 = snapshotAt(snapshots, Math.min(t0 + DAY, lastAt))
+    if (v0 === null || v1 === null) continue
+    out.push([d, Math.max(0, Math.round(v1 - v0))])
+  }
+  return out
+}
+
+/** Analytics days up to `end`, live days after it. */
+export function mergeDaily(analytics: Daily, live: Daily, end: string | null): Daily {
+  return [...analytics, ...live.filter(([d]) => !end || d > end)]
+}
+
+/**
+ * Live snapshots with the Analytics total as one more reading at the end of its last day,
+ * so the days between that and the first live reading are interpolated instead of missing.
+ * Charts then end on the same live number the table shows.
+ */
+export function anchored(snapshots: Snapshot[], daily: Daily, end: string | null): Snapshot[] {
+  if (!end || !daily.length) return snapshots
+  const at = `${addDays(end, 1)}T00:00:00.000Z`
+  if (snapshots.length && snapshots[0].at <= at) return snapshots
+  const views = daily.reduce((t, [d, v]) => (d <= end ? t + v : t), 0)
+  return [{ at, views }, ...snapshots]
+}

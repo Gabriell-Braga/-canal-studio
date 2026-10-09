@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   channelDaily,
   growthCurve,
+  anchored,
+  liveDaily,
+  mergeDaily,
   lastDay,
   recentGain,
   viewsAtAge,
@@ -60,5 +63,46 @@ describe('performance', () => {
     const curve = growthCurve(snaps, [['2026-10-08', 50]], '2026-10-08T15:00:00Z', 168)
     expect(curve[0]).toEqual([0, 0])
     expect(curve.at(-1)).toEqual([19, 300])
+  })
+})
+
+describe('live days', () => {
+  it('turns snapshots into views per day after the Analytics end', () => {
+    const snaps = [
+      { at: '2026-10-07T22:00:00Z', views: 100 },
+      { at: '2026-10-08T02:00:00Z', views: 140 },
+      { at: '2026-10-09T02:00:00Z', views: 380 },
+      { at: '2026-10-09T10:00:00Z', views: 400 }
+    ]
+    // 10-07 has no snapshot at its start; 10-08 runs 120 → 360; 10-09 is partial: 360 → 400.
+    const live = liveDaily(snaps, '2026-09-01T00:00:00Z')
+    expect(live).toEqual([
+      ['2026-10-08', 240],
+      ['2026-10-09', 40]
+    ])
+    expect(mergeDaily([['2026-10-08', 200]], live, '2026-10-08')).toEqual([
+      ['2026-10-08', 200],
+      ['2026-10-09', 40]
+    ])
+  })
+})
+
+describe('anchored', () => {
+  it('bridges the Analytics end and the first live reading', () => {
+    const snaps = anchored(
+      [{ at: '2026-10-09T12:00:00Z', views: 130 }],
+      [
+        ['2026-10-05', 50],
+        ['2026-10-06', 50]
+      ],
+      '2026-10-06'
+    )
+    expect(snaps[0]).toEqual({ at: '2026-10-07T00:00:00.000Z', views: 100 })
+    // 30 views over 2.5 days: 12 per full day.
+    expect(liveDaily(snaps, '2026-10-01T00:00:00Z')).toEqual([
+      ['2026-10-07', 12],
+      ['2026-10-08', 12],
+      ['2026-10-09', 6]
+    ])
   })
 })

@@ -800,8 +800,11 @@ async function published({ launch, api, shot }) {
         // The last one went out 30 hours ago and only has live snapshots so far.
         const release = new Date(n === 2 ? now - 30 * 3600000 : Date.UTC(2026, 8, 1 + n * 12))
         const daily = []
-        for (let d = 0; n < 2 && d < 50 - n * 12; d++) {
+        // Analytics stops 3 days ago, like the real API.
+        const analyticsEnd = new Date(now - 3 * 86400000).toISOString().slice(0, 10)
+        for (let d = 0; n < 2; d++) {
           const day = new Date(release.getTime() + d * 86400000).toISOString().slice(0, 10)
+          if (day > analyticsEnd) break
           daily.push([day, Math.round((400 + n * 250) * Math.exp(-d / 9) + 30 + (d % 5) * 4)])
         }
         const views = daily.reduce((t, [, v]) => t + v, 0)
@@ -822,9 +825,11 @@ async function published({ launch, api, shot }) {
         const snap = db.prepare(
           'INSERT INTO snapshots (video_id, at, views, likes, comments, privacy) VALUES (?, ?, ?, ?, ?, ?)'
         )
+        // Live readings started 5 hours ago for the old videos (gap since Analytics: +900 views).
         for (let h = 1; h <= 30; h += 3) {
+          if (n < 2 && h < 25) continue
           const at = new Date(Math.max(release.getTime(), now - 30 * 3600000) + h * 3600000)
-          const base = n === 2 ? 0 : views
+          const base = n === 2 ? 0 : views + 900
           snap.run(
             id,
             at.toISOString(),

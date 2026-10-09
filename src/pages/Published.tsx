@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import {
+  anchored,
   channelDaily,
   daysBetween,
   growthCurve,
   lastDay,
+  liveDaily,
+  mergeDaily,
   recentGain,
   viewsAtAge,
   weekOverWeek,
@@ -26,6 +29,8 @@ const AGES = [
 ]
 
 type Filter = 'all' | VideoKind
+/** Growth curves run up to this age, ending on the live count for younger videos. */
+const CURVE_DAYS = 30
 
 function fmt(n: number): string {
   return Math.round(n).toLocaleString('pt-BR')
@@ -121,14 +126,28 @@ function Axes({
   )
 }
 
-/** Channel views per day (Analytics): area line with a crosshair and tooltip on hover. */
-function DailyChart({ data }: { data: Daily }): React.JSX.Element {
+/** Channel views per day (Analytics, then live): area line with a crosshair and tooltip on hover. */
+function DailyChart({
+  data,
+  liveAfter
+}: {
+  data: Daily
+  /** Last Analytics day; later days are live estimates, drawn dashed */
+  liveAfter: string | null
+}): React.JSX.Element {
   const [hover, setHover] = useState<number | null>(null)
   const max = Math.max(1, ...data.map(([, v]) => v))
   const step = (W - PAD.l - PAD.r) / Math.max(1, data.length - 1)
   const x = (i: number): number => PAD.l + i * step
   const y = (v: number): number => PAD.t + (1 - v / max) * (H - PAD.t - PAD.b)
-  const line = data.map(([, v], i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join(' ')
+  const path = (from: number, to: number): string =>
+    data
+      .slice(from, to + 1)
+      .map(([, v], i) => `${i ? 'L' : 'M'}${x(from + i)},${y(v)}`)
+      .join(' ')
+  const line = path(0, data.length - 1)
+  // Index of the last Analytics day: the line is solid up to it, dashed after.
+  const split = liveAfter === null ? 0 : data.filter(([d]) => d <= liveAfter).length - 1
   const every = Math.ceil(data.length / 6)
   const xTicks = data
     .map(([d], i) => ({ at: i, label: shortDate(d) }))
@@ -152,7 +171,25 @@ function DailyChart({ data }: { data: Daily }): React.JSX.Element {
           fill={BRAND}
           opacity={0.1}
         />
-        <path d={line} fill="none" stroke={BRAND} strokeWidth={2} strokeLinejoin="round" />
+        {split > 0 && (
+          <path
+            d={path(0, split)}
+            fill="none"
+            stroke={BRAND}
+            strokeWidth={2}
+            strokeLinejoin="round"
+          />
+        )}
+        {split < data.length - 1 && (
+          <path
+            d={path(Math.max(0, split), data.length - 1)}
+            fill="none"
+            stroke={BRAND}
+            strokeWidth={2}
+            strokeDasharray="5 4"
+            strokeLinejoin="round"
+          />
+        )}
         {h && hover !== null && (
           <>
             <line
@@ -178,7 +215,11 @@ function DailyChart({ data }: { data: Daily }): React.JSX.Element {
           className="pointer-events-none absolute top-0 -translate-x-1/2 rounded-md border border-white/10 bg-ink-850 px-2.5 py-1.5 text-xs shadow-lg"
           style={{ left: `${(x(hover) / W) * 100}%` }}
         >
-          <div className="text-ink-400">{shortDate(h[0])}</div>
+          <div className="text-ink-400">
+            {shortDate(h[0])}
+            {liveAfter !== null && h[0] > liveAfter && ' · ao vivo'}
+            {hover === data.length - 1 && liveAfter !== null && h[0] > liveAfter && ' (parcial)'}
+          </div>
           <div className="font-semibold text-white">{fmt(h[1])} views</div>
         </div>
       )}
@@ -198,7 +239,7 @@ function GrowthChart({
   const max = Math.max(1, ...series.flatMap((s) => s.points.map(([, v]) => v)))
   const x = (h: number): number => PAD.l + (h / span) * (W - PAD.l - PAD.r)
   const y = (v: number): number => PAD.t + (1 - v / max) * (H - PAD.t - PAD.b)
-  const tickStep = span <= 48 ? (span <= 24 ? 6 : 12) : 24
+  const tickStep = span <= 24 ? 6 : span <= 48 ? 12 : span <= 240 ? 24 : 120
   const xTicks = Array.from({ length: Math.floor(span / tickStep) + 1 }, (_, i) => {
     const at = i * tickStep
     return { at, label: span <= 48 ? `${at}h` : `${at / 24}d` }
@@ -300,20 +341,21 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
     .filter((v) => v.status === 'PUBLISHED' && (filter === 'all' || v.kind === filter))
     .map((v) => {
       const s = byId.get(v.id)
-      const snaps = s?.snapshots ?? []
       const daily = s?.daily ?? []
+      const snaps = anchored(s?.snapshots ?? [], daily, end)
       const release = v.scheduled_at ?? v.created_at
-      const live = snaps.at(-1)
+      const live = s?.snapshots.at(-1)
       return {
         video: v,
         stats: s,
+        snaps,
         release,
         views: live?.views ?? s?.views ?? 0,
         likes: live?.likes ?? null,
         comments: live?.comments ?? null,
         last24: recentGain(snaps, 24),
         ages: AGES.map((a) => viewsAtAge(snaps, daily, release, a.hours, end)),
-        curve: growthCurve(snaps, daily, release, 168)
+        curve: growthCurve(snaps, daily, release, CURVE_DAYS * 24)
       }
     })
     .sort((a, b) => b.release.localeCompare(a.release))
@@ -339,9 +381,14 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
     ? sum((r) => (r.stats?.avgViewPercentage ?? 0) * (r.stats?.views ?? 0)) / watchedViews
     : null
   const firstRelease = rows.at(-1)?.release.slice(0, 10)
-  const dailySeries = rows.map((r) => r.stats?.daily ?? [])
-  const days = end && firstRelease ? Math.min(90, Math.max(14, daysBetween(firstRelease, end))) : 0
-  const channelWeek = end ? weekOverWeek(channelDaily(dailySeries, end, 14), end) : null
+  // Analytics days, then live days (snapshot differences) for the days it has not delivered yet.
+  const dailySeries = rows.map((r) =>
+    mergeDaily(r.stats?.daily ?? [], liveDaily(r.snaps, r.release), end)
+  )
+  const today = lastDay(dailySeries)
+  const days =
+    today && firstRelease ? Math.min(90, Math.max(14, daysBetween(firstRelease, today))) : 0
+  const channelWeek = today ? weekOverWeek(channelDaily(dailySeries, today, 14), today) : null
   const growth = rows.slice(0, SERIES.length).map((r, i) => ({
     id: r.video.id,
     title: r.video.title ?? r.video.topic,
@@ -421,7 +468,7 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
           value={fmt(channelWeek?.current ?? 0)}
           note={
             <>
-              <Change value={channelWeek?.change ?? null} /> vs. 7 dias antes (Analytics)
+              <Change value={channelWeek?.change ?? null} /> vs. 7 dias antes
             </>
           }
         />
@@ -445,21 +492,21 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
             </div>
             <div className="mb-3 text-xs text-ink-500">
               Views acumuladas pela idade do vídeo: compara quem largou melhor. Últimos{' '}
-              {growth.length} publicados.
+              {growth.length} publicados, até {CURVE_DAYS} dias; a ponta de cada linha é a contagem
+              ao vivo.
             </div>
             <GrowthChart series={growth} />
           </Card>
           <Card className="p-5">
             <div className="mb-1 text-sm font-medium text-ink-200">Views por dia</div>
             <div className="mb-3 text-xs text-ink-500">
-              Soma dos publicados no filtro. O Analytics chega com 2–3 dias de atraso.
+              Soma dos publicados no filtro. Os dias que o Analytics ainda não entregou vêm das
+              leituras ao vivo (tracejado); hoje vai até a última leitura.
             </div>
-            {end ? (
-              <DailyChart data={channelDaily(dailySeries, end, days)} />
+            {today ? (
+              <DailyChart data={channelDaily(dailySeries, today, days)} liveAfter={end} />
             ) : (
-              <div className="py-10 text-center text-xs text-ink-500">
-                Sem dados do Analytics ainda.
-              </div>
+              <div className="py-10 text-center text-xs text-ink-500">Sem dados ainda.</div>
             )}
           </Card>
         </div>

@@ -310,7 +310,67 @@ export async function uploadCaptions(
 
 // ---------------------------------------------------------------- analytics
 
+/**
+ * Live counters from the Data API (1 quota unit per 50 videos), kept as snapshots so
+ * videos can be compared at the same age. Analytics only has whole days, 2–3 days late.
+ */
+const DAY_MS = 86_400_000
+
+export async function refreshLive(channelId: number): Promise<void> {
+  const videos = listVideos(channelId).filter((x) => x.youtube_id)
+  if (!videos.length) return
+  const yt = youtube({ version: 'v3', auth: authed(channelId) })
+  const byYoutubeId = new Map(videos.map((v) => [v.youtube_id as string, v.id]))
+  const insert = db().prepare(
+    'INSERT INTO snapshots (video_id, at, views, likes, comments, privacy) VALUES (?, ?, ?, ?, ?, ?)'
+  )
+  const at = now()
+  const last = new Map(
+    (
+      db().prepare('SELECT video_id, MAX(at) AS at FROM snapshots GROUP BY video_id').all() as {
+        video_id: number
+        at: string
+      }[]
+    ).map((r) => [r.video_id, Date.parse(r.at)])
+  )
+  // Hourly while a video is in its first week, daily after that: the curve only matters early on.
+  const due = (id: number): boolean => {
+    const v = videos.find((x) => x.id === id)
+    const release = Date.parse(v?.scheduled_at ?? v?.created_at ?? at)
+    const prev = last.get(id) ?? 0
+    return Date.now() - release < 8 * DAY_MS || Date.now() - prev > DAY_MS - 3600_000
+  }
+  for (let i = 0; i < videos.length; i += 50) {
+    const ids = videos.slice(i, i + 50).map((v) => v.youtube_id as string)
+    const res = await yt.videos.list({ part: ['statistics', 'status'], id: ids, maxResults: 50 })
+    addQuota(COST.list)
+    for (const item of res.data.items ?? []) {
+      const id = byYoutubeId.get(item.id ?? '')
+      const st = item.statistics
+      if (!id || !st || !due(id)) continue
+      insert.run(
+        id,
+        at,
+        Number(st.viewCount ?? 0),
+        Number(st.likeCount ?? 0),
+        Number(st.commentCount ?? 0),
+        item.status?.privacyStatus ?? null
+      )
+    }
+  }
+  setChannelState(channelId, 'liveUpdatedAt', at)
+}
+
+function setChannelState(channelId: number, key: string, value: string): void {
+  db()
+    .prepare(
+      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    )
+    .run(`state.ch.${channelId}.${key}`, JSON.stringify(value))
+}
+
 export async function refreshStats(channelId: number): Promise<void> {
+  await refreshLive(channelId)
   const oauth = authed(channelId)
   await syncChannelIdentity(channelId, oauth).catch(() => undefined)
   const analytics = youtubeAnalytics({ version: 'v2', auth: oauth })
@@ -324,12 +384,12 @@ export async function refreshStats(channelId: number): Promise<void> {
       ids: 'channel==MINE',
       startDate: start > today ? today : start,
       endDate: today,
-      metrics: 'views,estimatedMinutesWatched,subscribersGained',
+      metrics: 'views,estimatedMinutesWatched,subscribersGained,averageViewPercentage',
       dimensions: 'day',
       sort: 'day',
       filters: `video==${v.youtube_id}`
     })
-    // One row per day: [date, views, minutes, subscribers]. Totals are their sums.
+    // One row per day: [date, views, minutes, subscribers, % watched]. Totals are their sums.
     const rows = (res.data.rows ?? []).map((r) => r.map((x, i) => (i ? Number(x) : x)))
     const sum = (i: number): number => rows.reduce((t, r) => t + (r[i] as number), 0)
     const views = sum(1)
@@ -340,16 +400,16 @@ export async function refreshStats(channelId: number): Promise<void> {
         watchMinutes: sum(2),
         avgViewDurationSec: views ? (sum(2) * 60) / views : 0,
         subscribersGained: sum(3),
+        // Share of the video watched on average, weighted by each day's views.
+        avgViewPercentage: views
+          ? rows.reduce((t, r) => t + (r[1] as number) * (r[4] as number), 0) / views
+          : 0,
         daily: rows.map((r) => [r[0], r[1]])
       }),
       now()
     )
   }
-  db()
-    .prepare(
-      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-    )
-    .run(`state.ch.${channelId}.statsUpdatedAt`, JSON.stringify(now()))
+  setChannelState(channelId, 'statsUpdatedAt', now())
 }
 
 function channelState(channelId: number, key: string): string | null {
@@ -369,6 +429,24 @@ export function readStats(channelId: number): ChannelStats {
     data: string
   }[]
   const byId = new Map(rows.map((r) => [r.video_id, JSON.parse(r.data)]))
+  const snapRows = db()
+    .prepare(
+      'SELECT video_id, at, views, likes, comments, privacy FROM snapshots WHERE video_id IN (SELECT id FROM videos WHERE channel_id = ?) ORDER BY at'
+    )
+    .all(channelId) as {
+    video_id: number
+    at: string
+    views: number
+    likes: number
+    comments: number
+    privacy: string | null
+  }[]
+  const snaps = new Map<number, (typeof snapRows)[number][]>()
+  for (const r of snapRows) {
+    const list = snaps.get(r.video_id) ?? []
+    list.push(r)
+    snaps.set(r.video_id, list)
+  }
   const state = (key: string): string | null => channelState(channelId, key)
   return {
     connected: isConnected(channelId),
@@ -376,6 +454,7 @@ export function readStats(channelId: number): ChannelStats {
     quotaUsedToday: quotaUsed(),
     quotaLimit: QUOTA_LIMIT,
     updatedAt: state('statsUpdatedAt'),
+    liveUpdatedAt: state('liveUpdatedAt'),
     videos: listVideos(channelId)
       .filter((v) => v.youtube_id)
       .map((v) => ({
@@ -386,8 +465,16 @@ export function readStats(channelId: number): ChannelStats {
         watchMinutes: 0,
         avgViewDurationSec: 0,
         subscribersGained: 0,
+        avgViewPercentage: 0,
         daily: [],
         ...(byId.get(v.id) ?? {}),
+        privacy: snaps.get(v.id)?.at(-1)?.privacy ?? null,
+        snapshots: (snaps.get(v.id) ?? []).map(({ at, views, likes, comments }) => ({
+          at,
+          views,
+          likes,
+          comments
+        })),
         // Impressions CTR is only shown in YouTube Studio; the public Analytics API does not expose it.
         impressionsCtr: null
       }))

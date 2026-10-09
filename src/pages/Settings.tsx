@@ -19,6 +19,7 @@ import {
 } from '../components/ui'
 import { CHANNEL_COLORS } from '../lib/colors'
 import { api, errorText, mediaUrl } from '../lib/api'
+import { YoutubeConnection, YoutubeGuide } from '../components/YoutubeConnection'
 import { useChannel } from '../lib/channel'
 
 type Scope = 'channel' | 'global'
@@ -412,6 +413,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
         {message && <Banner kind={message.kind}>{message.text}</Banner>}
 
         {scope === 'channel' && <ChannelManagement key={channel.id} />}
+        {scope === 'channel' && <YoutubeConnection />}
 
         <Section
           title="Inteligência artificial"
@@ -1115,12 +1117,9 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
         <Section
           title="YouTube (Google Cloud)"
           scope="global"
-          description="Um projeto do Google Cloud serve para todos os canais. Cada canal conecta a própria conta na tela YouTube."
+          description="Um projeto do Google Cloud serve para todos os canais. Cada canal conecta a própria conta em Configurações do canal."
         >
-          <Field
-            label="Client ID OAuth"
-            hint="Tipo: App para computador. Veja o guia na tela Canal."
-          >
+          <Field label="Client ID OAuth" hint="Tipo: App para computador. Veja o guia abaixo.">
             <input
               className={inputClass}
               value={s.googleClientId}
@@ -1144,6 +1143,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
             />
             O projeto passou na auditoria da API do YouTube (uploads podem ficar públicos)
           </label>
+          <YoutubeGuide />
         </Section>
 
         <Section title="Sistema" scope="global">

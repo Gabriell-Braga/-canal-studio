@@ -11,7 +11,6 @@ import {
   Plus,
   Settings2,
   SlidersHorizontal,
-  MonitorPlay,
   type LucideIcon
 } from 'lucide-react'
 import type { ChannelSummary } from '../shared/types'
@@ -20,7 +19,6 @@ import NewChannelModal from './components/NewChannelModal'
 import { ChannelAvatar } from './components/ui'
 import { api, useLive } from './lib/api'
 import { ChannelContext, rememberChannel } from './lib/channel'
-import Channel from './pages/Channel'
 import ChannelPicker from './pages/ChannelPicker'
 import Production from './pages/Production'
 import Published from './pages/Published'
@@ -31,20 +29,12 @@ import Settings from './pages/Settings'
 import VideoDetail from './pages/VideoDetail'
 
 type PageId =
-  | 'production'
-  | 'review'
-  | 'published'
-  | 'channel'
-  | 'channelSettings'
-  | 'queue'
-  | 'services'
-  | 'settings'
+  'production' | 'review' | 'published' | 'channelSettings' | 'queue' | 'services' | 'settings'
 
 const CHANNEL_PAGES: { id: PageId; label: string; icon: LucideIcon }[] = [
   { id: 'production', label: 'Produção', icon: Clapperboard },
   { id: 'review', label: 'Revisão de roteiros', icon: FileCheck2 },
   { id: 'published', label: 'Publicados', icon: BarChart3 },
-  { id: 'channel', label: 'YouTube', icon: MonitorPlay },
   { id: 'channelSettings', label: 'Configurações do canal', icon: SlidersHorizontal }
 ]
 
@@ -276,8 +266,6 @@ function App(): React.JSX.Element {
         return <Review onOpen={setVideoId} />
       case 'published':
         return <Published onOpen={setVideoId} />
-      case 'channel':
-        return <Channel />
       case 'channelSettings':
         return <Settings scope="channel" />
       case 'queue':

@@ -417,8 +417,9 @@ scenarios.phase5 = phase5
 /** Fase 6 without Google credentials: Canal screen, guide, quota, and a clear error on connect. */
 async function phase6({ launch, api, shot, log }) {
   const { app, page } = await launch()
-  await page.getByTestId('nav-channel').click()
+  await page.getByTestId('nav-channelSettings').click()
   await page.getByText('Cota da API:').waitFor()
+  await page.getByTestId('nav-settings').click()
   await page.getByText('Guia: configurar o Google Cloud').click()
   await page.getByText('App para computador').first().waitFor()
   await shot(page, 'channel')
@@ -794,10 +795,12 @@ async function published({ launch, api, shot }) {
       const Database = req('better-sqlite3')
       const path = req('path')
       const db = new Database(path.join(process.env.CANAL_DATA_DIR, 'canal.db'))
+      const now = Date.now()
       ids.forEach((id, n) => {
-        const release = new Date(Date.UTC(2026, 8, 1 + n * 12))
+        // The last one went out 30 hours ago and only has live snapshots so far.
+        const release = new Date(n === 2 ? now - 30 * 3600000 : Date.UTC(2026, 8, 1 + n * 12))
         const daily = []
-        for (let d = 0; d < 50 - n * 12; d++) {
+        for (let d = 0; n < 2 && d < 50 - n * 12; d++) {
           const day = new Date(release.getTime() + d * 86400000).toISOString().slice(0, 10)
           daily.push([day, Math.round((400 + n * 250) * Math.exp(-d / 9) + 30 + (d % 5) * 4)])
         }
@@ -816,7 +819,26 @@ async function published({ launch, api, shot }) {
           }),
           new Date().toISOString()
         )
+        const snap = db.prepare(
+          'INSERT INTO snapshots (video_id, at, views, likes, comments, privacy) VALUES (?, ?, ?, ?, ?, ?)'
+        )
+        for (let h = 1; h <= 30; h += 3) {
+          const at = new Date(Math.max(release.getTime(), now - 30 * 3600000) + h * 3600000)
+          const base = n === 2 ? 0 : views
+          snap.run(
+            id,
+            at.toISOString(),
+            base + Math.round(60 * h * (n + 1) ** 0.5),
+            3 * h,
+            h,
+            'public'
+          )
+        }
       })
+      // One short of the first video, published too.
+      db.prepare(
+        "INSERT INTO videos (channel_id, topic, title, kind, parent_id, status, youtube_id, scheduled_at, duration_target_min) SELECT channel_id, 'Nokia short', 'Nokia in 60 seconds', 'short', id, 'PUBLISHED', 'ytshort', ?, 1 FROM videos WHERE id = ?"
+      ).run(new Date(now - 50 * 3600000).toISOString(), ids[0])
       db.close()
       return electronApp.getName()
     },
@@ -824,8 +846,11 @@ async function published({ launch, api, shot }) {
   )
   await page.getByTestId('nav-published').click()
   await page.getByTestId('published-row').first().waitFor()
-  assert((await page.getByTestId('published-row').count()) === 3, '3 published rows')
+  assert((await page.getByTestId('published-row').count()) === 4, '3 videos + 1 short')
   await shot(page, 'published')
+  await page.getByTestId('filter-short').click()
+  assert((await page.getByTestId('published-row').count()) === 1, 'shorts filter')
+  await shot(page, 'published-shorts')
   await page.getByTestId('nav-production').click()
   await page.getByText('Agendado', { exact: true }).waitFor()
   assert((await page.getByTestId('video-card').count()) === 0, 'published left Produção')

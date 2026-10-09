@@ -140,6 +140,18 @@ const migrations: string[] = [
   `,
   `
   ALTER TABLE scenes ADD COLUMN real_subject TEXT NOT NULL DEFAULT '';
+  `,
+  // Live view counts from the Data API, one row per refresh: views at a given age of the video.
+  `
+  CREATE TABLE snapshots (
+    video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    at TEXT NOT NULL,
+    views INTEGER NOT NULL,
+    likes INTEGER NOT NULL,
+    comments INTEGER NOT NULL,
+    privacy TEXT
+  );
+  CREATE INDEX idx_snapshots_video ON snapshots(video_id, at);
   `
 ]
 

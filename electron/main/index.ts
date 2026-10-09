@@ -31,6 +31,7 @@ import {
   configureYoutube,
   isConnected as isYoutubeConnected,
   readStats,
+  refreshLive,
   refreshStats
 } from '../services/youtube'
 import { registerIpc } from './ipc'
@@ -211,7 +212,7 @@ function forwardChanges(): void {
   })
 }
 
-/** Channel analytics once a day (checked hourly) while the app is open. */
+/** Live view counts every hour, full analytics once a day, while the app is open. */
 function scheduleStatsRefresh(): void {
   if (isE2E) return
   const check = (): void => {
@@ -220,6 +221,8 @@ function scheduleStatsRefresh(): void {
       const last = readStats(channel.id).updatedAt
       if (!last || Date.now() - new Date(last).getTime() > 24 * 3600_000) {
         refreshStats(channel.id).catch((e) => console.error('Analytics:', e.message))
+      } else {
+        refreshLive(channel.id).catch((e) => console.error('Live stats:', e.message))
       }
     }
   }

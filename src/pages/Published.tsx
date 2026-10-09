@@ -2,16 +2,30 @@ import { useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import {
   channelDaily,
-  firstWeek,
+  daysBetween,
+  growthCurve,
   lastDay,
+  recentGain,
+  viewsAtAge,
   weekOverWeek,
   type Daily
 } from '../../shared/performance'
+import type { VideoKind } from '../../shared/types'
 import { Banner, Button, Card, PageHeader } from '../components/ui'
 import { api, errorText, formatDate, mediaUrl, useLive } from '../lib/api'
 import { useChannel } from '../lib/channel'
 
 const BRAND = 'var(--color-brand-300)'
+/** Categorical slots for the dark surface, in fixed order (dataviz reference palette). */
+const SERIES = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181']
+/** Ages compared across videos, in hours. */
+const AGES = [
+  { hours: 24, label: '24 h' },
+  { hours: 72, label: '3 dias' },
+  { hours: 168, label: '7 dias' }
+]
+
+type Filter = 'all' | VideoKind
 
 function fmt(n: number): string {
   return Math.round(n).toLocaleString('pt-BR')
@@ -24,20 +38,25 @@ function shortDate(day: string): string {
   })
 }
 
-function duration(sec: number): string {
-  const m = Math.floor(sec / 60)
-  return `${m}:${String(Math.round(sec % 60)).padStart(2, '0')}`
+function time(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 
 /** +12% green / −8% red, with an arrow so the sign never depends on color alone. */
-function Change({ value }: { value: number | null }): React.JSX.Element {
-  if (value === null) return <span className="text-ink-500">—</span>
+function Change({ value }: { value: number | null }): React.JSX.Element | null {
+  if (value === null || !isFinite(value)) return null
   const pct = Math.round(value * 100)
   const Icon = pct > 0 ? ArrowUpRight : pct < 0 ? ArrowDownRight : Minus
   const color = pct > 0 ? 'text-emerald-300' : pct < 0 ? 'text-red-300' : 'text-ink-400'
   return (
-    <span className={`inline-flex items-center gap-0.5 ${color}`}>
-      <Icon size={13} />
+    <span className={`inline-flex items-center gap-0.5 text-xs ${color}`}>
+      <Icon size={12} />
       {pct > 0 ? '+' : ''}
       {pct}%
     </span>
@@ -57,24 +76,63 @@ function Tile({
     <Card className="px-4 py-3.5">
       <div className="text-xs text-ink-400">{label}</div>
       <div className="mt-1 text-2xl font-semibold text-white">{value}</div>
-      {note && <div className="mt-0.5 text-xs text-ink-400">{note}</div>}
+      {note && <div className="mt-0.5 text-xs text-ink-500">{note}</div>}
     </Card>
   )
 }
 
-/** Channel views per day: area line with a crosshair and tooltip on hover. */
+const W = 560
+const H = 230
+const PAD = { l: 52, r: 12, t: 12, b: 28 }
+
+function Axes({
+  max,
+  x,
+  y,
+  xTicks
+}: {
+  max: number
+  x: (v: number) => number
+  y: (v: number) => number
+  xTicks: { at: number; label: string }[]
+}): React.JSX.Element {
+  return (
+    <>
+      {[0, max / 2, max].map((t) => (
+        <g key={t}>
+          <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="rgba(255,255,255,0.06)" />
+          <text x={PAD.l - 8} y={y(t) + 4} textAnchor="end" className="fill-ink-500 text-[13px]">
+            {fmt(t)}
+          </text>
+        </g>
+      ))}
+      {xTicks.map((t) => (
+        <text
+          key={t.label}
+          x={x(t.at)}
+          y={H - 6}
+          textAnchor="middle"
+          className="fill-ink-500 text-[13px]"
+        >
+          {t.label}
+        </text>
+      ))}
+    </>
+  )
+}
+
+/** Channel views per day (Analytics): area line with a crosshair and tooltip on hover. */
 function DailyChart({ data }: { data: Daily }): React.JSX.Element {
   const [hover, setHover] = useState<number | null>(null)
-  const W = 560
-  const H = 220
-  const pad = { l: 48, r: 8, t: 10, b: 26 }
   const max = Math.max(1, ...data.map(([, v]) => v))
-  const step = (W - pad.l - pad.r) / Math.max(1, data.length - 1)
-  const x = (i: number): number => pad.l + i * step
-  const y = (v: number): number => pad.t + (1 - v / max) * (H - pad.t - pad.b)
+  const step = (W - PAD.l - PAD.r) / Math.max(1, data.length - 1)
+  const x = (i: number): number => PAD.l + i * step
+  const y = (v: number): number => PAD.t + (1 - v / max) * (H - PAD.t - PAD.b)
   const line = data.map(([, v], i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join(' ')
-  const ticks = [0, max / 2, max]
-  const labelEvery = Math.ceil(data.length / 6)
+  const every = Math.ceil(data.length / 6)
+  const xTicks = data
+    .map(([d], i) => ({ at: i, label: shortDate(d) }))
+    .filter((_, i) => i % every === 0)
   const h = hover === null ? null : data[hover]
   return (
     <div className="relative">
@@ -85,30 +143,10 @@ function DailyChart({ data }: { data: Daily }): React.JSX.Element {
         onMouseMove={(e) => {
           const box = e.currentTarget.getBoundingClientRect()
           const px = ((e.clientX - box.left) / box.width) * W
-          setHover(Math.min(data.length - 1, Math.max(0, Math.round((px - pad.l) / step))))
+          setHover(Math.min(data.length - 1, Math.max(0, Math.round((px - PAD.l) / step))))
         }}
       >
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="rgba(255,255,255,0.06)" />
-            <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" className="fill-ink-500 text-[13px]">
-              {fmt(t)}
-            </text>
-          </g>
-        ))}
-        {data.map(([d], i) =>
-          i % labelEvery === 0 ? (
-            <text
-              key={d}
-              x={x(i)}
-              y={H - 4}
-              textAnchor="middle"
-              className="fill-ink-500 text-[13px]"
-            >
-              {shortDate(d)}
-            </text>
-          ) : null
-        )}
+        <Axes max={max} x={x} y={y} xTicks={xTicks} />
         <path
           d={`${line} L${x(data.length - 1)},${y(0)} L${x(0)},${y(0)} Z`}
           fill={BRAND}
@@ -120,8 +158,8 @@ function DailyChart({ data }: { data: Daily }): React.JSX.Element {
             <line
               x1={x(hover)}
               x2={x(hover)}
-              y1={pad.t}
-              y2={H - pad.b}
+              y1={PAD.t}
+              y2={H - PAD.b}
               stroke="rgba(255,255,255,0.25)"
             />
             <circle
@@ -148,66 +186,100 @@ function DailyChart({ data }: { data: Daily }): React.JSX.Element {
   )
 }
 
-interface Row {
-  id: number
-  youtubeId: string
-  title: string
-  thumb: string | null
-  release: string
-  views: number
-  avgViewDurationSec: number
-  subscribersGained: number
-  week: ReturnType<typeof weekOverWeek>
-  first: ReturnType<typeof firstWeek>
-}
-
-/** First-week views per video against the channel average: who did better or worse. */
-function FirstWeekChart({ rows, average }: { rows: Row[]; average: number }): React.JSX.Element {
-  const max = Math.max(1, average, ...rows.map((r) => r.first.views))
+/** Cumulative views by age, one line per video: who starts faster at the same age. */
+function GrowthChart({
+  series
+}: {
+  series: { id: number; title: string; color: string; points: [number, number][] }[]
+}): React.JSX.Element {
+  const [hover, setHover] = useState<number | null>(null)
+  const maxH = Math.max(24, ...series.flatMap((s) => s.points.map(([h]) => h)))
+  const span = maxH <= 48 ? Math.ceil(maxH / 6) * 6 : Math.ceil(maxH / 24) * 24
+  const max = Math.max(1, ...series.flatMap((s) => s.points.map(([, v]) => v)))
+  const x = (h: number): number => PAD.l + (h / span) * (W - PAD.l - PAD.r)
+  const y = (v: number): number => PAD.t + (1 - v / max) * (H - PAD.t - PAD.b)
+  const tickStep = span <= 48 ? (span <= 24 ? 6 : 12) : 24
+  const xTicks = Array.from({ length: Math.floor(span / tickStep) + 1 }, (_, i) => {
+    const at = i * tickStep
+    return { at, label: span <= 48 ? `${at}h` : `${at / 24}d` }
+  })
+  // Value of each line at the hovered age: last point not after it.
+  const at = (points: [number, number][], h: number): number | null => {
+    if (h > (points.at(-1)?.[0] ?? 0)) return null
+    let v = 0
+    for (const [ph, pv] of points) if (ph <= h) v = pv
+    return v
+  }
   return (
-    <div className="space-y-2">
-      {rows.map((r) => (
-        <div key={r.id} className="grid grid-cols-[minmax(0,14rem)_1fr_4.5rem] items-center gap-3">
-          <div className="truncate text-xs text-ink-300" title={r.title}>
-            {r.title}
-          </div>
-          <div className="relative h-5" title={`${fmt(r.first.views)} views nos 7 primeiros dias`}>
-            <div
-              className="h-full rounded-r-[4px]"
-              style={{
-                width: `${(r.first.views / max) * 100}%`,
-                minWidth: 2,
-                background: BRAND,
-                opacity: r.first.complete ? 1 : 0.4
-              }}
-            />
-            {average > 0 && (
-              <div
-                className="absolute bottom-[-3px] top-[-3px] w-px bg-ink-300"
-                style={{ left: `${(average / max) * 100}%` }}
-              />
-            )}
-          </div>
-          <div className="text-right text-xs tabular-nums text-ink-200">
-            {fmt(r.first.views)}
-            {!r.first.complete && <span className="text-ink-500"> …</span>}
-          </div>
-        </div>
-      ))}
-      <div className="flex items-center gap-4 pt-1 text-[11px] text-ink-500">
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-px bg-ink-300" /> média do canal ({fmt(average)})
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span
-            className="inline-block h-2.5 w-3 rounded-sm"
-            style={{ background: BRAND, opacity: 0.4 }}
+    <div className="relative">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        onMouseLeave={() => setHover(null)}
+        onMouseMove={(e) => {
+          const box = e.currentTarget.getBoundingClientRect()
+          const px = ((e.clientX - box.left) / box.width) * W
+          const h = ((px - PAD.l) / (W - PAD.l - PAD.r)) * span
+          setHover(Math.min(span, Math.max(0, Math.round(h))))
+        }}
+      >
+        <Axes max={max} x={x} y={y} xTicks={xTicks} />
+        {series.map((s) => (
+          <path
+            key={s.id}
+            d={s.points.map(([h, v], i) => `${i ? 'L' : 'M'}${x(h)},${y(v)}`).join(' ')}
+            fill="none"
+            stroke={s.color}
+            strokeWidth={2}
+            strokeLinejoin="round"
           />
-          ainda nos 7 primeiros dias
-        </span>
+        ))}
+        {hover !== null && (
+          <line
+            x1={x(hover)}
+            x2={x(hover)}
+            y1={PAD.t}
+            y2={H - PAD.b}
+            stroke="rgba(255,255,255,0.25)"
+          />
+        )}
+      </svg>
+      {hover !== null && (
+        <div
+          className="pointer-events-none absolute top-0 min-w-44 -translate-x-1/2 rounded-md border border-white/10 bg-ink-850 px-2.5 py-1.5 text-xs shadow-lg"
+          style={{ left: `${Math.min(80, Math.max(20, (x(hover) / W) * 100))}%` }}
+        >
+          <div className="mb-1 text-ink-400">
+            {hover < 48 ? `${hover} h` : `${(hover / 24).toFixed(1)} dias`} após publicar
+          </div>
+          {series.map((s) => {
+            const v = at(s.points, hover)
+            return (
+              <div key={s.id} className="flex items-center gap-2">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
+                <span className="min-w-0 flex-1 truncate text-ink-300">{s.title}</span>
+                <span className="font-semibold text-white">{v === null ? '—' : fmt(v)}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-400">
+        {series.map((s) => (
+          <span key={s.id} className="flex max-w-56 items-center gap-1.5">
+            <span className="h-0.5 w-3 shrink-0 rounded" style={{ background: s.color }} />
+            <span className="truncate">{s.title}</span>
+          </span>
+        ))}
       </div>
     </div>
   )
+}
+
+const PRIVACY: Record<string, { label: string; tone: string }> = {
+  public: { label: 'Público', tone: 'bg-emerald-400/15 text-emerald-200' },
+  private: { label: 'Privado', tone: 'bg-amber-400/15 text-amber-200' },
+  unlisted: { label: 'Não listado', tone: 'bg-ink-800 text-ink-300' }
 }
 
 export default function Published({ onOpen }: { onOpen: (id: number) => void }): React.JSX.Element {
@@ -218,46 +290,64 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
     [channel.id]
   )
   const { data: videos = [] } = useLive(() => api.videos.list(channel.id), ['videos'], [channel.id])
+  const [filter, setFilter] = useState<Filter>('all')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const byId = new Map((stats?.videos ?? []).map((s) => [s.video_id, s]))
-  const published = videos.filter((v) => v.kind === 'long' && v.status === 'PUBLISHED')
   const end = lastDay((stats?.videos ?? []).map((s) => s.daily))
-  const rows: Row[] = published
+  const rows = videos
+    .filter((v) => v.status === 'PUBLISHED' && (filter === 'all' || v.kind === filter))
     .map((v) => {
       const s = byId.get(v.id)
+      const snaps = s?.snapshots ?? []
       const daily = s?.daily ?? []
       const release = v.scheduled_at ?? v.created_at
+      const live = snaps.at(-1)
       return {
-        id: v.id,
-        youtubeId: v.youtube_id ?? '',
-        title: v.title ?? v.topic,
-        thumb: v.thumbnail_paths[v.chosen_thumbnail ?? 0] ?? null,
+        video: v,
+        stats: s,
         release,
-        views: s?.views ?? 0,
-        avgViewDurationSec: s?.avgViewDurationSec ?? 0,
-        subscribersGained: s?.subscribersGained ?? 0,
-        week: end ? weekOverWeek(daily, end) : { current: 0, previous: 0, change: null },
-        first: end ? firstWeek(daily, release, end) : { views: 0, complete: false }
+        views: live?.views ?? s?.views ?? 0,
+        likes: live?.likes ?? null,
+        comments: live?.comments ?? null,
+        last24: recentGain(snaps, 24),
+        ages: AGES.map((a) => viewsAtAge(snaps, daily, release, a.hours, end)),
+        curve: growthCurve(snaps, daily, release, 168)
       }
     })
     .sort((a, b) => b.release.localeCompare(a.release))
 
-  const complete = rows.filter((r) => r.first.complete)
-  const average = complete.length
-    ? complete.reduce((t, r) => t + r.first.views, 0) / complete.length
-    : 0
-  const allDaily = (stats?.videos ?? []).map((s) => s.daily)
-  const channelWeek = end ? weekOverWeek(channelDaily(allDaily, end, 14), end) : null
-  const totals = (stats?.videos ?? []).reduce(
-    (t, v) => ({
-      views: t.views + v.views,
-      watch: t.watch + v.watchMinutes,
-      subs: t.subs + v.subscribersGained
-    }),
-    { views: 0, watch: 0, subs: 0 }
+  // The live refresh says private after the release time: YouTube did not publish it.
+  const stuck = rows.filter(
+    (r) => r.stats?.privacy === 'private' && (r.stats.snapshots.at(-1)?.at ?? '') > r.release
   )
+
+  // Averages per kind and age: a short is only compared with shorts, a video with videos.
+  const average = (kind: VideoKind, i: number): number | null => {
+    const vals = rows
+      .filter((r) => r.video.kind === kind)
+      .map((r) => r.ages[i])
+      .filter((v): v is number => v !== null)
+    return vals.length >= 2 ? vals.reduce((t, v) => t + v, 0) / vals.length : null
+  }
+
+  const sum = (pick: (r: (typeof rows)[number]) => number | null): number =>
+    rows.reduce((t, r) => t + (pick(r) ?? 0), 0)
+  const watchedViews = sum((r) => (r.stats?.avgViewPercentage ? r.stats.views : 0))
+  const retention = watchedViews
+    ? sum((r) => (r.stats?.avgViewPercentage ?? 0) * (r.stats?.views ?? 0)) / watchedViews
+    : null
+  const firstRelease = rows.at(-1)?.release.slice(0, 10)
+  const dailySeries = rows.map((r) => r.stats?.daily ?? [])
+  const days = end && firstRelease ? Math.min(90, Math.max(14, daysBetween(firstRelease, end))) : 0
+  const channelWeek = end ? weekOverWeek(channelDaily(dailySeries, end, 14), end) : null
+  const growth = rows.slice(0, SERIES.length).map((r, i) => ({
+    id: r.video.id,
+    title: r.video.title ?? r.video.topic,
+    color: SERIES[i],
+    points: r.curve
+  }))
 
   async function refresh(): Promise<void> {
     setBusy(true)
@@ -272,60 +362,104 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
     }
   }
 
+  const FILTERS: { id: Filter; label: string }[] = [
+    { id: 'all', label: 'Tudo' },
+    { id: 'long', label: 'Vídeos' },
+    { id: 'short', label: 'Shorts' }
+  ]
+
   return (
     <div className="mx-auto max-w-[1400px]">
       <PageHeader
         title="Publicados"
         subtitle={
           stats?.connected
-            ? `${published.length} vídeo(s) no ar · métricas de ${formatDate(stats.updatedAt)}`
-            : 'YouTube não conectado: conecte na página YouTube para ver as métricas'
+            ? `Views ao vivo de ${time(stats.liveUpdatedAt)} (atualiza a cada hora) · Analytics de ${time(stats.updatedAt)}`
+            : 'YouTube não conectado: conecte em Configurações do canal'
         }
         actions={
-          stats?.connected && (
-            <Button disabled={busy} onClick={refresh}>
-              {busy ? 'Atualizando…' : 'Atualizar métricas'}
-            </Button>
-          )
+          <>
+            <div className="flex rounded-lg bg-ink-900 p-0.5 ring-1 ring-inset ring-white/[0.06]">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  data-testid={`filter-${f.id}`}
+                  onClick={() => setFilter(f.id)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    filter === f.id ? 'bg-ink-700 text-white' : 'text-ink-400 hover:text-ink-200'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            {stats?.connected && (
+              <Button disabled={busy} onClick={refresh}>
+                {busy ? 'Atualizando…' : 'Atualizar agora'}
+              </Button>
+            )}
+          </>
         }
       />
       {error && <Banner kind="error">{error}</Banner>}
+      {stuck.length > 0 && (
+        <Banner kind="warn">
+          {stuck.length} vídeo(s) já passaram do horário e continuam <b>privados</b> no YouTube:{' '}
+          {stuck.map((r) => r.video.title ?? r.video.topic).join(', ')}. Publique no YouTube Studio.
+        </Banner>
+      )}
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        <Tile label="Views" value={fmt(sum((r) => r.views))} note={`${rows.length} publicado(s)`} />
         <Tile
-          label="Views nos últimos 7 dias"
+          label="Últimas 24 h"
+          value={fmt(sum((r) => r.last24))}
+          note="ao vivo, pela Data API"
+        />
+        <Tile
+          label="Últimos 7 dias"
           value={fmt(channelWeek?.current ?? 0)}
           note={
             <>
-              <Change value={channelWeek?.change ?? null} /> vs. 7 dias antes
+              <Change value={channelWeek?.change ?? null} /> vs. 7 dias antes (Analytics)
             </>
           }
         />
-        <Tile label="Views no total" value={fmt(totals.views)} />
-        <Tile label="Tempo de exibição" value={`${fmt(totals.watch / 60)} h`} />
-        <Tile label="Inscritos ganhos" value={fmt(totals.subs)} />
+        <Tile
+          label="Retenção média"
+          value={retention === null ? '—' : `${Math.round(retention)}%`}
+          note="do vídeo assistido"
+        />
+        <Tile
+          label="Likes · comentários"
+          value={`${fmt(sum((r) => r.likes))} · ${fmt(sum((r) => r.comments))}`}
+        />
+        <Tile label="Inscritos ganhos" value={fmt(sum((r) => r.stats?.subscribersGained ?? 0))} />
       </div>
 
-      {end && (
+      {rows.length > 0 && (
         <div className="mb-6 grid gap-4 xl:grid-cols-2">
           <Card className="p-5">
-            <div className="mb-1 text-sm font-medium text-ink-200">Views por dia (60 dias)</div>
-            <div className="mb-3 text-xs text-ink-500">
-              Soma de todos os vídeos. O YouTube entrega os dados com 2–3 dias de atraso.
+            <div className="mb-1 text-sm font-medium text-ink-200">
+              Crescimento desde a publicação
             </div>
-            <DailyChart data={channelDaily(allDaily, end, 60)} />
+            <div className="mb-3 text-xs text-ink-500">
+              Views acumuladas pela idade do vídeo: compara quem largou melhor. Últimos{' '}
+              {growth.length} publicados.
+            </div>
+            <GrowthChart series={growth} />
           </Card>
           <Card className="p-5">
-            <div className="mb-1 text-sm font-medium text-ink-200">
-              Views nos 7 primeiros dias de cada vídeo
-            </div>
+            <div className="mb-1 text-sm font-medium text-ink-200">Views por dia</div>
             <div className="mb-3 text-xs text-ink-500">
-              Compara vídeos lançados em datas diferentes na mesma base.
+              Soma dos publicados no filtro. O Analytics chega com 2–3 dias de atraso.
             </div>
-            {rows.length ? (
-              <FirstWeekChart rows={rows} average={average} />
+            {end ? (
+              <DailyChart data={channelDaily(dailySeries, end, days)} />
             ) : (
-              <div className="py-6 text-xs text-ink-500">Nenhum vídeo publicado ainda.</div>
+              <div className="py-10 text-center text-xs text-ink-500">
+                Sem dados do Analytics ainda.
+              </div>
             )}
           </Card>
         </div>
@@ -336,80 +470,128 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
           <thead className="text-left text-xs text-ink-500">
             <tr className="border-b border-ink-800">
               <th className="px-4 py-2.5 font-medium">Vídeo</th>
-              <th className="px-4 py-2.5 text-right font-medium">Views</th>
-              <th className="px-4 py-2.5 text-right font-medium">7 primeiros dias</th>
-              <th className="px-4 py-2.5 text-right font-medium">Últimos 7 dias</th>
-              <th className="px-4 py-2.5 text-right font-medium">Tendência</th>
-              <th className="px-4 py-2.5 text-right font-medium">Duração média</th>
+              <th className="px-3 py-2.5 text-right font-medium">Views</th>
+              <th className="px-3 py-2.5 text-right font-medium">Últimas 24 h</th>
+              {AGES.map((a) => (
+                <th key={a.hours} className="px-3 py-2.5 text-right font-medium">
+                  Com {a.label}
+                </th>
+              ))}
+              <th className="px-3 py-2.5 text-right font-medium">Retenção</th>
+              <th className="px-3 py-2.5 text-right font-medium">Likes</th>
+              <th className="px-3 py-2.5 text-right font-medium">Coment.</th>
               <th className="px-4 py-2.5 text-right font-medium">Inscritos</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr
-                key={r.id}
-                data-testid="published-row"
-                onClick={() => onOpen(r.id)}
-                className="cursor-pointer border-b border-ink-800/60 transition-colors hover:bg-ink-850"
-              >
-                <td className="px-4 py-2">
-                  <div className="flex items-center gap-3">
-                    {r.thumb && (
-                      <img
-                        src={mediaUrl(r.thumb)}
-                        alt=""
-                        className="aspect-video w-24 shrink-0 rounded object-cover"
-                      />
-                    )}
-                    <div className="min-w-0">
-                      <div className="line-clamp-2 text-ink-100">{r.title}</div>
-                      <div className="mt-0.5 flex gap-2 text-xs text-ink-500">
-                        <span>{formatDate(r.release)}</span>
-                        {r.youtubeId && (
-                          <a
-                            href={`https://youtu.be/${r.youtubeId}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-brand-300 hover:underline"
-                          >
-                            abrir no YouTube
-                          </a>
-                        )}
+            {rows.map((r) => {
+              const v = r.video
+              const thumb = v.thumbnail_paths[v.chosen_thumbnail ?? 0]
+              const privacy = r.stats?.privacy ? PRIVACY[r.stats.privacy] : null
+              return (
+                <tr
+                  key={v.id}
+                  data-testid="published-row"
+                  onClick={() => onOpen(v.id)}
+                  className="cursor-pointer border-b border-ink-800/60 transition-colors hover:bg-ink-850"
+                >
+                  <td className="px-4 py-2">
+                    <div className="flex items-center gap-3">
+                      {thumb && (
+                        <img
+                          src={mediaUrl(thumb)}
+                          alt=""
+                          className={`shrink-0 rounded object-cover ${
+                            v.kind === 'short' ? 'aspect-[9/16] h-14' : 'aspect-video w-24'
+                          }`}
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <div className="line-clamp-2 text-ink-100">
+                          {v.kind === 'short' && (
+                            <span className="mr-1.5 inline-flex -translate-y-px rounded bg-brand-400/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-brand-200">
+                              Short
+                            </span>
+                          )}
+                          {v.title ?? v.topic}
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-500">
+                          <span>{formatDate(r.release)}</span>
+                          {privacy && (
+                            <span className={`rounded px-1.5 py-px text-[10px] ${privacy.tone}`}>
+                              {privacy.label}
+                            </span>
+                          )}
+                          {v.youtube_id && (
+                            <a
+                              href={`https://youtu.be/${v.youtube_id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-brand-300 hover:underline"
+                            >
+                              abrir no YouTube
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums">{fmt(r.views)}</td>
-                <td className="px-4 py-2 text-right tabular-nums">
-                  {fmt(r.first.views)}
-                  {r.first.complete && average > 0 && (
-                    <div className="text-xs">
-                      <Change value={r.first.views / average - 1} />{' '}
-                      <span className="text-ink-500">vs. média</span>
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums">{fmt(r.week.current)}</td>
-                <td className="px-4 py-2 text-right tabular-nums">
-                  <Change value={r.week.change} />
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums">
-                  {duration(r.avgViewDurationSec)}
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums">{fmt(r.subscribersGained)}</td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium tabular-nums text-white">
+                    {fmt(r.views)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {r.last24 === null ? '—' : fmt(r.last24)}
+                  </td>
+                  {r.ages.map((value, i) => {
+                    const avg = average(v.kind, i)
+                    return (
+                      <td key={i} className="px-3 py-2 text-right tabular-nums">
+                        {value === null ? (
+                          <span className="text-ink-600">—</span>
+                        ) : (
+                          <>
+                            {fmt(value)}
+                            {avg ? (
+                              <div title="vs. média do mesmo tipo">
+                                <Change value={value / avg - 1} />
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </td>
+                    )
+                  })}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {r.stats?.avgViewPercentage ? `${Math.round(r.stats.avgViewPercentage)}%` : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {r.likes === null ? '—' : fmt(r.likes)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {r.comments === null ? '—' : fmt(r.comments)}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {fmt(r.stats?.subscribersGained ?? 0)}
+                  </td>
+                </tr>
+              )
+            })}
             {!rows.length && (
               <tr>
-                <td colSpan={7} className="px-4 py-4 text-ink-500">
-                  Nenhum vídeo publicado ainda. Os agendados aparecem aqui quando entram no ar.
+                <td colSpan={10} className="px-4 py-4 text-ink-500">
+                  Nada publicado neste filtro. Os agendados aparecem aqui quando entram no ar.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </Card>
+      <p className="mt-3 text-xs text-ink-500">
+        “Com 24 h / 3 dias / 7 dias”: views que o vídeo tinha nessa idade, com a diferença para a
+        média dos outros do mesmo tipo. Assim vídeos lançados em datas diferentes se comparam na
+        mesma base.
+      </p>
     </div>
   )
 }

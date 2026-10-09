@@ -396,10 +396,17 @@ export interface ChannelStats {
     avgViewDurationSec: number
     impressionsCtr: number | null
     subscribersGained: number
+    /** Share of the video watched on average, 0–100 (Analytics) */
+    avgViewPercentage: number
     /** Views per day since release: [YYYY-MM-DD, views], oldest first */
     daily: [string, number][]
+    /** YouTube privacy at the last live refresh: public, private, unlisted */
+    privacy: string | null
+    /** Live counters from the Data API, oldest first */
+    snapshots: { at: string; views: number; likes: number; comments: number }[]
   }[]
   updatedAt: string | null
+  liveUpdatedAt: string | null
   error?: string
 }
 

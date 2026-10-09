@@ -19,11 +19,10 @@ import { KenBurns, toPhrases } from './Video'
 const FADE_SEC = 0.35
 /** The short opens on the company logo so the viewer knows the subject at once. */
 export const SHORT_INTRO_SEC = 1.6
-// Tall crop of the 16:9 media: fills most of the phone screen, Ken Burns keeps it moving.
-const MEDIA_HEIGHT = 1040
-const MEDIA_TOP = 400
+/** Top of the captions, in the lower part of the screen. */
+const CAPTIONS_TOP = 1290
 
-/** One scene: blurred full-bleed copy behind, the sharp 16:9 media across the middle. */
+/** One scene filling the whole screen, cropped around its subject. */
 function VerticalScene({
   scene,
   frames,
@@ -50,36 +49,7 @@ function VerticalScene({
         />
       </Loop>
     )
-  return (
-    <AbsoluteFill style={{ opacity, backgroundColor: 'black' }}>
-      <AbsoluteFill
-        style={{ filter: 'blur(40px) brightness(0.45) saturate(1.2)', transform: 'scale(1.25)' }}
-      >
-        {scene.type === 'image' ? (
-          <Img src={scene.src} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <OffthreadVideo
-            src={scene.src}
-            muted
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        )}
-      </AbsoluteFill>
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          top: MEDIA_TOP,
-          height: MEDIA_HEIGHT,
-          overflow: 'hidden',
-          boxShadow: '0 30px 80px rgba(0,0,0,0.6)'
-        }}
-      >
-        {media}
-      </div>
-    </AbsoluteFill>
-  )
+  return <AbsoluteFill style={{ opacity, backgroundColor: 'black' }}>{media}</AbsoluteFill>
 }
 
 function ShortCaptions({
@@ -118,7 +88,7 @@ function ShortCaptions({
       style={{
         justifyContent: 'flex-start',
         alignItems: 'center',
-        paddingTop: MEDIA_TOP + MEDIA_HEIGHT - 150
+        paddingTop: CAPTIONS_TOP
       }}
     >
       <div
@@ -318,11 +288,18 @@ export const Short: React.FC<ShortProps> = (props) => {
           <Headline text={props.headline} props={props} />
         )}
         {props.captions && <ShortCaptions words={props.words} props={props} />}
-        <Audio
-          src={props.narration}
-          startFrom={Math.round(props.segmentStart * fps)}
-          endAt={Math.round((props.segmentStart + props.segmentDuration) * fps)}
-        />
+        {(props.cuts ?? [{ from: 0, to: props.segmentDuration, at: 0 }]).map((c, i) => (
+          <Sequence
+            key={`n${i}`}
+            from={Math.round(c.at * fps)}
+            durationInFrames={Math.max(1, Math.round((c.to - c.from) * fps))}
+          >
+            <Audio
+              src={props.narration}
+              startFrom={Math.round((props.segmentStart + c.from) * fps)}
+            />
+          </Sequence>
+        ))}
       </Sequence>
       <Sequence from={segmentFrames} durationInFrames={ctaFrames}>
         <EndCard props={props} />

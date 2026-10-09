@@ -75,7 +75,11 @@ describe('shorts show the picked thumbnail', () => {
     const out = join(dir, 'shorts', `short_${short}.mp4`)
     writeFileSync(out, Buffer.alloc(200_000))
     utimesSync(out, new Date(), new Date(Date.now() + 60_000))
-    const job = { root: dir, framed: true, short: { cta: { thumbnail: '{{root}}/thumb_1.png' } } }
+    const job = {
+      root: dir,
+      framed: true,
+      short: { cuts: [], cta: { thumbnail: '{{root}}/thumb_1.png' } }
+    }
     writeFileSync(join(dir, 'shorts', `short_${short}.json`), JSON.stringify(job))
     updateVideo(short, { video_path: out })
     return { id, short }
@@ -89,6 +93,14 @@ describe('shorts show the picked thumbnail', () => {
     const pipeline = new Pipeline(scheduler)
     pipeline.refreshShortThumbs(id)
     expect(jobsForVideo(id).find((j) => j.type === 'short')?.args).toEqual({ refresh: true })
+  })
+
+  it('renders again full-screen shorts with the pauses still in', () => {
+    const { id, short } = setup()
+    const file = join(dir, 'shorts', `short_${short}.json`)
+    const job = JSON.parse(readFileSync(file, 'utf8'))
+    writeFileSync(file, JSON.stringify({ ...job, short: { ...job.short, cuts: undefined } }))
+    expect(staleShorts(getVideo(id)).map((s) => s.id)).toEqual([short])
   })
 
   it('renders again shorts cut before the crop followed the subject', () => {

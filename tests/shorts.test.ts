@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_SEGMENT, MIN_SEGMENT, evenSegments, normalizeSegments } from '../electron/steps/shorts'
+import {
+  MAX_SEGMENT,
+  MIN_SEGMENT,
+  evenSegments,
+  normalizeSegments,
+  remapTime,
+  tightCuts
+} from '../electron/steps/shorts'
 
 // 30 scenes of 12 s each.
 const scenes = Array.from({ length: 30 }, (_, i) => ({
@@ -48,5 +55,24 @@ describe('short segments', () => {
     const out = evenSegments(scenes, 3, 'Title')
     expect(out).toHaveLength(3)
     expect(out[0].first).toBe(0)
+  })
+})
+
+describe('tightCuts', () => {
+  it('shrinks long pauses between words and keeps short ones', () => {
+    const words = [
+      { start: 0.5, end: 1 },
+      { start: 1.1, end: 1.5 },
+      { start: 3, end: 3.5 }
+    ]
+    const cuts = tightCuts(words, 5)
+    expect(cuts).toEqual([
+      { from: 0.38, to: 1.62, at: 0 },
+      { from: 2.88, to: 3.8, at: expect.closeTo(1.24) }
+    ])
+    expect(remapTime(cuts, 1)).toBeCloseTo(0.62)
+    expect(remapTime(cuts, 2)).toBeCloseTo(1.24)
+    expect(remapTime(cuts, 3)).toBeCloseTo(1.36)
+    expect(remapTime(cuts, 5)).toBeCloseTo(2.16)
   })
 })

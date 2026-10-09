@@ -79,8 +79,14 @@ export interface ShortProps {
   fps: number
   /** Where the cut starts in the original narration, seconds */
   segmentStart: number
+  /** Length of the short before the end card, after the cuts */
   segmentDuration: number
   narration: string
+  /**
+   * Narration pieces to play, back to back: `from`–`to` in the cut (seconds), placed at `at`
+   * in the short. Long pauses between lines fall out. Missing = the whole cut as is.
+   */
+  cuts?: { from: number; to: number; at: number }[]
   /** Scenes with times relative to the start of the cut */
   scenes: RenderScene[]
   /** Words with times relative to the start of the cut */

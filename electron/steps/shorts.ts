@@ -102,6 +102,55 @@ export function evenSegments(scenes: Timed[], count: number, fallbackTitle: stri
   return normalizeSegments(scenes, picks, count)
 }
 
+/** Silence kept on each side of a pause between words: shorts move faster than the full video. */
+export const SHORT_PAUSE = 0.12
+
+type Cut = NonNullable<ShortProps['cuts']>[number]
+
+/** Narration pieces of a cut with every pause between words shrunk to 2 × SHORT_PAUSE. */
+export function tightCuts(words: { start: number; end: number }[], duration: number): Cut[] {
+  if (!words.length) return [{ from: 0, to: duration, at: 0 }]
+  const cuts: Cut[] = []
+  let from = Math.max(0, words[0].start - SHORT_PAUSE)
+  let at = 0
+  for (let i = 0; i + 1 < words.length; i++) {
+    const to = words[i].end + SHORT_PAUSE
+    const next = words[i + 1].start - SHORT_PAUSE
+    if (next <= to) continue
+    cuts.push({ from, to, at })
+    at += to - from
+    from = next
+  }
+  cuts.push({ from, to: Math.min(duration, words[words.length - 1].end + 0.3), at })
+  return cuts
+}
+
+/** Where a second of the cut lands in the short; a second inside a removed pause snaps forward. */
+export function remapTime(cuts: Cut[], t: number): number {
+  for (const c of cuts) if (t < c.to) return c.at + Math.max(0, t - c.from)
+  const last = cuts[cuts.length - 1]
+  return last.at + last.to - last.from
+}
+
+/** Drop the pauses of a short and move scenes, captions and year cards with the narration. */
+export function tighten(short: ShortProps): ShortProps {
+  if (short.cuts) return short
+  const cuts = tightCuts(short.words, short.segmentDuration)
+  const m = (t: number): number => remapTime(cuts, t)
+  const scenes = short.scenes
+    .map((sc) => ({ ...sc, start: m(sc.start), end: m(sc.end) }))
+    .filter((sc, i) => i === 0 || sc.end - sc.start > 0.05)
+  scenes[0].start = 0
+  return {
+    ...short,
+    cuts,
+    segmentDuration: m(short.segmentDuration),
+    scenes,
+    words: short.words.map((w) => ({ ...w, start: m(w.start), end: m(w.end) })),
+    yearCards: short.yearCards?.map((c) => ({ ...c, at: m(c.at) }))
+  }
+}
+
 function url(root: string, file: string): string {
   return `{{root}}/${relative(root, file).split('\\').join('/').split('/').map(encodeURIComponent).join('/')}`
 }
@@ -132,7 +181,7 @@ export function staleShorts(parent: Video): Video[] {
     if (short.youtube_id || !isValidFile(short.video_path, 100_000)) return false
     const job = readShortJob(short)
     if (!job) return false
-    if (!job.framed) return true
+    if (!job.framed || !job.short.cuts) return true
     if (job.short.cta.thumbnail !== url(job.root, thumb)) return true
     return statSync(thumb).mtimeMs > statSync(short.video_path as string).mtimeMs
   })
@@ -167,18 +216,18 @@ async function refreshEndCards(parent: Video, ctx: StepContext, share: number): 
     const out = short.video_path as string
     // Render beside the old file and swap at the end, so a pending upload never sees half a file.
     const tmp = out.replace(/\.mp4$/, '.new.mp4')
-    ctx.log(`Atualizando o short "${short.title}" (thumbnail do final e enquadramento)`)
+    ctx.log(`Atualizando o short "${short.title}" (thumbnail, tela cheia e ritmo)`)
     try {
       await runRender(
         {
           ...job,
           out: tmp,
           framed: true,
-          short: {
+          short: tighten({
             ...job.short,
             scenes: await framedScenes(job, ctx),
             cta: { ...job.short.cta, thumbnail: url(job.root, thumb) }
-          }
+          })
         },
         join(dirname(out), `short_${short.id}.json`),
         { progress: (p) => ctx.progress((share * (k + p)) / stale.length), signal: ctx.signal }
@@ -287,7 +336,7 @@ Return ONLY JSON: {"segments": [...]}`,
       if (ctx.signal.aborted) throw new Error('Cancelado')
       const segScenes = scenes.slice(seg.first, seg.last + 1)
       const duration = seg.end - seg.start
-      const props: ShortProps = {
+      const props: ShortProps = tighten({
         fps: 30,
         segmentStart: seg.start,
         segmentDuration: duration,
@@ -331,7 +380,7 @@ Return ONLY JSON: {"segments": [...]}`,
           thumbnail: thumb ? url(root, thumb) : null,
           parentTitle: video.title ?? video.topic
         }
-      }
+      })
 
       const short = createShort(
         video,
@@ -342,7 +391,7 @@ Return ONLY JSON: {"segments": [...]}`,
       )
       const out = join(dir, `short_${short.id}.mp4`)
       ctx.log(
-        `Short ${k + 1}/${segments.length}: "${short.title}" (${duration.toFixed(0)} s, cenas ${seg.first + 1}–${seg.last + 1})`
+        `Short ${k + 1}/${segments.length}: "${short.title}" (${props.segmentDuration.toFixed(0)} s, cenas ${seg.first + 1}–${seg.last + 1})`
       )
       try {
         await runRender(

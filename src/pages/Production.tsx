@@ -33,7 +33,8 @@ const COLUMNS: {
     statuses: ['PRODUCTION_QUEUED', 'AUDIO', 'SCENES', 'RENDERING', 'THUMBNAIL']
   },
   { title: 'Revisão final', statuses: ['FINAL_REVIEW'], attention: true },
-  { title: 'Agendado / publicado', statuses: ['SCHEDULED', 'PUBLISHED'], byRelease: true }
+  // Published videos live on their own page (Publicados), with their metrics.
+  { title: 'Agendado', statuses: ['SCHEDULED'], byRelease: true }
 ]
 
 interface Props {
@@ -75,7 +76,7 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
   const { channel } = useChannel()
   const { data: all = [] } = useLive(() => api.videos.list(channel.id), ['videos'], [channel.id])
   // Shorts live inside their full video (Shorts tab), not as cards of their own.
-  const videos = all.filter((v) => v.kind === 'long')
+  const videos = all.filter((v) => v.kind === 'long' && v.status !== 'PUBLISHED')
   const [text, setText] = useState('')
   const [duration, setDuration] = useState('')
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)

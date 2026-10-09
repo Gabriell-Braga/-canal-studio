@@ -324,17 +324,23 @@ export async function refreshStats(channelId: number): Promise<void> {
       ids: 'channel==MINE',
       startDate: start > today ? today : start,
       endDate: today,
-      metrics: 'views,estimatedMinutesWatched,averageViewDuration,subscribersGained',
+      metrics: 'views,estimatedMinutesWatched,subscribersGained',
+      dimensions: 'day',
+      sort: 'day',
       filters: `video==${v.youtube_id}`
     })
-    const row = res.data.rows?.[0] ?? [0, 0, 0, 0]
+    // One row per day: [date, views, minutes, subscribers]. Totals are their sums.
+    const rows = (res.data.rows ?? []).map((r) => r.map((x, i) => (i ? Number(x) : x)))
+    const sum = (i: number): number => rows.reduce((t, r) => t + (r[i] as number), 0)
+    const views = sum(1)
     save.run(
       v.id,
       JSON.stringify({
-        views: Number(row[0]),
-        watchMinutes: Number(row[1]),
-        avgViewDurationSec: Number(row[2]),
-        subscribersGained: Number(row[3])
+        views,
+        watchMinutes: sum(2),
+        avgViewDurationSec: views ? (sum(2) * 60) / views : 0,
+        subscribersGained: sum(3),
+        daily: rows.map((r) => [r[0], r[1]])
       }),
       now()
     )
@@ -380,6 +386,7 @@ export function readStats(channelId: number): ChannelStats {
         watchMinutes: 0,
         avgViewDurationSec: 0,
         subscribersGained: 0,
+        daily: [],
         ...(byId.get(v.id) ?? {}),
         // Impressions CTR is only shown in YouTube Studio; the public Analytics API does not expose it.
         impressionsCtr: null

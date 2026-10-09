@@ -396,6 +396,8 @@ export interface ChannelStats {
     avgViewDurationSec: number
     impressionsCtr: number | null
     subscribersGained: number
+    /** Views per day since release: [YYYY-MM-DD, views], oldest first */
+    daily: [string, number][]
   }[]
   updatedAt: string | null
   error?: string

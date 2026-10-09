@@ -3,7 +3,10 @@ import { AbsoluteFill, Img } from 'remotion'
 import type { ThumbnailProps } from '../shared/render'
 import { brandTextShadow, template } from './templates'
 
-/** 1280x720 thumbnail: background + 2–4 word headline (5 layout variants), or the highlight style with or without text. */
+/**
+ * 1280x720 thumbnail: background + 2–4 word headline (5 layout variants), or the highlight style with or without text.
+ * Text always sits in the lower half: YouTube draws the video title over the top of the thumbnail in some views.
+ */
 export const Thumbnail: React.FC<ThumbnailProps> = ({
   background,
   background2,
@@ -41,7 +44,7 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
             style={{
               justifyContent: 'flex-end',
               alignItems: right ? 'flex-end' : 'flex-start',
-              padding: right ? '0 70px 60px 0' : '0 0 60px 70px'
+              padding: right ? '0 70px 120px 0' : '0 0 60px 70px'
             }}
           >
             <div
@@ -144,7 +147,7 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
               letterSpacing: -1,
               textShadow: stroke,
               textAlign: 'center',
-              maxWidth: 1150
+              maxWidth: 960
             }}
           >
             {head && <span style={{ color: colors[0] }}>{head} </span>}
@@ -161,19 +164,25 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
       padding: '0 0 60px 70px',
       textAlign: 'left'
     },
-    { justifyContent: 'center', alignItems: 'flex-end', padding: '0 70px 0 0', textAlign: 'right' },
+    // Bottom right sits above YouTube's duration badge.
     {
-      justifyContent: 'flex-start',
+      justifyContent: 'flex-end',
+      alignItems: 'flex-end',
+      padding: '0 70px 120px 0',
+      textAlign: 'right'
+    },
+    {
+      justifyContent: 'flex-end',
       alignItems: 'center',
-      padding: '50px 0 0 0',
+      padding: '0 0 60px 0',
       textAlign: 'center'
     }
   ] as const
   const layout = layouts[variant % layouts.length]
   const overlays = [
     'linear-gradient(90deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.1) 65%)',
-    'linear-gradient(270deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.1) 65%)',
-    'linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.05) 60%)'
+    'linear-gradient(315deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.1) 65%)',
+    'linear-gradient(0deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.05) 60%)'
   ]
   return (
     <AbsoluteFill style={{ backgroundColor: '#111' }}>

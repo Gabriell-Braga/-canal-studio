@@ -7,11 +7,6 @@ function fmt(n: number): string {
   return n.toLocaleString('pt-BR')
 }
 
-function duration(sec: number): string {
-  const m = Math.floor(sec / 60)
-  return `${m}:${String(Math.round(sec % 60)).padStart(2, '0')}`
-}
-
 export default function Channel(): React.JSX.Element {
   const { channel } = useChannel()
   const { data: stats, reload } = useLive(
@@ -37,21 +32,13 @@ export default function Channel(): React.JSX.Element {
     }
   }
 
-  const totals = (stats?.videos ?? []).reduce(
-    (t, v) => ({
-      views: t.views + v.views,
-      watch: t.watch + v.watchMinutes,
-      subs: t.subs + v.subscribersGained
-    }),
-    { views: 0, watch: 0, subs: 0 }
-  )
   const quotaPct = stats ? Math.round((stats.quotaUsedToday / stats.quotaLimit) * 100) : 0
   const uploadsLeft = stats ? Math.floor((stats.quotaLimit - stats.quotaUsedToday) / 1650) : 0
 
   return (
     <div className="max-w-6xl">
       <PageHeader
-        title="Canal"
+        title="YouTube"
         subtitle={
           stats?.connected
             ? `Conectado: ${stats.channelTitle ?? 'canal'} · métricas de ${formatDate(stats.updatedAt)}`
@@ -108,71 +95,6 @@ export default function Channel(): React.JSX.Element {
           </>
         )}
       </Banner>
-
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <Card className="p-4">
-          <div className="text-xs uppercase text-ink-500">Visualizações</div>
-          <div className="mt-1 text-2xl font-semibold">{fmt(totals.views)}</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-xs uppercase text-ink-500">Tempo de exibição</div>
-          <div className="mt-1 text-2xl font-semibold">{fmt(Math.round(totals.watch / 60))} h</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-xs uppercase text-ink-500">Inscritos ganhos</div>
-          <div className="mt-1 text-2xl font-semibold">{fmt(totals.subs)}</div>
-        </Card>
-      </div>
-
-      <Card className="mb-6 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase text-ink-500">
-            <tr className="border-b border-ink-800">
-              <th className="px-4 py-2">Vídeo</th>
-              <th className="px-4 py-2 text-right">Views</th>
-              <th className="px-4 py-2 text-right">Exibição (min)</th>
-              <th className="px-4 py-2 text-right">Duração média</th>
-              <th className="px-4 py-2 text-right">CTR impressões</th>
-              <th className="px-4 py-2 text-right">Inscritos</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(stats?.videos ?? []).map((v) => (
-              <tr key={v.video_id} className="border-b border-ink-800/60">
-                <td className="px-4 py-2">
-                  <a
-                    href={`https://youtu.be/${v.youtube_id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:underline"
-                  >
-                    {v.title}
-                  </a>
-                </td>
-                <td className="px-4 py-2 text-right">{fmt(v.views)}</td>
-                <td className="px-4 py-2 text-right">{fmt(Math.round(v.watchMinutes))}</td>
-                <td className="px-4 py-2 text-right">{duration(v.avgViewDurationSec)}</td>
-                <td
-                  className="px-4 py-2 text-right text-ink-500"
-                  title="A API pública não fornece CTR; veja no YouTube Studio"
-                >
-                  {v.impressionsCtr === null
-                    ? 'só no Studio'
-                    : `${(v.impressionsCtr * 100).toFixed(1)}%`}
-                </td>
-                <td className="px-4 py-2 text-right">{fmt(v.subscribersGained)}</td>
-              </tr>
-            ))}
-            {!stats?.videos.length && (
-              <tr>
-                <td colSpan={6} className="px-4 py-4 text-ink-500">
-                  Nenhum vídeo enviado ainda.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
 
       <Card className="p-5">
         <button className="text-left font-semibold" onClick={() => setGuide(!guide)}>

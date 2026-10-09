@@ -15,7 +15,7 @@ import icon from '../../resources/icon.png?asset'
 import windowIcon from '../../resources/icon.ico?asset'
 import type { Settings } from '../../shared/types'
 import { closeDb, openDb } from '../db'
-import { changes, getVideo, listChannels, updateVideo, videosByStatus } from '../db/repo'
+import { changes, findVideo, listChannels, updateVideo, videosByStatus } from '../db/repo'
 import { getSettings, getState, setState } from '../db/settings'
 import { Pipeline } from '../pipeline'
 import { Scheduler, type QueueEvent } from '../queue/scheduler'
@@ -341,8 +341,8 @@ app.whenReady().then(async () => {
   // Both render again; Xerox gets its companies checked again.
   if (!getState('reprocess.logos', false) && process.env.CANAL_FAKE_STEPS !== '1') {
     for (const id of [9, 11]) {
-      const v = getVideo(id)
-      if (v.kind !== 'long' || v.status === 'PUBLISHED' || !v.script) continue
+      const v = findVideo(id)
+      if (!v || v.kind !== 'long' || v.status === 'PUBLISHED' || !v.script) continue
       if (id === 11) updateVideo(id, { script: { ...v.script, companiesChecked: false } })
       pipeline.rerender(id)
     }

@@ -781,3 +781,55 @@ async function fixSelected({ launch, api, shot, log, waitUntil }) {
 }
 
 scenarios.fixSelected = fixSelected
+
+/** Publicados page: published videos leave Produção and show their metrics and charts. */
+async function published({ launch, api, shot }) {
+  const { app, page } = await launch()
+  const titles = ['Nokia lost it all', 'BlackBerry shrugged', 'Kodak missed digital']
+  const created = await api(page, 'videos.addTopics', 1, titles, 8)
+  // Seed straight into the database from the main process: published status and daily views.
+  await app.evaluate(
+    ({ app: electronApp }, ids) => {
+      const req = process.getBuiltinModule('module').createRequire(`${process.cwd()}/package.json`)
+      const Database = req('better-sqlite3')
+      const path = req('path')
+      const db = new Database(path.join(process.env.CANAL_DATA_DIR, 'canal.db'))
+      ids.forEach((id, n) => {
+        const release = new Date(Date.UTC(2026, 8, 1 + n * 12))
+        const daily = []
+        for (let d = 0; d < 50 - n * 12; d++) {
+          const day = new Date(release.getTime() + d * 86400000).toISOString().slice(0, 10)
+          daily.push([day, Math.round((400 + n * 250) * Math.exp(-d / 9) + 30 + (d % 5) * 4)])
+        }
+        const views = daily.reduce((t, [, v]) => t + v, 0)
+        db.prepare(
+          "UPDATE videos SET status = 'PUBLISHED', youtube_id = ?, title = topic, scheduled_at = ? WHERE id = ?"
+        ).run(`yt${id}`, release.toISOString(), id)
+        db.prepare('INSERT INTO analytics (video_id, data, updated_at) VALUES (?, ?, ?)').run(
+          id,
+          JSON.stringify({
+            views,
+            watchMinutes: views * 3.1,
+            avgViewDurationSec: 186,
+            subscribersGained: Math.round(views / 90),
+            daily
+          }),
+          new Date().toISOString()
+        )
+      })
+      db.close()
+      return electronApp.getName()
+    },
+    created.map((v) => v.id)
+  )
+  await page.getByTestId('nav-published').click()
+  await page.getByTestId('published-row').first().waitFor()
+  assert((await page.getByTestId('published-row').count()) === 3, '3 published rows')
+  await shot(page, 'published')
+  await page.getByTestId('nav-production').click()
+  await page.getByText('Agendado', { exact: true }).waitFor()
+  assert((await page.getByTestId('video-card').count()) === 0, 'published left Produção')
+  await app.close()
+}
+
+scenarios.published = published

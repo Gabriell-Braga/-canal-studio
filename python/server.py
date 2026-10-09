@@ -224,6 +224,44 @@ def cutout(req: CutoutRequest):
     return {"path": str(out), "coverage": coverage, "center_x": center_x}
 
 
+class FocusRequest(BaseModel):
+    image_path: str
+
+
+@app.post("/focus")
+def focus(req: FocusRequest):
+    """Where to keep an image when it is cropped: the top of its main subject (a person's head).
+
+    Returns x, y (0-1 of the image) and aspect (width / height); x and y are null when there is
+    no clear subject (too small, or most of the frame), so the crop stays centered.
+    """
+    from PIL import Image
+
+    if not Path(req.image_path).exists():
+        raise HTTPException(404, f"image not found: {req.image_path}")
+    with _lock:
+        session = _cutout_session()
+        img = Image.open(req.image_path).convert("RGB")
+        x = np.asarray(img.resize((1024, 1024), Image.LANCZOS), dtype=np.float32)
+        x = x / max(float(x.max()), 1e-6) - 0.5
+        x = x.transpose(2, 0, 1)[None]
+        pred = session.run(None, {session.get_inputs()[0].name: x})[0][0, 0]
+        pred = (pred - pred.min()) / max(float(pred.max() - pred.min()), 1e-6)
+    aspect = img.width / img.height
+    solid = pred > 0.5
+    coverage = float(solid.mean())
+    if coverage < 0.03 or coverage > 0.9:
+        return {"x": None, "y": None, "aspect": aspect}
+    rows = np.where(solid.any(axis=1))[0]
+    top, bottom = np.percentile(rows, [1, 99])
+    # The head sits in the top part of the subject; its center x is taken from that band only.
+    head = int(top + 0.12 * (bottom - top))
+    band = solid[int(top) : max(head * 2 - int(top), int(top) + 1)]
+    cols = np.where(band.any(axis=0))[0] if band.any() else np.where(solid.any(axis=0))[0]
+    size = solid.shape[0] - 1
+    return {"x": float(cols.mean() / size), "y": float(head / size), "aspect": aspect}
+
+
 @app.post("/unload")
 def unload():
     """Release Whisper (and its VRAM) before ComfyUI runs."""

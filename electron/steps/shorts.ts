@@ -11,6 +11,7 @@ import { pythonPost } from '../services/python'
 import { runRender } from '../services/remotion'
 import { readWords } from './transcribe'
 import { renderCompanies, yearCardsFor } from './overlays'
+import { sceneFocus } from './focus'
 import type { Step, StepContext } from './types'
 
 /** Shorts above ~60 s lose reach; the end card adds ~4 s. */
@@ -275,7 +276,8 @@ Return ONLY JSON: {"segments": [...]}`,
               start: Math.max(0, (sc.start_sec as number) - seg.start),
               end: Math.min(duration, (sc.end_sec as number) - seg.start),
               motion: (i * 5 + k) % 4,
-              clipDuration: isVideo ? await probeDuration(sc.asset_path as string) : undefined
+              clipDuration: isVideo ? await probeDuration(sc.asset_path as string) : undefined,
+              focus: isVideo ? undefined : await sceneFocus(sc.asset_path as string, ctx)
             }
           })
         ),

@@ -10,7 +10,8 @@ import {
   useCurrentFrame,
   useVideoConfig
 } from 'remotion'
-import type { RenderScene, RenderWord, VideoProps } from '../shared/render'
+import { objectPosition } from '../shared/framing'
+import type { Focus, RenderScene, RenderWord, VideoProps } from '../shared/render'
 import { ChannelIntroCard, Teaser } from './ChannelIntro'
 import { LogoIntro, TopBadges, YearCards } from './Overlays'
 import { template, type TemplateStyle } from './templates'
@@ -21,13 +22,16 @@ const MUSIC_CROSS_SEC = 1.5
 export function KenBurns({
   src,
   motion,
-  frames
+  frames,
+  focus
 }: {
   src: string
   motion: number
   frames: number
+  focus?: Focus
 }): React.JSX.Element {
   const frame = useCurrentFrame()
+  const { width, height } = useVideoConfig()
   const t = interpolate(frame, [0, frames], [0, 1], { extrapolateRight: 'clamp' })
   // Alternate zoom in/out and pan direction so consecutive images do not move the same way.
   const zoomIn = motion % 2 === 0
@@ -46,6 +50,8 @@ export function KenBurns({
         width: '100%',
         height: '100%',
         objectFit: 'cover',
+        // Crop around the subject's head instead of the center.
+        objectPosition: objectPosition(focus, width, height),
         transform: `scale(${scale}) translate(${dx}%, ${dy}%)`
       }}
     />
@@ -71,7 +77,7 @@ export function SceneLayer({
   return (
     <AbsoluteFill style={{ opacity, filter: grade, backgroundColor: 'black' }}>
       {scene.type === 'image' ? (
-        <KenBurns src={scene.src} motion={scene.motion} frames={frames} />
+        <KenBurns src={scene.src} motion={scene.motion} frames={frames} focus={scene.focus} />
       ) : (
         // Clips shorter than the scene loop instead of freezing on the last frame.
         <Loop durationInFrames={Math.max(1, Math.floor((scene.clipDuration ?? 3600) * fps))}>

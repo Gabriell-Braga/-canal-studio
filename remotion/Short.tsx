@@ -40,7 +40,7 @@ function VerticalScene({
     : 1
   const media =
     scene.type === 'image' ? (
-      <KenBurns src={scene.src} motion={scene.motion} frames={frames} />
+      <KenBurns src={scene.src} motion={scene.motion} frames={frames} focus={scene.focus} />
     ) : (
       <Loop durationInFrames={Math.max(1, Math.floor((scene.clipDuration ?? 3600) * fps))}>
         <OffthreadVideo

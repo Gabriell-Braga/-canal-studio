@@ -20,6 +20,15 @@ export interface RenderScene {
   motion: number
   /** Length of a video clip in seconds; shorter clips loop */
   clipDuration?: number
+  /** Images: the point to keep in frame when cropping (top of the main subject) */
+  focus?: Focus
+}
+
+/** A point of an image (0–1 of its width and height) and the image's width / height. */
+export interface Focus {
+  x: number
+  y: number
+  aspect: number
 }
 
 export interface RenderWord {

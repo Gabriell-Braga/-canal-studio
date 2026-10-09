@@ -10,6 +10,7 @@ import { readWords } from './transcribe'
 import { writeSrt } from '../services/captions'
 import { channelIntroProps, renderCompanies, yearCardsFor } from './overlays'
 import { readTimings } from './audio'
+import { sceneFocus } from './focus'
 import { musicTurn, planMusic, prepareMusic } from './music'
 import type { Step, StepContext } from './types'
 
@@ -77,7 +78,8 @@ export const renderStep: Step = {
           start: s.start_sec as number,
           end: s.end_sec as number,
           motion: (i * 7 + videoId) % 4,
-          clipDuration: isVideo ? await probeDuration(s.asset_path as string) : undefined
+          clipDuration: isVideo ? await probeDuration(s.asset_path as string) : undefined,
+          focus: isVideo ? undefined : await sceneFocus(s.asset_path as string, ctx)
         }
       })
     )

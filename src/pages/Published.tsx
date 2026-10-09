@@ -244,12 +244,14 @@ function GrowthChart({
     const at = i * tickStep
     return { at, label: span <= 48 ? `${at}h` : `${at / 24}d` }
   })
-  // Value of each line at the hovered age: last point not after it.
+  // Value of each line at the hovered age, interpolated like the drawn line.
   const at = (points: [number, number][], h: number): number | null => {
-    if (h > (points.at(-1)?.[0] ?? 0)) return null
-    let v = 0
-    for (const [ph, pv] of points) if (ph <= h) v = pv
-    return v
+    const i = points.findIndex(([ph]) => ph >= h)
+    if (i < 0) return null
+    if (i === 0) return points[0][1]
+    const [h0, v0] = points[i - 1]
+    const [h1, v1] = points[i]
+    return v0 + ((v1 - v0) * (h - h0)) / (h1 - h0 || 1)
   }
   return (
     <div className="relative">

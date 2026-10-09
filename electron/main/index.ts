@@ -15,7 +15,15 @@ import icon from '../../resources/icon.png?asset'
 import windowIcon from '../../resources/icon.ico?asset'
 import type { Settings } from '../../shared/types'
 import { closeDb, openDb } from '../db'
-import { changes, findVideo, listChannels, updateVideo, videosByStatus } from '../db/repo'
+import {
+  changes,
+  deleteVideo,
+  findVideo,
+  listChannels,
+  listShorts,
+  updateVideo,
+  videosByStatus
+} from '../db/repo'
 import { getSettings, getState, setState } from '../db/settings'
 import { Pipeline } from '../pipeline'
 import { Scheduler, type QueueEvent } from '../queue/scheduler'
@@ -350,6 +358,26 @@ app.whenReady().then(async () => {
       pipeline.rerender(id)
     }
     setState('reprocess.logos', true)
+  }
+  // Once: scene images are now cropped around the subject. Full videos not on YouTube yet
+  // render again and keep their slot; their shorts render again via refreshAllShortThumbs.
+  if (!getState('reprocess.focus', false) && process.env.CANAL_FAKE_STEPS !== '1') {
+    let count = 0
+    for (const v of [...videosByStatus('FINAL_REVIEW'), ...videosByStatus('SCHEDULED')]) {
+      if (v.kind !== 'long' || v.youtube_id || !v.video_path) continue
+      if (v.status === 'SCHEDULED') setState(`keepSchedule.${v.id}`, true)
+      pipeline.rerender(v.id)
+      count++
+    }
+    console.log(`Re-render for framing: ${count} video(s)`)
+    setState('reprocess.focus', true)
+  }
+  // A short whose render failed and that a later cut already replaced is left over: drop it.
+  for (const v of videosByStatus('ERROR')) {
+    const siblings = v.kind === 'short' && v.parent_id ? listShorts(v.parent_id) : []
+    if (!v.video_path && siblings.some((s) => s.id !== v.id && s.created_at > v.created_at)) {
+      deleteVideo(v.id)
+    }
   }
   pipeline.refreshAllShortThumbs()
   registerIpc(pipeline, scheduler, applySettings)

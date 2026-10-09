@@ -376,6 +376,13 @@ export class Scheduler {
     }
     if (job.type === 'thumbnail') this.opts.onThumbnails?.(video.id)
     if (!job.chain && video.thumbnail_paths.length) {
+      // A scheduled video rendered again (not uploaded yet) keeps its slot and its upload.
+      if (job.type === 'render' && getState(`keepSchedule.${video.id}`, false)) {
+        setState(`keepSchedule.${video.id}`, false)
+        updateVideo(video.id, { status: 'SCHEDULED' })
+        enqueueJob(video.id, 'upload', 'night')
+        return
+      }
       // Re-render requested from the final review: go straight back to it.
       updateVideo(video.id, { status: 'FINAL_REVIEW' })
       return

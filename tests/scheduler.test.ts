@@ -11,7 +11,7 @@ import {
   updateJob,
   updateVideo
 } from '../electron/db/repo'
-import { setSettings } from '../electron/db/settings'
+import { setSettings, setState } from '../electron/db/settings'
 import { Scheduler, type QueueEvent } from '../electron/queue/scheduler'
 import type { Step } from '../electron/steps/types'
 import { freshDb, waitFor } from './helpers'
@@ -227,6 +227,22 @@ describe('scheduler', () => {
     expect(getJob(job.id).status).toBe('pending')
     expect(getJob(job.id).attempts).toBe(0)
     expect(getVideo(v.id).status).toBe('SCHEDULED')
+  })
+
+  it('puts a scheduled video rendered again back in its slot with its upload', async () => {
+    const s = makeScheduler()
+    const v = createVideo({ topic: 'A', durationMin: 1, synthetic: true })
+    updateVideo(v.id, {
+      status: 'SCHEDULED',
+      scheduled_at: '2026-10-20T18:00:00.000Z',
+      thumbnail_paths: ['t.png']
+    })
+    setState(`keepSchedule.${v.id}`, true)
+    enqueueJob(v.id, 'render', 'now', 10, false)
+    await drain(s)
+    expect(getVideo(v.id).status).toBe('SCHEDULED')
+    expect(getVideo(v.id).scheduled_at).toBe('2026-10-20T18:00:00.000Z')
+    expect(jobsForVideo(v.id).some((j) => j.type === 'upload' && j.status === 'pending')).toBe(true)
   })
 
   it('pauses and resumes', async () => {

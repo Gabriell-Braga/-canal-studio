@@ -170,6 +170,8 @@ export interface RenderJob {
   stills?: { props: ThumbnailProps; out: string }[]
   intro?: ChannelIntroProps
   concurrency?: number
+  /** Short jobs: image scenes carry their crop focus (older shorts render again to get it) */
+  framed?: boolean
 }
 
 /** Black screen with only the music after the narration, for YouTube's end screen (5–20 s). */

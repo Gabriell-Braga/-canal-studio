@@ -122,7 +122,8 @@ function readShortJob(short: Video): (RenderJob & { short: ShortProps }) | null 
 
 /**
  * Finished shorts whose end card shows another thumbnail than the one picked, or an older
- * version of it. Shorts already on YouTube are left alone: their video can't be replaced.
+ * version of it, or whose images were cropped at the center before framing existed.
+ * Shorts already on YouTube are left alone: their video can't be replaced.
  */
 export function staleShorts(parent: Video): Video[] {
   const thumb = chosenThumb(parent)
@@ -131,12 +132,30 @@ export function staleShorts(parent: Video): Video[] {
     if (short.youtube_id || !isValidFile(short.video_path, 100_000)) return false
     const job = readShortJob(short)
     if (!job) return false
+    if (!job.framed) return true
     if (job.short.cta.thumbnail !== url(job.root, thumb)) return true
     return statSync(thumb).mtimeMs > statSync(short.video_path as string).mtimeMs
   })
 }
 
-/** Render the stale shorts again with the picked thumbnail; the cut stays the same. */
+/** Image scenes of a short job with their crop focus (see focus.ts). */
+async function framedScenes(
+  job: RenderJob & { short: ShortProps },
+  ctx: StepContext
+): Promise<ShortProps['scenes']> {
+  return Promise.all(
+    job.short.scenes.map(async (sc) => {
+      if (sc.type !== 'image' || sc.focus) return sc
+      const file = join(
+        job.root,
+        ...sc.src.replace('{{root}}/', '').split('/').map(decodeURIComponent)
+      )
+      return { ...sc, focus: await sceneFocus(file, ctx) }
+    })
+  )
+}
+
+/** Render the stale shorts again with the picked thumbnail and framing; the cut stays the same. */
 async function refreshEndCards(parent: Video, ctx: StepContext, share: number): Promise<number> {
   const stale = staleShorts(parent)
   const thumb = chosenThumb(parent)
@@ -148,13 +167,18 @@ async function refreshEndCards(parent: Video, ctx: StepContext, share: number): 
     const out = short.video_path as string
     // Render beside the old file and swap at the end, so a pending upload never sees half a file.
     const tmp = out.replace(/\.mp4$/, '.new.mp4')
-    ctx.log(`Atualizando a thumbnail no final do short "${short.title}"`)
+    ctx.log(`Atualizando o short "${short.title}" (thumbnail do final e enquadramento)`)
     try {
       await runRender(
         {
           ...job,
           out: tmp,
-          short: { ...job.short, cta: { ...job.short.cta, thumbnail: url(job.root, thumb) } }
+          framed: true,
+          short: {
+            ...job.short,
+            scenes: await framedScenes(job, ctx),
+            cta: { ...job.short.cta, thumbnail: url(job.root, thumb) }
+          }
         },
         join(dirname(out), `short_${short.id}.json`),
         { progress: (p) => ctx.progress((share * (k + p)) / stale.length), signal: ctx.signal }
@@ -195,8 +219,9 @@ export const shortsStep: Step = {
     if (scenes.length < 2) throw new Error('Cenas sem tempo ou mídia; refaça as etapas do vídeo')
     const count = Math.max(1, Math.min(5, Number(ctx.jobArgs?.count) || s.shortsCount))
     // A crash mid-render leaves shorts without a file; drop them before cutting again.
+    // A failed short is replaced by the new cut too.
     for (const old of listShorts(videoId)) {
-      if (old.status === 'RENDERING' && !old.video_path) deleteVideo(old.id)
+      if (['RENDERING', 'ERROR'].includes(old.status) && !old.video_path) deleteVideo(old.id)
     }
     const existing = listShorts(videoId)
 
@@ -321,7 +346,7 @@ Return ONLY JSON: {"segments": [...]}`,
       )
       try {
         await runRender(
-          { mode: 'short', root, out, short: props },
+          { mode: 'short', root, out, short: props, framed: true },
           join(dir, `short_${short.id}.json`),
           {
             progress: (p) => ctx.progress(0.15 + (0.85 * (k + p)) / segments.length),

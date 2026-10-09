@@ -1,4 +1,4 @@
-import { mkdirSync, utimesSync, writeFileSync } from 'fs'
+import { mkdirSync, readFileSync, utimesSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createShort, createVideo, getVideo, jobsForVideo, updateVideo } from '../electron/db/repo'
@@ -75,7 +75,7 @@ describe('shorts show the picked thumbnail', () => {
     const out = join(dir, 'shorts', `short_${short}.mp4`)
     writeFileSync(out, Buffer.alloc(200_000))
     utimesSync(out, new Date(), new Date(Date.now() + 60_000))
-    const job = { root: dir, short: { cta: { thumbnail: '{{root}}/thumb_1.png' } } }
+    const job = { root: dir, framed: true, short: { cta: { thumbnail: '{{root}}/thumb_1.png' } } }
     writeFileSync(join(dir, 'shorts', `short_${short}.json`), JSON.stringify(job))
     updateVideo(short, { video_path: out })
     return { id, short }
@@ -89,6 +89,16 @@ describe('shorts show the picked thumbnail', () => {
     const pipeline = new Pipeline(scheduler)
     pipeline.refreshShortThumbs(id)
     expect(jobsForVideo(id).find((j) => j.type === 'short')?.args).toEqual({ refresh: true })
+  })
+
+  it('renders again shorts cut before the crop followed the subject', () => {
+    const { id, short } = setup()
+    const file = join(dir, 'shorts', `short_${short}.json`)
+    writeFileSync(
+      file,
+      JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), framed: undefined })
+    )
+    expect(staleShorts(getVideo(id)).map((s) => s.id)).toEqual([short])
   })
 
   it('leaves shorts already on YouTube alone', () => {

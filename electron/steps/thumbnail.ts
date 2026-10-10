@@ -171,7 +171,8 @@ Story excerpt: ${story}
 First pick "company": the best-known company or brand at the heart of this story (e.g. "Amazon", "Nokia", "Blockbuster"), the one name viewers already recognize. Empty string only if no company is involved at all.
 
 Give 4 different thumbnail concepts. Each concept is ONE quick message plus ONE image that sells it.
-The image does NOT have to appear in the video: prefer a strong symbol or metaphor (an empty chair, a cracked crown, a sinking ship at night, a burning map) over a literal scene.
+The FIRST concept's image is the company's iconic product, weathered to tell the story (Blockbuster: a dusty VHS tape; Nokia: a cracked old brick phone; Kodak: a faded film roll). One product, close up, no readable logos. Skip this only when there is no company.
+For the others the image does NOT have to appear in the video: prefer a strong symbol or metaphor (an empty chair, a cracked crown, a sinking ship at night, a burning map) over a literal scene.
 - "text": 2 to 4 words, punchy, creates curiosity, no clickbait lies, no emojis, no quotes. Use different angles (mystery, number/fact, emotion, consequence). EVERY text must contain the company name: a familiar name gets the click (our best video: "Amazon Before Amazon").
 - "image": English prompt for an AI image generator: one clear subject, dramatic lighting, high contrast, subject on the right third with dark empty space on the left for text. No text or letters in the image.
 - "search": 1 to 3 plain English words to find a matching photo in a stock photo library (e.g. "abandoned throne", "storm ocean").

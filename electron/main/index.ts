@@ -373,9 +373,9 @@ app.whenReady().then(async () => {
     console.log(`Re-render for framing: ${count} video(s)`)
     setState('reprocess.focus', true)
   }
-  // Once: thumbnails now name the company of the story. Videos not public yet get new ones;
-  // those already on YouTube get the new thumbnail sent there.
-  if (!getState('reprocess.thumbCompany', false) && process.env.CANAL_FAKE_STEPS !== '1') {
+  // Once: thumbnails now name the company of the story and show its product. Videos not
+  // public yet get new ones; those already on YouTube get the new thumbnail sent there.
+  if (!getState('reprocess.thumbProduct', false) && process.env.CANAL_FAKE_STEPS !== '1') {
     let count = 0
     for (const v of [...videosByStatus('FINAL_REVIEW'), ...videosByStatus('SCHEDULED')]) {
       if (v.kind !== 'long' || !v.thumbnail_paths.length) continue
@@ -383,7 +383,7 @@ app.whenReady().then(async () => {
       count++
     }
     console.log(`New company thumbnails: ${count} video(s)`)
-    setState('reprocess.thumbCompany', true)
+    setState('reprocess.thumbProduct', true)
   }
   // A short whose render failed and that a later cut already replaced is left over: drop it.
   for (const v of videosByStatus('ERROR')) {

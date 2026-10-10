@@ -105,8 +105,21 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
               transform: 'rotate(-2deg)'
             }}
           >
+            {/* Inline with cloned padding: when the head wraps, the band hugs each line instead of the widest box. */}
             {head && (
-              <span style={{ background: '#000', color: '#fff', padding: '8px 22px' }}>{head}</span>
+              <div style={{ lineHeight: 1.2 }}>
+                <span
+                  style={{
+                    background: '#000',
+                    color: '#fff',
+                    padding: '0 22px',
+                    WebkitBoxDecorationBreak: 'clone',
+                    boxDecorationBreak: 'clone'
+                  }}
+                >
+                  {head}
+                </span>
+              </div>
             )}
             <span style={{ background: colors[1], color: '#000', padding: '8px 22px' }}>
               {tail}

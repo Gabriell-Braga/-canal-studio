@@ -18,6 +18,7 @@ import { closeDb, openDb } from '../db'
 import {
   changes,
   deleteVideo,
+  enqueueJob,
   findVideo,
   listChannels,
   listShorts,
@@ -371,6 +372,18 @@ app.whenReady().then(async () => {
     }
     console.log(`Re-render for framing: ${count} video(s)`)
     setState('reprocess.focus', true)
+  }
+  // Once: thumbnails now name the company of the story. Videos not public yet get new ones;
+  // those already on YouTube get the new thumbnail sent there.
+  if (!getState('reprocess.thumbCompany', false) && process.env.CANAL_FAKE_STEPS !== '1') {
+    let count = 0
+    for (const v of [...videosByStatus('FINAL_REVIEW'), ...videosByStatus('SCHEDULED')]) {
+      if (v.kind !== 'long' || !v.thumbnail_paths.length) continue
+      enqueueJob(v.id, 'thumbnail', 'now', 5, false, { keepStatus: true })
+      count++
+    }
+    console.log(`New company thumbnails: ${count} video(s)`)
+    setState('reprocess.thumbCompany', true)
   }
   // A short whose render failed and that a later cut already replaced is left over: drop it.
   for (const v of videosByStatus('ERROR')) {

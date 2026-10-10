@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Scene } from '../shared/types'
 import { buildChapters, timestamp } from '../electron/steps/metadata'
 import { aiIndexes } from '../electron/steps/scenes'
-import { clampWords, layoutFor } from '../electron/steps/thumbnail'
+import { clampWords, layoutFor, withCompany } from '../electron/steps/thumbnail'
 import { thumbKindOf } from '../shared/render'
 import { toPhrases } from '../remotion/Video'
 
@@ -37,6 +37,9 @@ describe('pipeline helpers', () => {
     expect(clampWords('The Last Voyage of the Octavius')).toBe('The Last Voyage')
     expect(clampWords('"Frozen in Time"')).toBe('Frozen in Time')
     expect(clampWords('Crew Still At Their Posts')).toBe('Crew Still')
+    expect(withCompany('Amazon Before Amazon', 'Amazon')).toBe('Amazon Before Amazon')
+    expect(withCompany('The Fatal Mistake', 'Nokia')).toBe('Nokia The Fatal Mistake')
+    expect(withCompany('Gone Overnight', '')).toBe('Gone Overnight')
   })
 
   it('labels thumbnail options by source and varies their layout', () => {

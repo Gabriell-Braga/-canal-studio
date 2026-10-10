@@ -15,6 +15,7 @@ import { prepareComfy } from './scenes'
 import type { Step, StepContext } from './types'
 
 const conceptsSchema = z.object({
+  company: z.string().default(''),
   concepts: z
     .array(
       z.object({ text: z.string().min(1), image: z.string().min(1), search: z.string().min(1) })
@@ -73,6 +74,13 @@ export function clampWords(text: string): string {
     words.pop()
   }
   return words.join(' ')
+}
+
+/** Headline that names the company: a known name sells the click. Prepended when the LLM left it out. */
+export function withCompany(text: string, company: string): string {
+  const clamped = clampWords(text)
+  if (!company || clamped.toLowerCase().includes(company.toLowerCase())) return clamped
+  return clampWords(`${company} ${text}`)
 }
 
 /**
@@ -156,20 +164,22 @@ export const thumbnailStep: Step = {
       .map((sc) => sc.narration)
       .join(' ')
       .slice(0, 1500)
-    const { concepts } = await generateStructured(
+    const { company, concepts } = await generateStructured(
       `You design YouTube thumbnails for a documentary video titled "${video.title ?? video.topic}" about: ${video.topic}.
 Story excerpt: ${story}
 
+First pick "company": the best-known company or brand at the heart of this story (e.g. "Amazon", "Nokia", "Blockbuster"), the one name viewers already recognize. Empty string only if no company is involved at all.
+
 Give 4 different thumbnail concepts. Each concept is ONE quick message plus ONE image that sells it.
 The image does NOT have to appear in the video: prefer a strong symbol or metaphor (an empty chair, a cracked crown, a sinking ship at night, a burning map) over a literal scene.
-- "text": 2 to 4 words, punchy, creates curiosity, no clickbait lies, no emojis, no quotes. Use different angles (mystery, number/fact, emotion, consequence).
+- "text": 2 to 4 words, punchy, creates curiosity, no clickbait lies, no emojis, no quotes. Use different angles (mystery, number/fact, emotion, consequence). EVERY text must contain the company name: a familiar name gets the click (our best video: "Amazon Before Amazon").
 - "image": English prompt for an AI image generator: one clear subject, dramatic lighting, high contrast, subject on the right third with dark empty space on the left for text. No text or letters in the image.
 - "search": 1 to 3 plain English words to find a matching photo in a stock photo library (e.g. "abandoned throne", "storm ocean").
-Return ONLY JSON: {"concepts": [{"text": "...", "image": "...", "search": "..."}, ...]}`,
+Return ONLY JSON: {"company": "...", "concepts": [{"text": "...", "image": "...", "search": "..."}, ...]}`,
       conceptsSchema,
       { settings: s, signal: ctx.signal, temperature: 0.9 }
     )
-    const texts = concepts.map((c) => clampWords(c.text))
+    const texts = concepts.map((c) => withCompany(c.text, company.trim()))
     ctx.progress(0.1)
 
     const backgrounds: Background[] = []

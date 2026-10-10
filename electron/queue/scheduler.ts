@@ -269,7 +269,7 @@ export class Scheduler {
     this.setBusy(true)
     const attempt = job.attempts + 1
     updateJob(job.id, { status: 'running', started_at: now(), attempts: attempt, progress: 0 })
-    if (step.status && step.status !== 'SCHEDULED') {
+    if (step.status && step.status !== 'SCHEDULED' && !job.args?.keepStatus) {
       updateVideo(job.video_id, { status: step.status, error_message: null, error_step: null })
     }
     const log = (message: string, level: 'info' | 'warn' | 'error' = 'info'): void =>
@@ -375,6 +375,11 @@ export class Scheduler {
       return
     }
     if (job.type === 'thumbnail') this.opts.onThumbnails?.(video.id)
+    // New thumbnails for a video already approved: it keeps its status, YouTube gets the new one.
+    if (job.type === 'thumbnail' && job.args?.keepStatus) {
+      if (video.youtube_id) enqueueJob(video.id, 'upload', 'now')
+      return
+    }
     if (!job.chain && video.thumbnail_paths.length) {
       // A scheduled video rendered again (not uploaded yet) keeps its slot and its upload.
       if (job.type === 'render' && getState(`keepSchedule.${video.id}`, false)) {

@@ -3,8 +3,10 @@ import {
   MAX_SEGMENT,
   MIN_SEGMENT,
   evenSegments,
+  extendSegment,
   normalizeSegments,
   remapTime,
+  spokenLength,
   tightCuts
 } from '../electron/steps/shorts'
 
@@ -74,5 +76,23 @@ describe('tightCuts', () => {
     expect(remapTime(cuts, 2)).toBeCloseTo(1.24)
     expect(remapTime(cuts, 3)).toBeCloseTo(1.36)
     expect(remapTime(cuts, 5)).toBeCloseTo(2.16)
+  })
+})
+
+describe('extendSegment', () => {
+  // Scenes of 12 s each with one word per second and a 2 s pause at the end of each scene.
+  const words = Array.from({ length: 360 }, (_, i) => ({ start: i, end: i + 0.8 })).filter(
+    (w) => w.start % 12 < 10
+  )
+  const length = (a: number, b: number): number => spokenLength(words, a, b)
+
+  it('adds following scenes until the cut lasts its old length again', () => {
+    const longer = extendSegment(scenes, 24, 60, 36, [], length)
+    expect(longer).toEqual({ last: 5, end: 72 })
+    expect(length(24, 72)).toBeGreaterThanOrEqual(36)
+  })
+
+  it('stops before scenes another short uses', () => {
+    expect(extendSegment(scenes, 24, 60, 36, [[60, 84]], length)).toBeNull()
   })
 })

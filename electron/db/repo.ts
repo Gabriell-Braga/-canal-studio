@@ -209,6 +209,7 @@ export interface VideoFields extends VideoPatch {
   error_step?: JobType | null
   review_alerts?: Video['review_alerts']
   title_options?: string[]
+  short_end?: number | null
 }
 
 const jsonColumns: Record<string, string> = {

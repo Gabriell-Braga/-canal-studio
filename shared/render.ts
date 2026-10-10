@@ -178,6 +178,8 @@ export interface RenderJob {
   concurrency?: number
   /** Short jobs: image scenes carry their crop focus (older shorts render again to get it) */
   framed?: boolean
+  /** Short jobs: cut with its pauses shrunk and scenes added back up to its old length */
+  extended?: boolean
 }
 
 /** Black screen with only the music after the narration, for YouTube's end screen (5–20 s). */

@@ -78,6 +78,7 @@ describe('shorts show the picked thumbnail', () => {
     const job = {
       root: dir,
       framed: true,
+      extended: true,
       short: { cuts: [], cta: { thumbnail: '{{root}}/thumb_1.png' } }
     }
     writeFileSync(join(dir, 'shorts', `short_${short}.json`), JSON.stringify(job))

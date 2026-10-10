@@ -171,7 +171,7 @@ Story excerpt: ${story}
 First pick "company": the best-known company or brand at the heart of this story (e.g. "Amazon", "Nokia", "Blockbuster"), the one name viewers already recognize. Empty string only if no company is involved at all.
 
 Give 4 different thumbnail concepts. Each concept is ONE quick message plus ONE image that sells it.
-The FIRST concept's image is the company's iconic product, weathered to tell the story (Blockbuster: a dusty VHS tape; Nokia: a cracked old brick phone; Kodak: a faded film roll). One product, close up, no readable logos. Skip this only when there is no company.
+The FIRST concept's image is the company's product that THIS story is about, as it looked back then, weathered to tell the story. Not the company's best-known product in general: Xerox giving away the personal computer is the Xerox Alto's 1970s three-button mouse, not a photocopier; Blockbuster losing to streaming is a dusty VHS tape; Nokia missing the smartphone is a cracked old brick phone. One product, close up, no readable logos. Skip this only when there is no company.
 For the others the image does NOT have to appear in the video: prefer a strong symbol or metaphor (an empty chair, a cracked crown, a sinking ship at night, a burning map) over a literal scene.
 - "text": 2 to 4 words, punchy, creates curiosity, no clickbait lies, no emojis, no quotes. Use different angles (mystery, number/fact, emotion, consequence). EVERY text must contain the company name: a familiar name gets the click (our best video: "Amazon Before Amazon").
 - "image": English prompt for an AI image generator: one clear subject, dramatic lighting, high contrast, subject on the right third with dark empty space on the left for text. No text or letters in the image.
@@ -283,7 +283,7 @@ Return ONLY JSON: {"company": "...", "concepts": [{"text": "...", "image": "..."
     }
 
     // "highlight" turns every image into the highlight style; "mixed" adds two of them.
-    // Each highlight comes twice: without text and with the headline.
+    // Always with the headline: the version without text never got picked.
     const highlightAll = s.thumbStyle === 'highlight'
     const highlightOf = new Set<Background>()
     if (s.thumbStyle !== 'text') {
@@ -301,7 +301,6 @@ Return ONLY JSON: {"company": "...", "concepts": [{"text": "...", "image": "..."
             cutout: url(ctx.projectDir, cut.file),
             textSide: cut.textSide
           }
-          add('highlight', { ...props, text: '' })
           add('glow', { ...props, text: b.text })
         }
       }

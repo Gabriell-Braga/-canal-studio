@@ -13,6 +13,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import windowIcon from '../../resources/icon.ico?asset'
+import { thumbKindOf } from '../../shared/render'
 import type { Settings } from '../../shared/types'
 import { closeDb, openDb } from '../db'
 import {
@@ -384,6 +385,20 @@ app.whenReady().then(async () => {
     }
     console.log(`New company thumbnails: ${count} video(s)`)
     setState('reprocess.thumbProduct', true)
+  }
+  // Thumbnails without text are no longer made: drop them from videos not public yet. A video
+  // that had one picked takes the same image with text, and YouTube gets it if uploaded.
+  for (const v of [...videosByStatus('FINAL_REVIEW'), ...videosByStatus('SCHEDULED')]) {
+    const keep = v.thumbnail_paths.filter((p) => thumbKindOf(p) !== 'highlight')
+    if (keep.length === v.thumbnail_paths.length) continue
+    const at = v.chosen_thumbnail ?? 0
+    const wasBare = thumbKindOf(v.thumbnail_paths[at] ?? '') === 'highlight'
+    const chosen = v.thumbnail_paths[wasBare ? at + 1 : at]
+    updateVideo(v.id, {
+      thumbnail_paths: keep,
+      chosen_thumbnail: Math.max(0, keep.indexOf(chosen))
+    })
+    if (wasBare && v.youtube_id) enqueueJob(v.id, 'upload', 'now')
   }
   // A short whose render failed and that a later cut already replaced is left over: drop it.
   for (const v of videosByStatus('ERROR')) {

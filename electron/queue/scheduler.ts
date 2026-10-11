@@ -6,6 +6,7 @@ import {
   findVideo,
   getJob,
   jobsByStatus,
+  listVideos,
   recentJobs,
   typicalJobSeconds,
   resetRunningJobs,
@@ -235,18 +236,24 @@ export class Scheduler {
   }
 
   /**
-   * Uploads go out in release order: while a video that publishes earlier still has its
-   * upload queued or running (quota retry included), later ones wait. Running out of quota
-   * then leaves the last days empty, never a day in the middle.
+   * Uploads go out in exactly the release order of the channel: a video waits while any
+   * video of the same channel that publishes earlier (same time: lower id) is not on
+   * YouTube yet, whatever its state: upload queued or out of quota, still rendering, in
+   * review or failed. Running out of quota then leaves the last days empty, never a day in
+   * the middle, and a stuck video holds the ones after it until it is fixed or unscheduled.
    */
   private waitsForEarlier(videoId: number): boolean {
-    const at = findVideo(videoId)?.scheduled_at
-    if (!at) return false
-    return [...jobsByStatus('pending'), ...jobsByStatus('running')].some((j) => {
-      if (j.type !== 'upload' || j.video_id === videoId) return false
-      const other = findVideo(j.video_id)?.scheduled_at
-      return !!other && other < at
-    })
+    const v = findVideo(videoId)
+    const at = v?.scheduled_at
+    if (!v || !at) return false
+    return listVideos(v.channel_id).some(
+      (o) =>
+        o.id !== v.id &&
+        !o.youtube_id &&
+        o.status !== 'PUBLISHED' &&
+        !!o.scheduled_at &&
+        (o.scheduled_at < at || (o.scheduled_at === at && o.id < v.id))
+    )
   }
 
   /** A video counts against the nightly limit when its first production step starts. */

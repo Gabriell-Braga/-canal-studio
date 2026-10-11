@@ -36,6 +36,7 @@ function fakeStep(type: JobType, status: Step['status'], ms = 30): Step {
           failTimes[type]!--
           throw new Error(`${type} broke`)
         }
+        if (type === 'upload') updateVideo(_videoId, { youtube_id: `yt${_videoId}` })
       } finally {
         concurrentGpu--
       }
@@ -197,6 +198,24 @@ describe('scheduler', () => {
     expect(getJob(lateJob.id).status).toBe('pending')
 
     clock = new Date(2026, 9, 7, 12, 0)
+    await drain(s)
+    expect(getJob(earlyJob.id).status).toBe('done')
+    expect(getJob(lateJob.id).status).toBe('done')
+  })
+
+  it('holds an upload while an earlier video of the channel is not on YouTube yet', async () => {
+    const s = makeScheduler()
+    const early = createVideo({ topic: 'E', durationMin: 1, synthetic: true })
+    const late = createVideo({ topic: 'L', durationMin: 1, synthetic: true })
+    // The earlier one is still in final review: no upload job at all.
+    updateVideo(early.id, { status: 'FINAL_REVIEW', scheduled_at: '2026-10-10T18:00:00.000Z' })
+    updateVideo(late.id, { status: 'SCHEDULED', scheduled_at: '2026-10-11T18:00:00.000Z' })
+    const lateJob = enqueueJob(late.id, 'upload', 'now')
+    await drain(s)
+    expect(getJob(lateJob.id).status).toBe('pending')
+
+    updateVideo(early.id, { status: 'SCHEDULED' })
+    const earlyJob = enqueueJob(early.id, 'upload', 'now')
     await drain(s)
     expect(getJob(earlyJob.id).status).toBe('done')
     expect(getJob(lateJob.id).status).toBe('done')

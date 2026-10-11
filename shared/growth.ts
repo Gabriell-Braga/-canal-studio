@@ -21,6 +21,8 @@ export const THUMB = {
   },
   /** Black outline width around the headline, px */
   stroke: 12,
+  /** Company logo on its white plate, px (720 px tall frame) */
+  logo: { height: 140, maxWidth: 440 },
   /** Brighter, more saturated background: dark thumbnails disappear in the mobile feed */
   photoFilter: 'brightness(1.12) saturate(1.45) contrast(1.12)',
   /** Mobile feed size used by the readability preview */

@@ -90,13 +90,16 @@ function Logo({ src }: { src: string }): React.JSX.Element {
     <div
       style={{
         background: '#fff',
-        borderRadius: 18,
-        padding: '14px 22px',
+        borderRadius: 24,
+        padding: '18px 30px',
         boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
         display: 'flex'
       }}
     >
-      <Img src={src} style={{ height: 84, maxWidth: 260, objectFit: 'contain' }} />
+      <Img
+        src={src}
+        style={{ height: THUMB.logo.height, maxWidth: THUMB.logo.maxWidth, objectFit: 'contain' }}
+      />
     </div>
   )
 }

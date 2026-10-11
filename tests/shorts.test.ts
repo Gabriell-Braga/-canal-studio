@@ -41,10 +41,10 @@ describe('short segments', () => {
   })
 
   it('drops overlapping picks and clamps indexes', () => {
-    const out = normalizeSegments(scenes, [pick(3, 5), pick(4, 6), pick(40, 50)], 3)
+    const out = normalizeSegments(scenes, [pick(3, 4), pick(4, 5), pick(40, 50)], 3)
     expect(out.map((s) => [s.first, s.last])).toEqual(
       [
-        [3, 5],
+        [3, 4],
         [29, 29]
       ].slice(0, out.length)
     )
@@ -87,12 +87,12 @@ describe('extendSegment', () => {
   const length = (a: number, b: number): number => spokenLength(words, a, b)
 
   it('adds following scenes until the cut lasts its old length again', () => {
-    const longer = extendSegment(scenes, 24, 60, 36, [], length)
-    expect(longer).toEqual({ last: 5, end: 72 })
-    expect(length(24, 72)).toBeGreaterThanOrEqual(36)
+    const longer = extendSegment(scenes, 24, 48, 28, [], length)
+    expect(longer).toEqual({ last: 4, end: 60 })
+    expect(length(24, 60)).toBeGreaterThanOrEqual(28)
   })
 
   it('stops before scenes another short uses', () => {
-    expect(extendSegment(scenes, 24, 60, 36, [[60, 84]], length)).toBeNull()
+    expect(extendSegment(scenes, 24, 48, 28, [[48, 60]], length)).toBeNull()
   })
 })

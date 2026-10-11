@@ -106,6 +106,22 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
     }
   }
 
+  async function suggest(): Promise<void> {
+    setBusy(true)
+    try {
+      const ideas = await api.videos.suggestTopics(channel.id)
+      setText((t) => [t.trim(), ...ideas].filter(Boolean).join('\n'))
+      setMessage({
+        kind: 'info',
+        text: `${ideas.length} sugestão(ões). Apague as que não quiser e clique em Adicionar.`
+      })
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function generate(): Promise<void> {
     try {
       const n = await api.videos.generateScripts(channel.id)
@@ -186,6 +202,9 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
           />
           <Button data-testid="add-topics" onClick={addTopics} disabled={busy || !text.trim()}>
             <Plus size={16} /> Adicionar
+          </Button>
+          <Button data-testid="suggest-topics" onClick={suggest} disabled={busy}>
+            <Sparkles size={16} /> {busy ? 'Pensando…' : 'Sugerir temas'}
           </Button>
         </div>
       </Card>

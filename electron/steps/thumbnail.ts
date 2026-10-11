@@ -1,72 +1,49 @@
-import { mkdirSync, readdirSync, rmSync } from 'fs'
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { join, relative } from 'path'
 import { z } from 'zod'
-import { THUMB_KIND_LABELS } from '../../shared/render'
-import type { TemplateId, ThumbKind, ThumbnailProps } from '../../shared/render'
+import { THUMB, TITLES, type ThumbApproach } from '../../shared/growth'
+import { THUMB_KIND_LABELS, formatUsd } from '../../shared/render'
+import type { ThumbnailProps } from '../../shared/render'
+import type { Video } from '../../shared/types'
 import { getVideo, listScenes, updateVideo } from '../db/repo'
 import { freeComfy, generateImage } from '../services/comfy'
 import { isValidFile, probeDuration, runTool } from '../services/ffmpeg'
-import { download } from '../services/pexels'
-import { pythonPost } from '../services/python'
-import { searchAll, usableProviders } from '../services/stock'
 import { generateStructured } from '../services/llm'
 import { runRender } from '../services/remotion'
+import { renderCompanies } from './overlays'
+import { polishSettings } from './polish'
 import { prepareComfy } from './scenes'
 import type { Step, StepContext } from './types'
 
-const conceptsSchema = z.object({
-  company: z.string().default(''),
-  concepts: z
-    .array(
-      z.object({ text: z.string().min(1), image: z.string().min(1), search: z.string().min(1) })
-    )
-    .min(3)
-    .max(6)
-})
+const APPROACHES = THUMB.approaches.map((a) => a.id) as [ThumbApproach, ...ThumbApproach[]]
 
-/** AI concept images per run (each takes a while on the GPU) and stock photos to look for */
-const AI_CONCEPTS = 3
-const STOCK_PICKS = 2
+const packSchema = z.object({
+  titles: z.array(z.string().min(1)).min(3).max(8),
+  thumbs: z
+    .array(
+      z.object({
+        approach: z.enum(APPROACHES),
+        text: z.string().min(1),
+        image: z.string().min(1),
+        image2: z.string().default('')
+      })
+    )
+    .min(APPROACHES.length)
+})
 
 function url(projectDir: string, file: string): string {
   return `{{root}}/${relative(projectDir, file).split('\\').join('/').split('/').map(encodeURIComponent).join('/')}`
 }
 
-const DANGLING = new Set([
-  'of',
-  'the',
-  'a',
-  'an',
-  'in',
-  'to',
-  'and',
-  'for',
-  'on',
-  'at',
-  'with',
-  'by',
-  'or',
-  'from',
-  'into',
-  'their',
-  'his',
-  'her',
-  'its',
-  'our',
-  'your',
-  'my',
-  'this',
-  'that',
-  'is',
-  'was',
-  'are',
-  'were',
-  'still'
-])
+const DANGLING = new Set(
+  'of the a an in to and for on at with by or from into their his her its our your my this that is was are were still'.split(
+    ' '
+  )
+)
 
 /** Keep the headline at 2–4 words without ending on "of", "the"… */
-export function clampWords(text: string): string {
-  const words = text.replace(/["“”]/g, '').split(/\s+/).filter(Boolean).slice(0, 4)
+export function clampWords(text: string, max = THUMB.maxWords): string {
+  const words = text.replace(/["“”]/g, '').split(/\s+/).filter(Boolean).slice(0, max)
   while (
     words.length > 2 &&
     DANGLING.has(words[words.length - 1].toLowerCase().replace(/\W/g, ''))
@@ -76,44 +53,27 @@ export function clampWords(text: string): string {
   return words.join(' ')
 }
 
-/** Headline that names the company: a known name sells the click. Prepended when the LLM left it out. */
-export function withCompany(text: string, company: string): string {
-  const clamped = clampWords(text)
-  if (!company || clamped.toLowerCase().includes(company.toLowerCase())) return clamped
-  return clampWords(`${company} ${text}`)
-}
-
 /**
- * Cut the main subject out of a background. Returns null (the thumbnail falls back to text)
- * when the cut fails or finds no clear subject: too small to read, or most of the frame.
+ * Title options as YouTube shows them: no quotes, at most TITLES.maxChars, never the worn-out
+ * "X did Y. Then Z." formula, no duplicates. Falls back to the shortened originals when the
+ * model ignored every rule.
  */
-async function cutoutFor(
-  background: string,
-  i: number,
-  dir: string,
-  ctx: StepContext
-): Promise<{ file: string; textSide: 'left' | 'right' } | null> {
-  try {
-    const out = join(dir, `cutout_${i + 1}.png`)
-    const { coverage, center_x } = await pythonPost<{ coverage: number; center_x?: number }>(
-      '/cutout',
-      { image_path: background, out_path: out },
-      ctx.signal
-    )
-    // Text on the side away from the subject; AI images put the subject on the right.
-    const textSide = (center_x ?? 1) < 0.5 ? 'right' : 'left'
-    if (coverage >= 0.03 && coverage <= 0.75) return { file: out, textSide }
-    ctx.log(`Thumbnail ${i + 1}: sem objeto claro para destacar`, 'warn')
-  } catch (error) {
-    ctx.log(
-      `Recorte da thumbnail ${i + 1} falhou (${(error as Error).message}); sem versão destaque`,
-      'warn'
-    )
+export function cleanTitles(titles: string[], max = TITLES.maxChars): string[] {
+  const trim = (t: string): string => {
+    const s = t.replace(/^["'“]|["'”]$/g, '').trim()
+    return s.length <= max ? s : s.slice(0, max).replace(/\s+\S*$/, '')
   }
-  return null
+  const seen = new Set<string>()
+  const ok = titles.map(trim).filter((t) => {
+    const key = t.toLowerCase()
+    if (!t || seen.has(key) || TITLES.banned.test(t)) return false
+    seen.add(key)
+    return true
+  })
+  return ok.length ? ok : titles.map(trim).slice(0, 3)
 }
 
-/** Frame from a video file or URL (ffmpeg reads HTTP directly, so stock clips need no download). */
+/** Frame from a video file (scene media), for when AI images are not available. */
 async function grabFrame(src: string, at: number, out: string, signal: AbortSignal): Promise<void> {
   await runTool(
     'ffmpeg',
@@ -123,222 +83,253 @@ async function grabFrame(src: string, at: number, out: string, signal: AbortSign
   if (!isValidFile(out)) throw new Error('quadro vazio')
 }
 
-/** One thumbnail background and where it came from. */
-interface Background {
-  file: string
-  kind: ThumbKind
-  /** Headline written for this image */
-  text: string
+/** Scene images to fall back on, spread over the video; video scenes give one frame each. */
+async function sceneBackgrounds(video: Video, dir: string, ctx: StepContext): Promise<string[]> {
+  const scenes = listScenes(video.id).filter((sc) => isValidFile(sc.asset_path))
+  const picks = [0.25, 0.5, 0.75, 0.9]
+    .map((f) => scenes[Math.floor(f * (scenes.length - 1))])
+    .filter((sc, i, all) => sc && all.indexOf(sc) === i)
+  const out: string[] = []
+  for (const [i, sc] of picks.entries()) {
+    const asset = sc.asset_path as string
+    if (sc.asset_type !== 'stock_video' && sc.asset_type !== 'ai_video') {
+      out.push(asset)
+      continue
+    }
+    const frame = join(dir, `bg_scene_${i}.jpg`)
+    try {
+      if (!isValidFile(frame)) {
+        await grabFrame(asset, Math.min(2, (await probeDuration(asset)) / 2), frame, ctx.signal)
+      }
+      out.push(frame)
+    } catch (error) {
+      if (ctx.signal.aborted) throw error
+    }
+  }
+  return out
+}
+
+/** The three thumbnails side by side at mobile feed size, to check they still read. */
+export async function mobilePreview(
+  files: string[],
+  out: string,
+  signal: AbortSignal
+): Promise<void> {
+  const { width, height } = THUMB.preview
+  const scaled = files.map(
+    (_, i) => `[${i}]scale=${width}:${height}:flags=lanczos,pad=iw+16:ih+16:8:8:white[s${i}]`
+  )
+  await runTool(
+    'ffmpeg',
+    [
+      '-y',
+      ...files.flatMap((f) => ['-i', f]),
+      '-filter_complex',
+      `${scaled.join(';')};${files.map((_, i) => `[s${i}]`).join('')}hstack=${files.length}`,
+      '-frames:v',
+      '1',
+      out
+    ],
+    signal
+  )
+}
+
+export interface Packaging {
+  titles: string[]
+  thumbs: { approach: ThumbApproach; text: string; file: string }[]
+  preview: string | null
 }
 
 /**
- * Layout per thumbnail, so neighbours in the grid never look alike:
- * 0 text left, 1 text right, 2 text top, 3 text in a color block, 4 split screen.
+ * Title options and one thumbnail per approach, designed together so the thumbnail text adds
+ * to the title instead of repeating it. Images go in the project's thumbs folder; the final
+ * PNGs in `outDir`.
  */
-export function layoutFor(kind: ThumbKind, n: number): number {
-  const byKind: Record<ThumbKind, number[]> = {
-    ai: [0, 3, 2],
-    stock: [1, 3, 0],
-    scene: [0, 2, 1],
-    split: [4],
-    highlight: [0],
-    glow: [0]
+export async function makePackaging(
+  video: Video,
+  ctx: StepContext,
+  outDir: string,
+  keepTitle?: string
+): Promise<Packaging> {
+  const dir = join(ctx.projectDir, 'thumbs')
+  mkdirSync(dir, { recursive: true })
+  mkdirSync(outDir, { recursive: true })
+  const s = ctx.settings
+
+  const companies = await renderCompanies(video, ctx)
+  const facts = companies
+    .filter((c) => c.values.length)
+    .map(
+      (c) =>
+        `${c.name} value by year (checked): ${c.values.map((v) => `${v.year} $${formatUsd(v.usd)}`).join(', ')}`
+    )
+    .join('\n')
+  const script = video.script
+  const story = [script?.hook, ...listScenes(video.id).map((sc) => sc.narration)]
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 3000)
+
+  ctx.log('Pensando em títulos e thumbnails')
+  const pack = await generateStructured(
+    `You package a YouTube business documentary for the mobile home feed: title + thumbnail. Topic: ${video.topic}.
+Story excerpt: ${story}
+${facts ? `\nFacts you may use for numbers:\n${facts}\n` : ''}
+1) "titles": ${TITLES.count} title options, each at most ${TITLES.maxChars} characters, each with a DIFFERENT structure:
+${TITLES.structures.map((t) => `- ${t}`).join('\n')}
+Prefer specific curiosity (numbers, dates, names) over generic phrases. Accurate, no clickbait lies, no emojis. ONE sentence per title: never the formula "X did Y. Then Z happened." or any title with two sentences. Best option first.
+${keepTitle ? `The video keeps its title: "${keepTitle}". The thumbnails must work with THAT title.\n` : ''}
+2) "thumbs": exactly ${APPROACHES.length} thumbnails, one per approach, in this order:
+${THUMB.approaches.map((a) => `- "${a.id}": ${a.brief}`).join('\n')}
+For each:
+- "text": 2 to ${THUMB.maxWords} words (a figure like "$250B → $0" counts as one idea). It must COMPLEMENT the ${keepTitle ? 'title' : 'first title'}, never repeat its words: if the title names the deal, the thumbnail shows the number; if the title asks why, the thumbnail shows the stakes. The company logo is shown next to it, so the text does not need the company name. No quotes, no emojis.
+- "image": English prompt for an AI image generator: ONE big, instantly recognizable subject (the company's real iconic product as it looked then, its storefront, or a famous object of the story), filling most of the frame, subject on the right half. No readable text or logos.
+- "image2": only for "contrast": the ruin version of the same subject (empty, broken, grey). "" otherwise.
+Return ONLY JSON: {"titles": [...], "thumbs": [{"approach": "...", "text": "...", "image": "...", "image2": "..."}]}`,
+    packSchema,
+    {
+      settings: { ...polishSettings(s), claudeModel: 'opus' },
+      signal: ctx.signal,
+      temperature: 0.9,
+      effort: 'medium'
+    }
+  )
+  const titles = cleanTitles(pack.titles)
+  const concepts = APPROACHES.map(
+    (id) => pack.thumbs.find((t) => t.approach === id) ?? { ...pack.thumbs[0], approach: id }
+  )
+  ctx.progress(0.15)
+
+  // AI images: one per thumbnail, two for the before/after split.
+  const images = new Map<string, string>()
+  const wanted = concepts.flatMap((c) => [
+    { key: c.approach, prompt: c.image },
+    ...(c.approach === 'contrast'
+      ? [{ key: 'contrast_2', prompt: c.image2 || `${c.image}, abandoned, ruined, grey` }]
+      : [])
+  ])
+  try {
+    await prepareComfy(s, ctx.signal)
+    for (const [i, w] of wanted.entries()) {
+      if (ctx.signal.aborted) throw new Error('Cancelado')
+      const out = join(dir, `bg_${w.key}.png`)
+      try {
+        await generateImage(`${w.prompt}, ${THUMB.imageStyle}`, out, s, { signal: ctx.signal })
+        images.set(w.key, out)
+      } catch (error) {
+        if (ctx.signal.aborted) throw error
+        ctx.log(`Imagem IA "${w.key}" da thumbnail falhou (${(error as Error).message})`, 'warn')
+      }
+      ctx.progress(0.15 + (0.6 * (i + 1)) / wanted.length)
+    }
+  } catch (error) {
+    if (ctx.signal.aborted) throw error
+    ctx.log(`Imagens IA da thumbnail indisponíveis (${(error as Error).message})`, 'warn')
+  } finally {
+    await freeComfy(s.comfyUrl)
   }
-  const options = byKind[kind]
-  return options[n % options.length]
+  const fallback = images.size < wanted.length ? await sceneBackgrounds(video, dir, ctx) : []
+  let next = 0
+  const imageFor = (key: string): string => {
+    const file = images.get(key) ?? fallback[next++ % Math.max(1, fallback.length)]
+    if (!file) throw new Error('Sem imagens para o fundo da thumbnail')
+    return file
+  }
+
+  const logo = companies.find((c) => c.logo)?.logo ?? null
+  const stills = concepts.map((c, i) => {
+    const props: ThumbnailProps = {
+      approach: c.approach,
+      background: url(ctx.projectDir, imageFor(c.approach)),
+      background2: c.approach === 'contrast' ? url(ctx.projectDir, imageFor('contrast_2')) : null,
+      text: clampWords(c.text),
+      logo
+    }
+    return { out: join(outDir, `thumb_${i + 1}_${c.approach}.png`), props }
+  })
+  await runRender(
+    { mode: 'stills', root: ctx.projectDir, out: '', stills },
+    join(ctx.projectDir, 'thumb-job.json'),
+    { progress: (p) => ctx.progress(0.8 + 0.15 * p), log: (m) => ctx.log(m), signal: ctx.signal }
+  )
+  const preview = join(outDir, 'preview_mobile.png')
+  try {
+    await mobilePreview(
+      stills.map((st) => st.out),
+      preview,
+      ctx.signal
+    )
+  } catch (error) {
+    if (ctx.signal.aborted) throw error
+    ctx.log(`Prévia mobile falhou (${(error as Error).message})`, 'warn')
+  }
+  return {
+    titles,
+    thumbs: stills.map((st) => ({
+      approach: st.props.approach,
+      text: st.props.text,
+      file: st.out
+    })),
+    preview: isValidFile(preview) ? preview : null
+  }
 }
 
+/** Plain-text summary of a packaging run, written next to exported thumbnails. */
+export function packagingText(video: Video, pack: Packaging): string {
+  return [
+    `Vídeo: ${video.title ?? video.topic}`,
+    video.youtube_id ? `YouTube: https://youtu.be/${video.youtube_id}` : '',
+    '',
+    `Títulos (até ${TITLES.maxChars} caracteres, melhor primeiro):`,
+    ...pack.titles.map((t, i) => `${i + 1}. ${t} (${t.length})`),
+    '',
+    'Thumbnails (para "Testar e comparar"):',
+    ...pack.thumbs.map(
+      (t) => `- ${t.file.split(/[\\/]/).pop()}: ${THUMB_KIND_LABELS[t.approach]} — "${t.text}"`
+    )
+  ]
+    .filter((l, i, all) => l || all[i - 1])
+    .join('\n')
+}
+
+/**
+ * Title options and three thumbnails (shocking number, product, before/after). With
+ * `exportDir` in the job args, writes them there with a titles file and leaves the video alone.
+ */
 export const thumbnailStep: Step = {
   type: 'thumbnail',
   status: 'THUMBNAIL',
   async run(videoId, ctx) {
     const video = getVideo(videoId)
-    const s = ctx.settings
+    if (!isValidFile(video.video_path, 100_000) && !video.youtube_id) {
+      throw new Error('Vídeo não renderizado')
+    }
+    const exportDir = ctx.jobArgs?.exportDir as string | undefined
+    if (exportDir) {
+      const pack = await makePackaging(video, ctx, exportDir)
+      writeFileSync(join(exportDir, 'titulos.txt'), packagingText(video, pack), 'utf8')
+      ctx.log(
+        `Exportado para ${exportDir}: ${pack.titles.length} títulos, ${pack.thumbs.length} thumbnails`
+      )
+      return
+    }
+    // A video already on YouTube keeps its title: the thumbnails are made for it.
+    const keepTitle = video.youtube_id ? (video.title ?? undefined) : undefined
     const dir = join(ctx.projectDir, 'thumbs')
-    mkdirSync(dir, { recursive: true })
-    if (!isValidFile(video.video_path, 100_000)) throw new Error('Vídeo não renderizado')
-
-    ctx.log('Pensando em ideias de thumbnail')
-    const scenes = listScenes(videoId)
-    const story = scenes
-      .map((sc) => sc.narration)
-      .join(' ')
-      .slice(0, 1500)
-    const { company, concepts } = await generateStructured(
-      `You design YouTube thumbnails for a documentary video titled "${video.title ?? video.topic}" about: ${video.topic}.
-Story excerpt: ${story}
-
-First pick "company": the best-known company or brand at the heart of this story (e.g. "Amazon", "Nokia", "Blockbuster"), the one name viewers already recognize. Empty string only if no company is involved at all.
-
-Give 4 different thumbnail concepts. Each concept is ONE quick message plus ONE image that sells it.
-The FIRST concept's image is the company's product that THIS story is about, as it looked back then, weathered to tell the story. Not the company's best-known product in general: Xerox giving away the personal computer is the Xerox Alto's 1970s three-button mouse, not a photocopier; Blockbuster losing to streaming is a dusty VHS tape; Nokia missing the smartphone is a cracked old brick phone. One product, close up, no readable logos. Skip this only when there is no company.
-For the others the image does NOT have to appear in the video: prefer a strong symbol or metaphor (an empty chair, a cracked crown, a sinking ship at night, a burning map) over a literal scene.
-- "text": 2 to 4 words, punchy, creates curiosity, no clickbait lies, no emojis, no quotes. Use different angles (mystery, number/fact, emotion, consequence). EVERY text must contain the company name: a familiar name gets the click (our best video: "Amazon Before Amazon").
-- "image": English prompt for an AI image generator: one clear subject, dramatic lighting, high contrast, subject on the right third with dark empty space on the left for text. No text or letters in the image.
-- "search": 1 to 3 plain English words to find a matching photo in a stock photo library (e.g. "abandoned throne", "storm ocean").
-Return ONLY JSON: {"company": "...", "concepts": [{"text": "...", "image": "...", "search": "..."}, ...]}`,
-      conceptsSchema,
-      { settings: s, signal: ctx.signal, temperature: 0.9 }
-    )
-    const texts = concepts.map((c) => withCompany(c.text, company.trim()))
-    ctx.progress(0.1)
-
-    const backgrounds: Background[] = []
-
-    // 1) Concept images made by AI: they do not need to exist in the video.
-    try {
-      await prepareComfy(s, ctx.signal)
-      for (const [i, c] of concepts.slice(0, AI_CONCEPTS).entries()) {
-        if (ctx.signal.aborted) throw new Error('Cancelado')
-        const out = join(dir, `bg_concept_${i + 1}.png`)
-        try {
-          await generateImage(`${c.image}, striking composition, empty space for text`, out, s, {
-            signal: ctx.signal
-          })
-          backgrounds.push({ file: out, kind: 'ai', text: texts[i] })
-        } catch (error) {
-          if (ctx.signal.aborted) throw error
-          ctx.log(`Imagem IA ${i + 1} da thumbnail falhou (${(error as Error).message})`, 'warn')
-        }
-        ctx.progress(0.1 + (0.4 * (i + 1)) / AI_CONCEPTS)
-      }
-    } catch (error) {
-      if (ctx.signal.aborted) throw error
-      ctx.log(`Imagens IA da thumbnail indisponíveis (${(error as Error).message})`, 'warn')
-    } finally {
-      await freeComfy(s.comfyUrl)
-    }
-
-    // 2) Stock photos for the concept searches, never media already used in the video.
-    const used = new Set(scenes.map((sc) => sc.asset_source).filter(Boolean) as string[])
-    let stockFound = 0
-    for (const [i, c] of concepts.entries()) {
-      if (stockFound >= STOCK_PICKS || !usableProviders(s).length) break
-      try {
-        const found = await searchAll(c.search, 0, s, used, undefined, ctx.signal)
-        // Images whose license asks for credit are skipped: a thumbnail has nowhere to put it.
-        const pick =
-          found.find((f) => f.kind === 'stock_photo' && !f.credit) ??
-          found.find((f) => f.kind === 'stock_video' && !f.credit)
-        if (!pick) continue
-        used.add(pick.source)
-        const out = join(dir, `bg_stock_${i + 1}.jpg`)
-        if (pick.kind === 'stock_photo') await download(pick.url, out, ctx.signal)
-        else await grabFrame(pick.url, Math.min(2, (pick.duration ?? 4) / 2), out, ctx.signal)
-        backgrounds.push({ file: out, kind: 'stock', text: texts[i] })
-        stockFound++
-      } catch (error) {
-        if (ctx.signal.aborted) throw error
-        ctx.log(`Busca "${c.search}" para a thumbnail falhou (${(error as Error).message})`, 'warn')
-      }
-    }
-    ctx.progress(0.6)
-
-    // 3) Strong frames from the scene media (never from the final video, which has captions).
-    const candidates = scenes.filter((sc) => isValidFile(sc.asset_path)).slice(1)
-    const picks = [0.3, 0.65]
-      .map((f) => candidates[Math.floor(f * (candidates.length - 1))])
-      .filter((sc, i, all) => sc && all.indexOf(sc) === i)
-    for (const [i, scene] of picks.entries()) {
-      const asset = scene.asset_path as string
-      const text = texts[(i + 1) % texts.length]
-      if (scene.asset_type === 'stock_video' || scene.asset_type === 'ai_video') {
-        const frame = join(dir, `bg_scene_${i}.jpg`)
-        try {
-          if (!isValidFile(frame)) {
-            await grabFrame(asset, Math.min(2, (await probeDuration(asset)) / 2), frame, ctx.signal)
-          }
-          backgrounds.push({ file: frame, kind: 'scene', text })
-        } catch (error) {
-          if (ctx.signal.aborted) throw error
-          ctx.log(`Quadro da cena para a thumbnail falhou (${(error as Error).message})`, 'warn')
-        }
-      } else backgrounds.push({ file: asset, kind: 'scene', text })
-    }
-    if (!backgrounds.length) throw new Error('Sem imagens para o fundo da thumbnail')
-    ctx.progress(0.65)
-
-    const template = (video.template as TemplateId) ?? 'documentary'
-    const brand = {
-      primary: s.brandPrimary,
-      secondary: s.brandSecondary,
-      font: s.brandFont,
-      outline: s.brandOutline
-    }
-    const counts: Partial<Record<ThumbKind, number>> = {}
-    const plan: { kind: ThumbKind; props: ThumbnailProps }[] = []
-    const add = (
-      kind: ThumbKind,
-      props: {
-        background: string
-        background2?: string
-        text: string
-        cutout?: string
-        textSide?: 'left' | 'right'
-      }
-    ): void => {
-      const n = counts[kind] ?? 0
-      counts[kind] = n + 1
-      plan.push({ kind, props: { ...props, template, brand, variant: layoutFor(kind, n) } })
-    }
-
-    // "highlight" turns every image into the highlight style; "mixed" adds two of them.
-    // Always with the headline: the version without text never got picked.
-    const highlightAll = s.thumbStyle === 'highlight'
-    const highlightOf = new Set<Background>()
-    if (s.thumbStyle !== 'text') {
-      const wanted = highlightAll
-        ? backgrounds
-        : [backgrounds.find((b) => b.kind === 'ai'), backgrounds.find((b) => b.kind !== 'ai')]
-      for (const [i, b] of wanted.entries()) {
-        if (!b) continue
-        // No-text style: cut the subject out so only it gets the channel color.
-        const cut = await cutoutFor(b.file, i, dir, ctx)
-        if (cut) {
-          highlightOf.add(b)
-          const props = {
-            background: url(ctx.projectDir, b.file),
-            cutout: url(ctx.projectDir, cut.file),
-            textSide: cut.textSide
-          }
-          add('glow', { ...props, text: b.text })
-        }
-      }
-    }
-    for (const b of backgrounds) {
-      if (highlightAll && highlightOf.has(b)) continue
-      add(b.kind, { background: url(ctx.projectDir, b.file), text: b.text })
-    }
-    // Split screen: a concept image against a real one, with the message in the middle.
-    const left =
-      backgrounds.find((b) => b.kind === 'scene') ?? backgrounds.find((b) => b.kind === 'stock')
-    const right = backgrounds.find((b) => b.kind === 'ai' && b !== left)
-    if (!highlightAll && left && right) {
-      add('split', {
-        background: url(ctx.projectDir, right.file),
-        background2: url(ctx.projectDir, left.file),
-        text: texts[3] ?? right.text
-      })
-    }
-    ctx.progress(0.7)
-
-    const stills = plan.map((p, i) => ({
-      out: join(dir, `thumb_${i + 1}_${p.kind}.png`),
-      props: p.props
-    }))
-    await runRender(
-      { mode: 'stills', root: ctx.projectDir, out: '', stills },
-      join(ctx.projectDir, 'thumb-job.json'),
-      { progress: (p) => ctx.progress(0.7 + 0.3 * p), log: (m) => ctx.log(m), signal: ctx.signal }
-    )
-    updateVideo(videoId, { thumbnail_paths: stills.map((st) => st.out), chosen_thumbnail: 0 })
+    const pack = await makePackaging(video, ctx, dir, keepTitle)
+    updateVideo(videoId, {
+      thumbnail_paths: pack.thumbs.map((t) => t.file),
+      chosen_thumbnail: 0,
+      title_options: pack.titles,
+      ...(keepTitle ? {} : { title: pack.titles[0] })
+    })
     // Thumbnails from an earlier run are no longer listed anywhere.
-    const keep = new Set(stills.map((st) => st.out))
+    const keep = new Set(pack.thumbs.map((t) => t.file))
     for (const f of readdirSync(dir)) {
       if (f.startsWith('thumb_') && !keep.has(join(dir, f))) rmSync(join(dir, f), { force: true })
     }
     ctx.log(
-      `${stills.length} thumbnails: ${plan.map((p) => `${THUMB_KIND_LABELS[p.kind]}${p.props.text ? ` "${p.props.text}"` : ''}`).join(', ')}`
+      `Títulos: ${pack.titles.join(' | ')} · Thumbnails: ${pack.thumbs.map((t) => `${THUMB_KIND_LABELS[t.approach]} "${t.text}"`).join(', ')}`
     )
   }
 }

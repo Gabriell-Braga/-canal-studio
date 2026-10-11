@@ -15,6 +15,9 @@ import {
 import { getSettings, getState, setState } from './db/settings'
 import { generateStructured } from './services/llm'
 import { scriptSchema } from './steps/script'
+import { polishSettings } from './steps/polish'
+import { SATURATED_TOPICS } from '../shared/growth'
+import { z } from 'zod'
 import { staleShorts } from './steps/shorts'
 import { nextFreeSlot, shortSlotAfter } from './queue/slots'
 import type { Scheduler } from './queue/scheduler'
@@ -22,6 +25,28 @@ import type { Scheduler } from './queue/scheduler'
 /** User actions that move a video through the pipeline. Shared by IPC handlers and tests. */
 export class Pipeline {
   constructor(private scheduler: Scheduler) {}
+
+  /**
+   * Ten topic ideas for the channel: little-told stories or a specific angle on a famous
+   * company, never one already on the channel or a saturated story told the usual way.
+   */
+  async suggestTopics(channelId: number): Promise<string[]> {
+    const s = getSettings(channelId)
+    const done = listVideos()
+      .filter((v) => v.channel_id === channelId && v.kind === 'long')
+      .map((v) => v.title ?? v.topic)
+    const { topics } = await generateStructured(
+      `You pick topics for a faceless YouTube channel of short business documentaries (rise and fall of companies)${s.defaultNiche ? `, niche: ${s.defaultNiche}` : ''}.
+Already on the channel (do not repeat these stories): ${done.join(' | ') || 'none'}
+Saturated stories big channels already told to millions (avoid them, or use them only through a specific angle almost nobody covers): ${SATURATED_TOPICS.join(', ')}
+Give 10 topics. Prefer: little-known companies with a dramatic arc, or a specific, surprising episode of a famous company (one decision, one person, one product, one deal) instead of its whole history. Each must be true and well documented, with a clear turning point, real numbers and named people.
+Write each topic as a short English working title with the hook in it (max 80 characters), e.g. "The Hotel Chain That Sold Its Name and Kept the Buildings".
+Return ONLY JSON: {"topics": ["...", ...]}`,
+      z.object({ topics: z.array(z.string().min(1)).min(1).max(15) }),
+      { settings: { ...polishSettings(s), claudeModel: 'opus' }, temperature: 1, effort: 'medium' }
+    )
+    return topics.map((t) => t.replace(/^["']|["']$/g, '').trim()).filter(Boolean)
+  }
 
   addTopics(channelId: number, topics: string[], durationMin?: number): Video[] {
     const s = getSettings(channelId)

@@ -179,6 +179,8 @@ export interface Video {
   niche: string | null
   status: VideoStatus
   title: string | null
+  /** Title ideas to pick from (thumbnail step), best first */
+  title_options: string[]
   description: string | null
   tags: string[]
   script: Script | null
@@ -310,8 +312,6 @@ export interface Settings {
   brandFont: string
   /** Black outline around thumbnail and caption text; off gives a cleaner, modern look */
   brandOutline: boolean
-  /** text: headline over the image; highlight: no text, the subject in channel colors over a black and white image; mixed: one highlight, two text */
-  thumbStyle: ThumbStyle
   /** Refresh the colors from the YouTube channel picture */
   brandAuto: boolean
   shortsCount: number
@@ -353,7 +353,6 @@ export const CHANNEL_SETTING_KEYS = [
   'brandSecondary',
   'brandFont',
   'brandOutline',
-  'thumbStyle',
   'brandAuto',
   'shortsCount',
   'shortsCta',
@@ -364,8 +363,6 @@ export const CHANNEL_SETTING_KEYS = [
 ] as const satisfies readonly (keyof Settings)[]
 
 export type ChannelSettingKey = (typeof CHANNEL_SETTING_KEYS)[number]
-
-export type ThumbStyle = 'text' | 'highlight' | 'mixed'
 
 export interface QueueState {
   paused: boolean
@@ -472,6 +469,8 @@ export interface Api {
     rejectFinal: (id: number, fromStep: JobType) => Promise<void>
     /** Publish time to suggest: next free slot, or 30 min after the full video for a short. */
     suggestedSlot: (id: number) => Promise<string>
+    /** Fresh topic ideas for the channel, away from stories big channels already told */
+    suggestTopics: (channelId: number) => Promise<string[]>
   }
   scenes: {
     update: (

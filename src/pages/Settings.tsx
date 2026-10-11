@@ -4,8 +4,7 @@ import {
   CHANNEL_SETTING_KEYS,
   type PublishSlot,
   type StockProvider,
-  type Settings as SettingsT,
-  type ThumbStyle
+  type Settings as SettingsT
 } from '../../shared/types'
 import {
   Banner,
@@ -107,31 +106,6 @@ const TEMPLATE_NAMES: Record<string, string> = {
   documentary: 'Documentário (serifada, legenda embaixo)',
   bold: 'Impacto (fonte pesada, legenda no centro)',
   minimal: 'Minimalista (sem caixa, legenda embaixo)'
-}
-
-/** Sketch of the no-text style: black and white scene, the subject alone in the channel color. */
-function HighlightPreview({ color }: { color: string }): React.JSX.Element {
-  return (
-    <div className="relative aspect-[16/6] w-full max-w-xl overflow-hidden rounded-xl bg-gradient-to-b from-neutral-500 to-neutral-900">
-      <svg viewBox="0 0 320 120" className="absolute inset-0 h-full w-full">
-        <path d="M0 95 L60 70 L110 88 L170 60 L230 85 L320 65 L320 120 L0 120 Z" fill="#3a3a3a" />
-        <path d="M0 105 L320 100 L320 120 L0 120 Z" fill="#222" />
-        <g
-          style={{ filter: `drop-shadow(0 0 4px ${color}) drop-shadow(0 0 12px ${color})` }}
-          fill={color}
-        >
-          <path d="M120 92 L200 92 L190 104 L130 104 Z" />
-          <rect x="138" y="40" width="3" height="52" />
-          <rect x="172" y="34" width="3" height="58" />
-          <path d="M141 44 L141 84 L166 84 Z" opacity="0.85" />
-          <path d="M175 38 L175 84 L198 84 Z" opacity="0.85" />
-        </g>
-      </svg>
-      <span className="absolute right-3 top-3 rounded bg-black/50 px-2 py-0.5 text-[10px] text-ink-300">
-        prévia do destaque
-      </span>
-    </div>
-  )
 }
 
 /** A settings card; it only shows on the page of its scope (this channel or the whole app). */
@@ -927,7 +901,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
         <Section
           title="Identidade visual"
           scope="channel"
-          description="Cores e fonte das thumbnails e das legendas dos shorts. Ao conectar o YouTube, as cores vêm da foto do canal."
+          description="Cores e fonte das legendas dos shorts (as thumbnails usam as regras de shared/growth.ts). Ao conectar o YouTube, as cores vêm da foto do canal."
         >
           <div className="flex flex-wrap items-end gap-5 md:col-span-2">
             <Field label="Destaque">
@@ -974,20 +948,6 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
             </Field>
             <Button onClick={fromAvatar}>Usar cores da foto do canal</Button>
           </div>
-          <Field
-            label="Estilo da thumbnail"
-            hint="Destaque: imagem em preto e branco, só o objeto principal na cor de destaque. Cada destaque sai em duas versões: com e sem texto."
-          >
-            <select
-              className={inputClass}
-              value={s.thumbStyle}
-              onChange={(e) => set('thumbStyle', e.target.value as ThumbStyle)}
-            >
-              <option value="text">Texto sobre a imagem</option>
-              <option value="highlight">Destaque colorido</option>
-              <option value="mixed">Misto: destaques e texto sobre a imagem</option>
-            </select>
-          </Field>
           <label className={`${inlineCheckClass} text-ink-200`}>
             <input
               type="checkbox"
@@ -995,32 +955,8 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               checked={s.brandOutline}
               onChange={(e) => set('brandOutline', e.target.checked)}
             />
-            Contorno preto no texto (thumbnails e legendas dos shorts)
+            Contorno preto nas legendas dos shorts
           </label>
-          <div className="flex flex-wrap gap-4 md:col-span-2">
-            {s.thumbStyle !== 'text' && <HighlightPreview color={s.brandPrimary} />}
-            {s.thumbStyle !== 'highlight' && (
-              <div
-                className="relative flex aspect-[16/6] w-full max-w-xl items-end overflow-hidden rounded-xl bg-gradient-to-br from-ink-700 to-ink-950 p-6"
-                style={{ fontFamily: `"${s.brandFont}", Impact, sans-serif` }}
-              >
-                <div
-                  className="text-5xl font-black uppercase leading-none"
-                  style={{
-                    textShadow: s.brandOutline
-                      ? '0 0 4px #000, 4px 4px 0 #000, -4px -4px 0 #000, 4px -4px 0 #000, -4px 4px 0 #000'
-                      : '0 4px 18px rgba(0,0,0,0.6), 0 2px 6px rgba(0,0,0,0.45)'
-                  }}
-                >
-                  <div style={{ color: s.brandSecondary }}>The empire</div>
-                  <div style={{ color: s.brandPrimary }}>that fell</div>
-                </div>
-                <span className="absolute right-3 top-3 rounded bg-black/50 px-2 py-0.5 text-[10px] text-ink-300">
-                  prévia da thumbnail
-                </span>
-              </div>
-            )}
-          </div>
         </Section>
 
         <Section

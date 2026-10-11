@@ -5,7 +5,6 @@ import { generateStructured } from '../services/llm'
 import type { Step } from './types'
 
 const metaSchema = z.object({
-  title: z.string().min(1),
   description: z.string().min(1),
   tags: z.array(z.string()).min(5).max(20),
   chapter_titles: z.array(z.string()).optional()
@@ -65,16 +64,17 @@ export const metadataStep: Step = {
       )
       .join('\n')
 
-    ctx.log('Gerando título, descrição e tags')
+    // The title comes from the thumbnail step, made together with the thumbnails.
+    const title = (video.title ?? video.script?.title_options[0] ?? video.topic).slice(0, 100)
+    ctx.log('Gerando descrição e tags')
     const meta = await generateStructured(
       `You write YouTube metadata for a faceless documentary channel.
 Topic: ${video.topic}
-Title ideas from the script: ${(video.script?.title_options ?? [video.title]).join(' | ')}
+Title: ${title}
 Hook: ${video.script?.hook ?? ''}
 ${chapters.length ? `Chapters:\n${chapterText}` : ''}
 
 Return JSON with:
-- title: the best final title, max 70 characters, curiosity-driven, accurate, no clickbait lies, no emojis
 - description: 2 short paragraphs (max 900 characters total) that summarize the story and make people want to watch; end with one line inviting viewers to subscribe. Do NOT include timestamps or hashtags.
 - tags: 10 to 15 search tags, lowercase, most specific first
 ${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter titles (2–6 words), in order` : ''}`,
@@ -82,8 +82,6 @@ ${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter 
       { settings: s, signal: ctx.signal, temperature: 0.6 }
     )
 
-    let title = meta.title.replace(/^["']|["']$/g, '').trim()
-    if (title.length > 70) title = title.slice(0, 70).replace(/\s+\S*$/, '')
     let description = meta.description.trim()
     if (chapters.length) {
       const names = meta.chapter_titles ?? []

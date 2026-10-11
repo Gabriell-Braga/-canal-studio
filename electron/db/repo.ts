@@ -48,6 +48,7 @@ function toVideo(r: Row): Video {
     niche: (r.niche as string) ?? null,
     status: r.status as VideoStatus,
     title: (r.title as string) ?? null,
+    title_options: parse(r.title_options, []),
     description: (r.description as string) ?? null,
     tags: parse(r.tags, []),
     script: parse<Script | null>(r.script_json, null),

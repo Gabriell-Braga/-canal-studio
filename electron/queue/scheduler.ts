@@ -269,7 +269,9 @@ export class Scheduler {
     this.setBusy(true)
     const attempt = job.attempts + 1
     updateJob(job.id, { status: 'running', started_at: now(), attempts: attempt, progress: 0 })
-    if (step.status && step.status !== 'SCHEDULED' && !job.args?.keepStatus) {
+    // Side jobs (new thumbnails for an approved video, exports) never change its status.
+    const keep = Boolean(job.args?.keepStatus || job.args?.exportDir)
+    if (step.status && step.status !== 'SCHEDULED' && !keep) {
       updateVideo(job.video_id, { status: step.status, error_message: null, error_step: null })
     }
     const log = (message: string, level: 'info' | 'warn' | 'error' = 'info'): void =>
@@ -298,11 +300,12 @@ export class Scheduler {
       if (controller.signal.aborted) {
         updateJob(job.id, { status: 'cancelled', finished_at: now() })
         log('Cancelado pelo usuário', 'warn')
-        updateVideo(job.video_id, {
-          status: 'ERROR',
-          error_message: 'Etapa cancelada',
-          error_step: job.type
-        })
+        if (!keep)
+          updateVideo(job.video_id, {
+            status: 'ERROR',
+            error_message: 'Etapa cancelada',
+            error_step: job.type
+          })
       } else if (job.type === 'upload' && message.startsWith('Cota diária')) {
         // Out of quota is not a failure: keep the job (and its place in release order) and
         // check again in an hour, without spending an attempt.
@@ -325,11 +328,12 @@ export class Scheduler {
       } else {
         updateJob(job.id, { status: 'failed', finished_at: now(), log: message })
         log(`Falhou de vez: ${message}`, 'error')
-        updateVideo(job.video_id, {
-          status: 'ERROR',
-          error_message: message,
-          error_step: job.type
-        })
+        if (!keep)
+          updateVideo(job.video_id, {
+            status: 'ERROR',
+            error_message: message,
+            error_step: job.type
+          })
         this.opts.onEvent?.({ type: 'error', videoId: job.video_id, message })
       }
     } finally {
@@ -374,6 +378,8 @@ export class Scheduler {
     if (job.type === 'upload') {
       return
     }
+    // Thumbnails exported to a folder leave the video as it was.
+    if (job.type === 'thumbnail' && job.args?.exportDir) return
     if (job.type === 'thumbnail') this.opts.onThumbnails?.(video.id)
     // New thumbnails for a video already approved: it keeps its status, YouTube gets the new one.
     if (job.type === 'thumbnail' && job.args?.keepStatus) {

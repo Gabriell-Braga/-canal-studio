@@ -13,6 +13,7 @@ import {
 } from 'remotion'
 import type { RenderScene, ShortProps } from '../shared/render'
 import { LogoIntro, LogoTile, YearCards } from './Overlays'
+import { THUMB } from '../shared/growth'
 import { brandTextShadow, template } from './templates'
 import { KenBurns, toPhrases } from './Video'
 
@@ -125,11 +126,20 @@ function ShortCaptions({
   )
 }
 
-function Headline({ text, props }: { text: string; props: ShortProps }): React.JSX.Element {
+function Headline({
+  text,
+  props,
+  instant
+}: {
+  text: string
+  props: ShortProps
+  /** Already on screen (after the hook): no entrance */
+  instant?: boolean
+}): React.JSX.Element {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const look = shortLook(props)
-  const enter = spring({ frame, fps, config: { damping: 16 } })
+  const enter = instant ? 1 : spring({ frame, fps, config: { damping: 16 } })
   const companies = props.companies ?? []
   return (
     <AbsoluteFill style={{ justifyContent: 'flex-start', alignItems: 'center', paddingTop: 150 }}>
@@ -163,11 +173,100 @@ function Headline({ text, props }: { text: string; props: ShortProps }): React.J
           fontWeight: 900,
           fontSize: 64,
           lineHeight: 1.08,
-          color: look.accent,
+          color: THUMB.colors.accent,
           textTransform: 'uppercase'
         }}
       >
         {text}
+      </div>
+    </AbsoluteFill>
+  )
+}
+
+/**
+ * Opening seconds: the headline huge and fully visible on frame 0, punching in, with the
+ * narrated claim under it, over the first scene zooming in.
+ */
+function HookCard({ props }: { props: ShortProps }): React.JSX.Element {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const look = shortLook(props)
+  const punch = spring({ frame, fps, config: { damping: 9, stiffness: 180 } })
+  const companies = props.companies ?? []
+  return (
+    <AbsoluteFill
+      style={{
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 60,
+        background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.2) 70%)'
+      }}
+    >
+      {companies.length > 0 && (
+        <div style={{ display: 'flex', gap: 18, marginBottom: 30 }}>
+          {companies.slice(0, 2).map((c, i) => (
+            <div key={i} style={{ boxShadow: '0 12px 30px rgba(0,0,0,0.5)', borderRadius: 18 }}>
+              <LogoTile company={c} height={110} width={240} />
+            </div>
+          ))}
+        </div>
+      )}
+      <div
+        style={{
+          transform: `scale(${1.12 - 0.12 * punch})`,
+          maxWidth: 980,
+          textAlign: 'center',
+          fontFamily: look.font,
+          fontWeight: 900,
+          fontSize: 96,
+          lineHeight: 1.02,
+          color: THUMB.colors.accent,
+          textTransform: 'uppercase',
+          textShadow: brandTextShadow(true, 6)
+        }}
+      >
+        {props.headline}
+      </div>
+      {props.hook && (
+        <div
+          style={{
+            marginTop: 40,
+            maxWidth: 940,
+            textAlign: 'center',
+            fontFamily: look.font,
+            fontWeight: 900,
+            fontSize: 60,
+            lineHeight: 1.15,
+            color: '#fff',
+            textShadow: look.shadow
+          }}
+        >
+          {props.hook.text}
+        </div>
+      )}
+    </AbsoluteFill>
+  )
+}
+
+/** Small call to action over the loop line: the short ends without a card so it replays. */
+function LoopCta({ props }: { props: ShortProps }): React.JSX.Element {
+  const look = shortLook(props)
+  return (
+    <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 260 }}>
+      <div
+        style={{
+          padding: '16px 30px',
+          borderRadius: 18,
+          background: 'rgba(0,0,0,0.65)',
+          fontFamily: look.font,
+          fontWeight: 900,
+          fontSize: 46,
+          color: '#fff',
+          textAlign: 'center',
+          maxWidth: 940
+        }}
+      >
+        Full story on the channel <span style={{ color: look.accent }}>↓</span>
       </div>
     </AbsoluteFill>
   )
@@ -256,36 +355,53 @@ function EndCard({ props }: { props: ShortProps }): React.JSX.Element {
 export const Short: React.FC<ShortProps> = (props) => {
   const { fps } = useVideoConfig()
   const fade = Math.round(FADE_SEC * fps)
+  const hookFrames = Math.round((props.hook?.duration ?? 0) * fps)
   const segmentFrames = Math.round(props.segmentDuration * fps)
-  const ctaFrames = Math.round((props.cta.duration + 0.4) * fps)
+  const tailFrames = Math.round(
+    (props.loopEnd ? props.loopEnd.duration : props.cta.duration + 0.4) * fps
+  )
+  const first = props.scenes[0]
+  // With a narrated hook the logo already shows on the hook card, and the headline stays put.
+  const logoIntro = !hookFrames && !!props.companies?.length
 
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
-      <Sequence durationInFrames={segmentFrames}>
+      {hookFrames > 0 && first && (
+        <Sequence durationInFrames={hookFrames + fade}>
+          <VerticalScene scene={{ ...first, motion: 0 }} frames={hookFrames + fade} fadeIn={0} />
+        </Sequence>
+      )}
+      {hookFrames > 0 && props.hook && (
+        <Sequence durationInFrames={hookFrames}>
+          <HookCard props={props} />
+          <Audio src={props.hook.audio} />
+        </Sequence>
+      )}
+      <Sequence from={hookFrames} durationInFrames={segmentFrames}>
         {props.scenes.map((scene, i) => {
           const from = Math.max(0, Math.round(scene.start * fps) - (i ? fade : 0))
           const to = Math.min(segmentFrames, Math.round(scene.end * fps))
           const frames = Math.max(1, to - from + (i < props.scenes.length - 1 ? fade : 0))
           return (
             <Sequence key={i} from={from} durationInFrames={frames}>
-              <VerticalScene scene={scene} frames={frames} fadeIn={i ? fade : 0} />
+              <VerticalScene scene={scene} frames={frames} fadeIn={i || hookFrames ? fade : 0} />
             </Sequence>
           )
         })}
         {!!props.yearCards?.length && (
           <YearCards cards={props.yearCards} accent={shortLook(props).accent} />
         )}
-        {props.companies?.length ? (
+        {logoIntro ? (
           <>
             <Sequence durationInFrames={Math.round(SHORT_INTRO_SEC * fps)}>
-              <LogoIntro companies={props.companies} seconds={SHORT_INTRO_SEC} vertical />
+              <LogoIntro companies={props.companies ?? []} seconds={SHORT_INTRO_SEC} vertical />
             </Sequence>
             <Sequence from={Math.round((SHORT_INTRO_SEC - 0.4) * fps)}>
               <Headline text={props.headline} props={props} />
             </Sequence>
           </>
         ) : (
-          <Headline text={props.headline} props={props} />
+          <Headline text={props.headline} props={props} instant={hookFrames > 0} />
         )}
         {props.captions && <ShortCaptions words={props.words} props={props} />}
         {(props.cuts ?? [{ from: 0, to: props.segmentDuration, at: 0 }]).map((c, i) => (
@@ -301,9 +417,21 @@ export const Short: React.FC<ShortProps> = (props) => {
           </Sequence>
         ))}
       </Sequence>
-      <Sequence from={segmentFrames} durationInFrames={ctaFrames}>
-        <EndCard props={props} />
-        <Audio src={props.cta.audio} />
+      <Sequence from={hookFrames + segmentFrames} durationInFrames={tailFrames}>
+        {props.loopEnd ? (
+          <>
+            {/* The first scene again, so the picture loops with the words. */}
+            {first && <VerticalScene scene={first} frames={tailFrames} fadeIn={fade} />}
+            <Headline text={props.headline} props={props} instant />
+            <LoopCta props={props} />
+            <Audio src={props.loopEnd.audio} />
+          </>
+        ) : (
+          <>
+            <EndCard props={props} />
+            <Audio src={props.cta.audio} />
+          </>
+        )}
       </Sequence>
       {props.music && <Audio src={props.music} loop volume={props.musicVolume * 0.8} />}
     </AbsoluteFill>

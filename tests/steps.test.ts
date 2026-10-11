@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Scene } from '../shared/types'
 import { buildChapters, timestamp } from '../electron/steps/metadata'
 import { aiIndexes } from '../electron/steps/scenes'
-import { clampWords, layoutFor, withCompany } from '../electron/steps/thumbnail'
+import { clampWords, cleanTitles } from '../electron/steps/thumbnail'
+import { headlineLines } from '../remotion/Thumbnail'
 import { thumbKindOf } from '../shared/render'
 import { toPhrases } from '../remotion/Video'
 
@@ -37,16 +38,26 @@ describe('pipeline helpers', () => {
     expect(clampWords('The Last Voyage of the Octavius')).toBe('The Last Voyage')
     expect(clampWords('"Frozen in Time"')).toBe('Frozen in Time')
     expect(clampWords('Crew Still At Their Posts')).toBe('Crew Still')
-    expect(withCompany('Amazon Before Amazon', 'Amazon')).toBe('Amazon Before Amazon')
-    expect(withCompany('The Fatal Mistake', 'Nokia')).toBe('Nokia The Fatal Mistake')
-    expect(withCompany('Gone Overnight', '')).toBe('Gone Overnight')
+    expect(headlineLines('King → Nothing')).toEqual(['KING → NOTHING'])
+    expect(headlineLines('They Buried It')).toEqual(['THEY', 'BURIED IT'])
   })
 
-  it('labels thumbnail options by source and varies their layout', () => {
+  it('drops two-sentence titles and keeps them under 60 characters', () => {
+    const out = cleanTitles([
+      "Nokia Sold Half the World's Phones. Then It Lost It All",
+      '"Why Did Nokia Hide Its Own iPhone?"',
+      'Why Did Nokia Hide Its Own iPhone?',
+      'The Phone Company That Invented the iPhone First and Then Buried It Forever'
+    ])
+    expect(out[0]).toBe('Why Did Nokia Hide Its Own iPhone?')
+    expect(out).toHaveLength(2)
+    expect(out.every((t) => t.length <= 60)).toBe(true)
+  })
+
+  it('labels thumbnail options by approach', () => {
+    expect(thumbKindOf('C:/p/thumbs/thumb_2_product.png')).toBe('product')
     expect(thumbKindOf('C:/p/thumbs/thumb_2_stock.png')).toBe('stock')
     expect(thumbKindOf('C:/p/thumbs/thumb_1.png')).toBeNull()
-    expect([0, 1, 2].map((n) => layoutFor('ai', n))).toEqual([0, 3, 2])
-    expect(layoutFor('split', 0)).toBe(4)
   })
 
   it('builds YouTube chapters starting at 0:00', () => {

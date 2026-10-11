@@ -386,6 +386,31 @@ app.whenReady().then(async () => {
     console.log(`New company thumbnails: ${count} video(s)`)
     setState('reprocess.thumbProduct', true)
   }
+  // Once: new click rules (shared/growth.ts). Videos already on YouTube get 3 thumbnails and
+  // title options in a separate folder to upload by hand; their records stay as they are.
+  // Full videos not uploaded yet get them in place, and their unsent shorts are cut again
+  // with the narrated hook and loop.
+  if (!getState('reprocess.ctr1', false) && process.env.CANAL_FAKE_STEPS !== '1') {
+    const out = join(dataDir(), 'reprocessamento-ctr')
+    for (const id of [8, 9, 11, 2, 3, 10, 6]) {
+      const v = findVideo(id)
+      if (!v || v.kind !== 'long' || !v.youtube_id) continue
+      const name = `${id}-${v.topic
+        .split(/\s+/)[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')}`
+      enqueueJob(id, 'thumbnail', 'now', 5, false, { exportDir: join(out, name) })
+    }
+    for (const v of videosByStatus('SCHEDULED')) {
+      if (v.kind !== 'long' || v.youtube_id) continue
+      enqueueJob(v.id, 'thumbnail', 'now', 5, false, { keepStatus: true })
+      const unsent = listShorts(v.id).filter((s) => !s.youtube_id)
+      if (!unsent.length) continue
+      unsent.forEach((s) => deleteVideo(s.id))
+      enqueueJob(v.id, 'short', 'now', 4, true, { count: unsent.length })
+    }
+    setState('reprocess.ctr1', true)
+  }
   // Thumbnails without text are no longer made: drop them from videos not public yet. A video
   // that had one picked takes the same image with text, and YouTube gets it if uploaded.
   for (const v of [...videosByStatus('FINAL_REVIEW'), ...videosByStatus('SCHEDULED')]) {

@@ -7,6 +7,7 @@ import {
   type Video,
   type VideoDetail as Detail
 } from '../../shared/types'
+import { THUMB, TITLES } from '../../shared/growth'
 import { THUMB_KIND_LABELS, thumbKindOf } from '../../shared/render'
 import ScriptEditor from '../components/ScriptEditor'
 import {
@@ -421,6 +422,7 @@ function PublishTab({
   const [when, setWhen] = useState(toLocalInput(video.scheduled_at))
   const [synthetic, setSynthetic] = useState(video.synthetic_content)
   const [chosen, setChosen] = useState(video.chosen_thumbnail ?? 0)
+  const [mobile, setMobile] = useState(false)
 
   useEffect(() => {
     if (!video.scheduled_at)
@@ -485,9 +487,15 @@ function PublishTab({
         </Banner>
       )}
       <Card className={`p-5 ${video.kind === 'short' ? 'hidden' : ''}`}>
-        <div className="mb-2 text-sm font-medium text-ink-300">Thumbnail</div>
+        <div className="mb-2 flex items-center justify-between text-sm font-medium text-ink-300">
+          Thumbnail
+          <label className="flex items-center gap-2 text-xs font-normal text-ink-400">
+            <input type="checkbox" checked={mobile} onChange={(e) => setMobile(e.target.checked)} />
+            Tamanho do feed no celular ({THUMB.preview.width}×{THUMB.preview.height})
+          </label>
+        </div>
         {video.thumbnail_paths.length ? (
-          <div className="grid grid-cols-3 gap-3">
+          <div className={mobile ? 'flex flex-wrap gap-3' : 'grid grid-cols-3 gap-3'}>
             {video.thumbnail_paths.map((p, i) => (
               <button
                 key={p}
@@ -498,8 +506,13 @@ function PublishTab({
                 <img
                   src={mediaUrl(p, video.updated_at)}
                   className="aspect-video w-full object-cover"
+                  style={
+                    mobile
+                      ? { width: THUMB.preview.width, height: THUMB.preview.height }
+                      : undefined
+                  }
                 />
-                {thumbKindOf(p) && (
+                {thumbKindOf(p) && !mobile && (
                   <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-white">
                     {THUMB_KIND_LABELS[thumbKindOf(p) ?? 'ai']}
                   </span>
@@ -512,7 +525,20 @@ function PublishTab({
         )}
       </Card>
       <Card className="grid gap-4 p-5">
-        <Field label="Título" hint={`${title.length}/70 caracteres`}>
+        {video.kind === 'long' && video.title_options.length > 1 && (
+          <div className="flex flex-wrap gap-2">
+            {video.title_options.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTitle(t)}
+                className={`rounded-full border px-3 py-1 text-left text-xs ${t === title ? 'border-brand-500 text-ink-100' : 'border-ink-700 text-ink-400 hover:text-ink-200'}`}
+              >
+                {t} <span className="text-ink-600">({t.length})</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <Field label="Título" hint={`${title.length}/${TITLES.maxChars} caracteres recomendados`}>
           <input
             className={inputClass}
             value={title}

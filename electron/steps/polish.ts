@@ -42,7 +42,7 @@ export async function polishScript(
   const patch = await generateStructured(
     `Final edit of a YouTube documentary script about "${topic}". Return ONLY what must change: "" for a field that is already good, and list only scenes you change. Most scenes should stay untouched.
 Check:
-1. Hook: first line is a punchy twist that names the subject; it ends asking the viewer to stay until the end. No greeting.
+1. Hook: it drops the viewer into the most dramatic moment as a scene (present tense, one concrete detail), never starts with a year, and ends with a specific promise of what the viewer will find out. No greeting, not a summary. Scene 1 must not open on the founding or a date line; rewrite its first sentence if it does.
 2. Outro: calm and unhurried, 3–5 sentences: a reflective conclusion, a quiet closing thought, then ONE gentle invitation to subscribe. Rewrite it if it lists like/comment/bell, asks for several actions or feels rushed.
 3. Flow: cut repetition and filler, fix awkward spoken phrasing. Keep the facts, the length and every year the narration says.
 4. real_subject: for a scene about a specific real person, product, device, place or event, the words that find a real photo on Wikimedia Commons. Devices (computer, phone, console, chip, car, gadget) get the exact maker and model, e.g. "IBM PC 5150". Fill it only when missing or wrong; narration "" keeps the text.

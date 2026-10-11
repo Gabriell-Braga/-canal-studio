@@ -1,265 +1,192 @@
 import React from 'react'
 import { AbsoluteFill, Img } from 'remotion'
+import { THUMB } from '../shared/growth'
 import type { ThumbnailProps } from '../shared/render'
-import { brandTextShadow, template } from './templates'
 
-/**
- * 1280x720 thumbnail: background + 2–4 word headline (5 layout variants), or the highlight style with or without text.
- * Text always sits in the lower half: YouTube draws the video title over the top of the thumbnail in some views.
- */
-export const Thumbnail: React.FC<ThumbnailProps> = ({
-  background,
-  background2,
-  text,
-  template: id,
-  brand,
-  variant,
-  cutout,
-  textSide
-}) => {
-  const style = template(id)
-  const colors: [string, string] = brand ? [brand.secondary, brand.primary] : style.thumbColors
-  const font = brand?.font ? `"${brand.font}", ${style.thumbFont}` : style.thumbFont
+const H = 720
+const C = THUMB.colors
+
+/** Thick outline from stacked shadows, plus a soft drop shadow so the text lifts off the image. */
+function outline(width: number): string {
+  const ring = Array.from({ length: 24 }, (_, i) => {
+    const a = (i / 24) * Math.PI * 2
+    return `${(Math.cos(a) * width).toFixed(1)}px ${(Math.sin(a) * width).toFixed(1)}px 0 ${C.stroke}`
+  })
+  return [...ring, `0 ${width}px ${width * 2}px rgba(0,0,0,0.6)`].join(', ')
+}
+
+/** Split 2–4 words into at most two lines of similar length. */
+export function headlineLines(text: string): string[] {
   const words = text.toUpperCase().split(/\s+/).filter(Boolean)
-  // Highlight the last word in the accent color.
-  const head = words.slice(0, -1).join(' ')
-  const tail = words.at(-1) ?? ''
-  const fontSize = words.length > 3 ? 104 : 128
-  const stroke = brandTextShadow(brand?.outline ?? true, 5)
-  if (cutout) {
-    const right = textSide === 'right'
-    return (
-      <AbsoluteFill>
-        <Highlight background={background} cutout={cutout} color={colors[1]} />
-        {/* Dark corner behind the text, so the accent word still reads over a lit subject. */}
-        {tail && (
-          <AbsoluteFill
-            style={{
-              background: `radial-gradient(ellipse 70% 60% at ${right ? '100%' : '0%'} 100%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.55) 45%, transparent 100%)`
-            }}
-          />
-        )}
-        {tail && (
-          <AbsoluteFill
-            style={{
-              justifyContent: 'flex-end',
-              alignItems: right ? 'flex-end' : 'flex-start',
-              padding: right ? '0 70px 120px 0' : '0 0 60px 70px'
-            }}
-          >
-            <div
-              style={{
-                maxWidth: 620,
-                fontFamily: font,
-                fontWeight: 900,
-                fontSize: fontSize * 0.85,
-                lineHeight: 0.95,
-                letterSpacing: -1,
-                textShadow: stroke,
-                textAlign: right ? 'right' : 'left'
-              }}
-            >
-              {head && <div style={{ color: colors[0] }}>{head}</div>}
-              <div style={{ color: colors[1] }}>{tail}</div>
-            </div>
-          </AbsoluteFill>
-        )}
-      </AbsoluteFill>
-    )
+  // A before → after figure reads as one idea: keep it on one line.
+  if (words.length <= 2 || words.includes('→') || words.join(' ').length <= 10)
+    return [words.join(' ')]
+  let best = 1
+  for (let i = 1; i < words.length; i++) {
+    const diff = (k: number): number =>
+      Math.abs(words.slice(0, k).join(' ').length - words.slice(k).join(' ').length)
+    if (diff(i) < diff(best)) best = i
   }
-  const photo = (src: string, extra: React.CSSProperties = {}): React.JSX.Element => (
+  return [words.slice(0, best).join(' '), words.slice(best).join(' ')]
+}
+
+/** Words of one line: "→" in red, the last word of the headline (or what follows "→") in yellow. */
+function colored(line: string, isLast: boolean): React.ReactNode {
+  const words = line.split(' ')
+  const arrow = words.indexOf('→')
+  return words.map((w, i) => {
+    const color =
+      w === '→'
+        ? C.alert
+        : (arrow >= 0 && i > arrow) || (arrow < 0 && isLast && i === words.length - 1)
+          ? C.accent
+          : C.text
+    return (
+      <span key={i} style={{ color }}>
+        {i ? ' ' : ''}
+        {w}
+      </span>
+    )
+  })
+}
+
+function Headline({
+  text,
+  maxWidth,
+  align
+}: {
+  text: string
+  maxWidth: number
+  align: 'left' | 'center'
+}): React.JSX.Element {
+  const lines = headlineLines(text)
+  const longest = Math.max(...lines.map((l) => l.length))
+  // Impact capitals are ~0.5 em wide; shrink only when the longest line would overflow.
+  const size = Math.min(
+    H * (lines.length === 1 ? THUMB.oneLineSize : THUMB.twoLineSize),
+    maxWidth / (longest * 0.52)
+  )
+  return (
+    <div
+      style={{
+        maxWidth,
+        fontFamily: THUMB.font,
+        fontSize: size,
+        lineHeight: 0.98,
+        textAlign: align,
+        textShadow: outline(THUMB.stroke),
+        whiteSpace: 'nowrap'
+      }}
+    >
+      {lines.map((l, i) => (
+        <div key={i}>{colored(l, i === lines.length - 1)}</div>
+      ))}
+    </div>
+  )
+}
+
+function Logo({ src }: { src: string }): React.JSX.Element {
+  return (
+    <div
+      style={{
+        background: '#fff',
+        borderRadius: 18,
+        padding: '14px 22px',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
+        display: 'flex'
+      }}
+    >
+      <Img src={src} style={{ height: 84, maxWidth: 260, objectFit: 'contain' }} />
+    </div>
+  )
+}
+
+function Photo({ src, extra }: { src: string; extra?: React.CSSProperties }): React.JSX.Element {
+  return (
     <Img
       src={src}
       style={{
         width: '100%',
         height: '100%',
         objectFit: 'cover',
-        filter: 'contrast(1.15) saturate(1.2)',
+        filter: THUMB.photoFilter,
         ...extra
       }}
     />
   )
-
-  // Color block: the message sits on a solid band in the accent color, no outline needed.
-  if (variant === 3) {
-    return (
-      <AbsoluteFill style={{ backgroundColor: '#111' }}>
-        {photo(background)}
-        <AbsoluteFill
-          style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.55) 0%, transparent 55%)' }}
-        />
-        <AbsoluteFill
-          style={{ justifyContent: 'flex-end', alignItems: 'flex-start', padding: '0 0 70px 60px' }}
-        >
-          <div
-            style={{
-              fontFamily: font,
-              fontWeight: 900,
-              fontSize: fontSize * 0.85,
-              lineHeight: 1,
-              letterSpacing: -1,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              gap: 10,
-              transform: 'rotate(-2deg)'
-            }}
-          >
-            {/* Inline with cloned padding: when the head wraps, the band hugs each line instead of the widest box. */}
-            {head && (
-              <div style={{ lineHeight: 1.2 }}>
-                <span
-                  style={{
-                    background: '#000',
-                    color: '#fff',
-                    padding: '0 22px',
-                    WebkitBoxDecorationBreak: 'clone',
-                    boxDecorationBreak: 'clone'
-                  }}
-                >
-                  {head}
-                </span>
-              </div>
-            )}
-            <span style={{ background: colors[1], color: '#000', padding: '8px 22px' }}>
-              {tail}
-            </span>
-          </div>
-        </AbsoluteFill>
-      </AbsoluteFill>
-    )
-  }
-
-  // Split screen: two images side by side with a slanted divider and the message across both.
-  if (variant === 4) {
-    const cut = 'polygon(0 0, 58% 0, 42% 100%, 0 100%)'
-    return (
-      <AbsoluteFill style={{ backgroundColor: '#111' }}>
-        {photo(background)}
-        <AbsoluteFill style={{ clipPath: cut }}>
-          {photo(background2 ?? background, { filter: 'grayscale(0.6) contrast(1.2)' })}
-        </AbsoluteFill>
-        <AbsoluteFill
-          style={{
-            backgroundColor: colors[1],
-            clipPath: 'polygon(57.4% 0, 58.6% 0, 42.6% 100%, 41.4% 100%)'
-          }}
-        />
-        <AbsoluteFill
-          style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.75) 0%, transparent 50%)' }}
-        />
-        <AbsoluteFill
-          style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 50 }}
-        >
-          <div
-            style={{
-              fontFamily: font,
-              fontWeight: 900,
-              fontSize: fontSize * 0.9,
-              lineHeight: 0.95,
-              letterSpacing: -1,
-              textShadow: stroke,
-              textAlign: 'center',
-              maxWidth: 960
-            }}
-          >
-            {head && <span style={{ color: colors[0] }}>{head} </span>}
-            <span style={{ color: colors[1] }}>{tail}</span>
-          </div>
-        </AbsoluteFill>
-      </AbsoluteFill>
-    )
-  }
-  const layouts = [
-    {
-      justifyContent: 'flex-end',
-      alignItems: 'flex-start',
-      padding: '0 0 60px 70px',
-      textAlign: 'left'
-    },
-    // Bottom right sits above YouTube's duration badge.
-    {
-      justifyContent: 'flex-end',
-      alignItems: 'flex-end',
-      padding: '0 70px 120px 0',
-      textAlign: 'right'
-    },
-    {
-      justifyContent: 'flex-end',
-      alignItems: 'center',
-      padding: '0 0 60px 0',
-      textAlign: 'center'
-    }
-  ] as const
-  const layout = layouts[variant % layouts.length]
-  const overlays = [
-    'linear-gradient(90deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.1) 65%)',
-    'linear-gradient(315deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.1) 65%)',
-    'linear-gradient(0deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.05) 60%)'
-  ]
-  return (
-    <AbsoluteFill style={{ backgroundColor: '#111' }}>
-      {photo(background)}
-      <AbsoluteFill style={{ background: overlays[variant % overlays.length] }} />
-      <AbsoluteFill style={{ ...layout, display: 'flex', flexDirection: 'column' }}>
-        <div
-          style={{
-            maxWidth: 760,
-            fontFamily: font,
-            fontWeight: 900,
-            fontSize,
-            lineHeight: 0.95,
-            letterSpacing: -1,
-            textShadow: stroke,
-            textAlign: layout.textAlign
-          }}
-        >
-          {head && <div style={{ color: colors[0] }}>{head}</div>}
-          <div style={{ color: colors[1] }}>{tail}</div>
-        </div>
-      </AbsoluteFill>
-    </AbsoluteFill>
-  )
 }
 
-/** No text: the whole frame in black and white, only the cut-out subject in the channel color, with a glow. */
-const Highlight: React.FC<{ background: string; cutout: string; color: string }> = ({
+/**
+ * 1280x720 thumbnail, one layout per approach: a huge 2–4 word headline (~35% of the height)
+ * with a thick outline, a bright image and the company logo.
+ */
+export const Thumbnail: React.FC<ThumbnailProps> = ({
+  approach,
   background,
-  cutout,
-  color
+  background2,
+  text,
+  logo
 }) => {
-  const fill = { width: '100%', height: '100%', objectFit: 'cover' } as const
-  const mask = {
-    WebkitMaskImage: `url("${cutout}")`,
-    WebkitMaskSize: 'cover',
-    WebkitMaskPosition: 'center',
-    WebkitMaskRepeat: 'no-repeat'
-  } as const
+  if (approach === 'contrast') {
+    const left = 'polygon(0 0, 54% 0, 46% 100%, 0 100%)'
+    return (
+      <AbsoluteFill style={{ backgroundColor: '#333' }}>
+        <Photo
+          src={background2 ?? background}
+          extra={{ filter: 'grayscale(0.85) contrast(1.2) brightness(0.95)' }}
+        />
+        <AbsoluteFill style={{ clipPath: left }}>
+          <Photo src={background} />
+        </AbsoluteFill>
+        <AbsoluteFill
+          style={{
+            backgroundColor: C.accent,
+            clipPath: 'polygon(53.4% 0, 54.6% 0, 46.6% 100%, 45.4% 100%)'
+          }}
+        />
+        <AbsoluteFill
+          style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.45) 0%, transparent 45%)' }}
+        />
+        {logo && (
+          <AbsoluteFill style={{ alignItems: 'center', paddingTop: 34 }}>
+            <Logo src={logo} />
+          </AbsoluteFill>
+        )}
+        <AbsoluteFill
+          style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 40 }}
+        >
+          <Headline text={text} maxWidth={1200} align="center" />
+        </AbsoluteFill>
+      </AbsoluteFill>
+    )
+  }
+  // "number" and "product": image on the right, headline on the left over a light shade.
   return (
-    <AbsoluteFill style={{ backgroundColor: '#000' }}>
-      <Img
+    <AbsoluteFill style={{ backgroundColor: '#333' }}>
+      <Photo
         src={background}
-        style={{ ...fill, filter: 'grayscale(1) contrast(1.25) brightness(0.6)' }}
+        extra={{ objectPosition: approach === 'product' ? '70% 50%' : '50% 50%' }}
       />
       <AbsoluteFill
         style={{
-          background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.65) 100%)'
+          background:
+            'linear-gradient(90deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.15) 50%, transparent 70%)'
         }}
       />
-      <AbsoluteFill>
-        <Img
-          src={cutout}
-          style={{
-            ...fill,
-            filter: `grayscale(1) contrast(1.2) brightness(1.1) drop-shadow(0 0 14px ${color}) drop-shadow(0 0 48px ${color})`
-          }}
-        />
-      </AbsoluteFill>
-      {/* Tint the subject: "color" keeps its light and shade and takes the hue from the channel. */}
-      <AbsoluteFill style={{ ...mask, backgroundColor: color, mixBlendMode: 'color' }} />
+      {logo && (
+        <AbsoluteFill style={{ alignItems: 'flex-start', padding: '34px 0 0 50px' }}>
+          <Logo src={logo} />
+        </AbsoluteFill>
+      )}
       <AbsoluteFill
-        style={{ ...mask, backgroundColor: color, mixBlendMode: 'soft-light', opacity: 0.5 }}
-      />
+        style={{
+          justifyContent: 'flex-end',
+          alignItems: 'flex-start',
+          padding: logo ? '0 0 50px 50px' : '0 0 70px 50px'
+        }}
+      >
+        <Headline text={text} maxWidth={approach === 'number' ? 1100 : 760} align="left" />
+      </AbsoluteFill>
     </AbsoluteFill>
   )
 }

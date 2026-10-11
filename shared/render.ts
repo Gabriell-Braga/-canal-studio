@@ -1,3 +1,5 @@
+import type { ThumbApproach } from './growth'
+
 /** Props passed from the render step to the Remotion compositions. URLs point at render.ts's file server. */
 
 export type TemplateId = 'documentary' | 'bold' | 'minimal'
@@ -108,29 +110,40 @@ export interface ShortProps {
     thumbnail: string | null
     parentTitle: string
   }
+  /** Narrated opening claim, played before the cut with the headline big on screen */
+  hook?: { audio: string; duration: number; text: string } | null
+  /** Narrated last line that flows back into the hook; replaces the end card so the short loops */
+  loopEnd?: { audio: string; duration: number; text: string } | null
   [key: string]: unknown
 }
 
+/** Seconds of a short: hook, the cut, then the loop line or the end card. */
+export function shortDuration(
+  p: Pick<ShortProps, 'segmentDuration' | 'cta' | 'hook' | 'loopEnd'>
+): number {
+  const tail = p.loopEnd ? p.loopEnd.duration : p.cta.duration + 0.4
+  return (p.hook?.duration ?? 0) + p.segmentDuration + tail
+}
+
 export interface ThumbnailProps {
+  approach: ThumbApproach
   background: string
-  /** Second image for the split-screen layout (variant 4), shown on the left */
+  /** "contrast": the ruin image, shown on the right */
   background2?: string | null
+  /** 2–4 words, drawn very big */
   text: string
-  template: TemplateId
-  brand?: Brand
-  /** Subject cut out of the background (RGBA PNG): renders the highlight style, with no text when text is empty */
-  cutout?: string | null
-  /** Highlight style: side of the frame the text goes on, away from the subject */
-  textSide?: 'left' | 'right'
-  /** 0 text left, 1 text right, 2 text top, 3 text in a color block, 4 split screen */
-  variant: number
+  /** Company logo, shown on a white plate in the top corner */
+  logo?: string | null
   [key: string]: unknown
 }
 
 /** Where a thumbnail option came from; the step writes it at the end of the file name. */
-export type ThumbKind = 'ai' | 'stock' | 'scene' | 'split' | 'highlight' | 'glow'
+export type ThumbKind = ThumbApproach | 'ai' | 'stock' | 'scene' | 'split' | 'highlight' | 'glow'
 
 export const THUMB_KIND_LABELS: Record<ThumbKind, string> = {
+  number: 'Número chocante',
+  product: 'Produto em destaque',
+  contrast: 'Antes × depois',
   ai: 'Conceito IA',
   stock: 'Banco de imagens',
   scene: 'Cena do vídeo',

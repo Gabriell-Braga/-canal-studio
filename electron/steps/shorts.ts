@@ -16,6 +16,7 @@ import { generateStructured } from '../services/llm'
 import { pythonPost } from '../services/python'
 import { runRender } from '../services/remotion'
 import { readWords, type Word } from './transcribe'
+import { SHORTS } from '../../shared/growth'
 import { renderCompanies, yearCardsFor } from './overlays'
 import { sceneFocus } from './focus'
 import type { Step, StepContext } from './types'
@@ -24,8 +25,8 @@ import type { Step, StepContext } from './types'
  * Seconds of narration in a short, pauses already shrunk (see tightCuts). Shorts above ~60 s
  * lose reach; the end card adds ~4 s.
  */
-export const MIN_SEGMENT = 25
-export const MAX_SEGMENT = 52
+export const MIN_SEGMENT = SHORTS.minSec
+export const MAX_SEGMENT = SHORTS.maxSec
 
 const segmentsSchema = z.object({
   segments: z.array(
@@ -33,6 +34,8 @@ const segmentsSchema = z.object({
       first_scene: z.number().int(),
       last_scene: z.number().int(),
       headline: z.string().min(1),
+      hook: z.string().default(''),
+      loop_line: z.string().default(''),
       title: z.string().min(1),
       description: z.string()
     })
@@ -45,6 +48,10 @@ export interface Segment {
   start: number
   end: number
   headline: string
+  /** Narrated opening claim, before the cut */
+  hook?: string
+  /** Narrated last line that leads back into the hook */
+  loopLine?: string
   title: string
   description: string
 }
@@ -62,6 +69,8 @@ export function normalizeSegments(
     first_scene: number
     last_scene: number
     headline: string
+    hook?: string
+    loop_line?: string
     title: string
     description: string
   }[],
@@ -91,6 +100,8 @@ export function normalizeSegments(
       start,
       end,
       headline: p.headline,
+      hook: p.hook,
+      loopLine: p.loop_line,
       title: p.title,
       description: p.description
     })
@@ -272,6 +283,30 @@ interface ShortKit {
   cta: ShortProps['cta']
 }
 
+/** A line in the channel's voice, cached by text; returns its URL and length. */
+async function speak(
+  text: string,
+  root: string,
+  ctx: StepContext
+): Promise<{ audio: string; duration: number }> {
+  const s = ctx.settings
+  const dir = join(root, 'shorts')
+  mkdirSync(dir, { recursive: true })
+  const hash = createHash('sha1')
+    .update(`${s.voice}|${s.voiceSpeed}|${text}`)
+    .digest('hex')
+    .slice(0, 10)
+  const file = join(dir, `line_${hash}.wav`)
+  if (!isValidFile(file)) {
+    await pythonPost(
+      '/tts',
+      { text, voice: s.voice, speed: s.voiceSpeed, out_path: file },
+      ctx.signal
+    )
+  }
+  return { audio: url(root, file), duration: (await probeDuration(file)) + 0.25 }
+}
+
 async function shortKit(video: Video, ctx: StepContext): Promise<ShortKit> {
   const s = ctx.settings
   const root = ctx.projectDir
@@ -313,14 +348,18 @@ async function shortKit(video: Video, ctx: StepContext): Promise<ShortKit> {
 async function shortProps(
   kit: ShortKit,
   scenes: Scene[],
-  seg: Pick<Segment, 'first' | 'last' | 'start' | 'end' | 'headline'>,
+  seg: Pick<Segment, 'first' | 'last' | 'start' | 'end' | 'headline' | 'hook' | 'loopLine'>,
   k: number,
   ctx: StepContext
 ): Promise<ShortProps> {
   const s = ctx.settings
   const { root, video } = kit
   const duration = seg.end - seg.start
+  const hook = seg.hook?.trim()
+  const loopLine = SHORTS.loop ? seg.loopLine?.trim() : ''
   return tighten({
+    hook: hook ? { ...(await speak(hook, root, ctx)), text: hook } : null,
+    loopEnd: loopLine ? { ...(await speak(loopLine, root, ctx)), text: loopLine } : null,
     fps: 30,
     segmentStart: seg.start,
     segmentDuration: duration,
@@ -397,7 +436,15 @@ async function refreshEndCards(parent: Video, ctx: StepContext, share: number): 
       props = await shortProps(
         kit,
         scenes,
-        { first, last: longer.last, start, end: longer.end, headline: job.short.headline },
+        {
+          first,
+          last: longer.last,
+          start,
+          end: longer.end,
+          headline: job.short.headline,
+          hook: job.short.hook?.text,
+          loopLine: job.short.loopEnd?.text
+        },
         k,
         ctx
       )
@@ -474,8 +521,15 @@ export const shortsStep: Step = {
 Scenes with their times:
 ${list}
 
-Choose ${count} different segments of CONSECUTIVE scenes, each ${MIN_SEGMENT + 5}–${MAX_SEGMENT + 8} seconds long, that work on their own: they open with a strong, surprising line, keep tension and stop on a cliffhanger that makes people want the full video. Do not overlap segments. Avoid the final call to subscribe.
-For each give: first_scene and last_scene (the # numbers), headline (2–6 words shown on screen that NAME the company or subject and spark curiosity, e.g. "XEROX GAVE APPLE ITS FUTURE", no hashtags), title (YouTube Shorts title, max 70 characters, no hashtags) and description (one sentence).
+Choose ${count} different segments of CONSECUTIVE scenes, each ${MIN_SEGMENT + 5}–${MAX_SEGMENT + 8} seconds long, that work on their own and stop on a cliffhanger. Prefer the most surprising stretches. Do not overlap segments. Avoid the final call to subscribe.
+What works on this channel: ${SHORTS.winningPattern}
+For each give:
+- first_scene and last_scene (the # numbers)
+- hook: the single most shocking claim of the segment as ONE spoken sentence of at most ${SHORTS.hookMaxWords} words, no intro, naming the company and a famous product or rival when possible (model: "Nokia had a touchscreen phone seven years before the iPhone."). It is narrated first, before the segment.
+- loop_line: ${SHORTS.loop ? 'one short spoken sentence (max 10 words) said after the segment that leads straight back into the hook, so the short replays seamlessly (e.g. "And it all started with one secret prototype." before a hook about that prototype). No call to action.' : '""'}
+- headline: 2–5 words shown huge on screen from the first frame, naming the company or a famous product, e.g. "NOKIA BURIED ITS OWN IPHONE", no hashtags
+- title: YouTube Shorts title, max 60 characters, no hashtags, one sentence
+- description: one sentence
 Return ONLY JSON: {"segments": [...]}`,
         segmentsSchema,
         { settings: s, signal: ctx.signal, temperature: 0.5 }

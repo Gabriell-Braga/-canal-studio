@@ -1,6 +1,11 @@
 import React from 'react'
 import { Composition, Still } from 'remotion'
-import type { ShortProps, ThumbnailProps, VideoProps } from '../shared/render'
+import {
+  shortDuration,
+  type ShortProps,
+  type ThumbnailProps,
+  type VideoProps
+} from '../shared/render'
 import { ChannelIntro } from './ChannelIntro'
 import { Short } from './Short'
 import { Thumbnail } from './Thumbnail'
@@ -34,10 +39,9 @@ const defaultShort: ShortProps = {
 }
 
 const defaultThumb: ThumbnailProps = {
+  approach: 'number',
   background: '',
-  text: 'Sample text',
-  template: 'bold',
-  variant: 0
+  text: '$250B → $0'
 }
 
 export const Root: React.FC = () => (
@@ -65,10 +69,7 @@ export const Root: React.FC = () => (
       defaultProps={defaultShort}
       calculateMetadata={({ props }) => ({
         fps: props.fps,
-        durationInFrames: Math.max(
-          1,
-          Math.ceil((props.segmentDuration + props.cta.duration + 0.4) * props.fps)
-        )
+        durationInFrames: Math.max(1, Math.ceil(shortDuration(props) * props.fps))
       })}
     />
     <Composition

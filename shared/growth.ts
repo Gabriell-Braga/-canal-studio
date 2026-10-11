@@ -48,7 +48,7 @@ export const THUMB = {
       id: 'contrast',
       label: 'Antes × depois',
       brief:
-        'Split screen: the left image shows the glory days (bright, golden, crowded), the right image the ruin (empty, broken, grey). Headline of 2–3 words naming the turn (e.g. "KING → NOTHING").'
+        'Split screen: the left image shows the glory days (bright, golden, crowded), the right image the ruin (empty, broken, grey). Headline of 2–3 words naming the turn specific to THIS story (e.g. "300M USERS → 0", "EVERY HOME → NONE", "1ST → LAST"). Avoid the generic "KING → ...".'
     }
   ] as { id: ThumbApproach; label: string; brief: string }[]
 }

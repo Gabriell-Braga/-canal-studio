@@ -34,7 +34,7 @@ export const THUMB = {
       id: 'number',
       label: 'Número chocante',
       brief:
-        'A shocking number or before→after figure as the whole headline, e.g. "$250B → $0", "7 YEARS EARLY", "99% GONE". Use a real figure from the facts below. The image is the company\'s iconic product or place, bright and vivid.'
+        'A shocking number or before→after figure as the whole headline, e.g. "$250B → $0", "7 YEARS EARLY", "99% GONE". Use a real figure from the facts below. The image is a DIFFERENT subject than the product thumbnail: the company\'s headquarters, flagship store, factory floor or a famous moment of the story, bright and vivid.'
     },
     {
       id: 'product',

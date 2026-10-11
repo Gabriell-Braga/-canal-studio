@@ -19,7 +19,7 @@ function outline(width: number): string {
 export function headlineLines(text: string): string[] {
   const words = text.toUpperCase().split(/\s+/).filter(Boolean)
   // A before → after figure reads as one idea: keep it on one line.
-  if (words.length <= 2 || words.includes('→') || words.join(' ').length <= 10)
+  if (words.length === 1 || words.includes('→') || words.join(' ').length <= 10)
     return [words.join(' ')]
   let best = 1
   for (let i = 1; i < words.length; i++) {

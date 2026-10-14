@@ -1,7 +1,13 @@
 import { createHash } from 'crypto'
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join, relative } from 'path'
-import { END_SCREEN_SEC, type TemplateId, type VideoProps } from '../../shared/render'
+import {
+  END_SCREEN_SEC,
+  OPENING_CAPTIONS_SEC,
+  type RenderScene,
+  type TemplateId,
+  type VideoProps
+} from '../../shared/render'
 import type { Scene, Video } from '../../shared/types'
 import { getVideo, listScenes, updateVideo } from '../db/repo'
 import { isValidFile, probeDuration } from '../services/ffmpeg'
@@ -70,19 +76,31 @@ export const renderStep: Step = {
     if (missing.length)
       throw new Error(`${missing.length} cena(s) sem mídia ou tempo; refaça as cenas`)
 
-    const renderScenes = await Promise.all(
-      scenes.map(async (s, i) => {
-        const isVideo = s.asset_type === 'stock_video' || s.asset_type === 'ai_video'
-        return {
-          src: url(pd, s.asset_path as string),
-          type: isVideo ? ('video' as const) : ('image' as const),
-          start: s.start_sec as number,
-          end: s.end_sec as number,
-          motion: (i * 7 + videoId) % 4,
-          clipDuration: isVideo ? await probeDuration(s.asset_path as string) : undefined,
-          focus: isVideo ? undefined : await sceneFocus(s.asset_path as string, ctx)
-        }
-      })
+    const media = async (
+      path: string,
+      type: Scene['asset_type'],
+      motion: number
+    ): Promise<NonNullable<RenderScene['shots']>[number]> => {
+      const isVideo = type === 'stock_video' || type === 'ai_video'
+      return {
+        src: url(pd, path),
+        type: isVideo ? 'video' : 'image',
+        motion,
+        clipDuration: isVideo ? await probeDuration(path) : undefined,
+        focus: isVideo ? undefined : await sceneFocus(path, ctx)
+      }
+    }
+    const renderScenes: RenderScene[] = await Promise.all(
+      scenes.map(async (s, i) => ({
+        ...(await media(s.asset_path as string, s.asset_type, (i * 7 + videoId) % 4)),
+        start: s.start_sec as number,
+        end: s.end_sec as number,
+        shots: await Promise.all(
+          s.extra_assets
+            .filter((x) => isValidFile(x.path))
+            .map((x, k) => media(x.path, x.type, (i * 7 + videoId + k + 1) % 4))
+        )
+      }))
     )
     const words = readWords(pd)
     // Long videos get real YouTube subtitles from this file; burned-in captions are optional.
@@ -126,6 +144,7 @@ export const renderStep: Step = {
       scenes: renderScenes,
       words,
       captions: ctx.settings.captionsEnabled,
+      openingCaptionsSec: OPENING_CAPTIONS_SEC,
       music: await Promise.all(
         music.map(async (m) => ({
           src: url(pd, m.file),

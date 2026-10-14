@@ -80,3 +80,14 @@ describe('pipeline helpers', () => {
     expect(phrases.map((p) => p.words.length)).toEqual([5, 2, 4])
   })
 })
+
+describe('fast cuts', () => {
+  it('cuts every ~4 s in the opening and ~7 s after', async () => {
+    const { shotCount } = await import('../electron/steps/scenes')
+    expect(shotCount(0, 12)).toBe(3)
+    expect(shotCount(30, 38)).toBe(2)
+    expect(shotCount(60, 74)).toBe(2)
+    expect(shotCount(60, 65)).toBe(1)
+    expect(shotCount(0, 40)).toBe(4)
+  })
+})

@@ -73,16 +73,53 @@ export function SceneLayer({
   const opacity = fadeIn
     ? interpolate(frame, [0, fadeIn], [0, 1], { extrapolateRight: 'clamp' })
     : 1
-  const { fps } = useVideoConfig()
+  const shots = [scene, ...(scene.shots ?? [])]
+  // Equal parts for each shot; each one cross-fades in over a few frames.
+  const part = Math.max(1, Math.floor(frames / shots.length))
   return (
     <AbsoluteFill style={{ opacity, filter: grade, backgroundColor: 'black' }}>
-      {scene.type === 'image' ? (
-        <KenBurns src={scene.src} motion={scene.motion} frames={frames} focus={scene.focus} />
+      {shots.map((shot, k) => (
+        <Sequence
+          key={k}
+          from={k * part}
+          durationInFrames={k === shots.length - 1 ? frames - k * part : part + SHOT_FADE}
+        >
+          <ShotLayer
+            shot={shot}
+            frames={k === shots.length - 1 ? frames - k * part : part}
+            fade={k > 0}
+          />
+        </Sequence>
+      ))}
+    </AbsoluteFill>
+  )
+}
+
+const SHOT_FADE = 6
+
+function ShotLayer({
+  shot,
+  frames,
+  fade
+}: {
+  shot: Pick<RenderScene, 'src' | 'type' | 'motion' | 'clipDuration' | 'focus'>
+  frames: number
+  fade: boolean
+}): React.JSX.Element {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const opacity = fade
+    ? interpolate(frame, [0, SHOT_FADE], [0, 1], { extrapolateRight: 'clamp' })
+    : 1
+  return (
+    <AbsoluteFill style={{ opacity }}>
+      {shot.type === 'image' ? (
+        <KenBurns src={shot.src} motion={shot.motion} frames={frames} focus={shot.focus} />
       ) : (
         // Clips shorter than the scene loop instead of freezing on the last frame.
-        <Loop durationInFrames={Math.max(1, Math.floor((scene.clipDuration ?? 3600) * fps))}>
+        <Loop durationInFrames={Math.max(1, Math.floor((shot.clipDuration ?? 3600) * fps))}>
           <OffthreadVideo
-            src={scene.src}
+            src={shot.src}
             muted
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
@@ -128,17 +165,22 @@ export function toPhrases(words: RenderWord[]): Phrase[] {
 
 function Captions({
   words,
-  style
+  style,
+  until,
+  scale = 1
 }: {
   words: RenderWord[]
   style: TemplateStyle
+  /** Stop after this second (opening captions) */
+  until?: number
+  scale?: number
 }): React.JSX.Element | null {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = frame / fps
   const phrases = useMemo(() => toPhrases(words), [words])
   const phrase = phrases.find((p) => t >= p.start && t < p.end)
-  if (!phrase) return null
+  if (!phrase || (until !== undefined && phrase.start >= until)) return null
   const textShadow = style.stroke
     ? `0 0 2px ${style.stroke}, 3px 3px 0 ${style.stroke}, -3px -3px 0 ${style.stroke}, 3px -3px 0 ${style.stroke}, -3px 3px 0 ${style.stroke}`
     : '0 3px 12px rgba(0,0,0,0.85)'
@@ -157,7 +199,7 @@ function Captions({
           maxWidth: 1500,
           textAlign: 'center',
           fontFamily: style.fontFamily,
-          fontSize: style.captionSize,
+          fontSize: style.captionSize * scale,
           fontWeight: 700,
           lineHeight: 1.25,
           color: style.textColor,
@@ -251,7 +293,18 @@ export const Video: React.FC<VideoProps> = (props) => {
         )
       })}
       <Vignette strength={style.vignette} />
-      {props.captions && <Captions words={props.words} style={style} />}
+      {props.captions ? (
+        <Captions words={props.words} style={style} />
+      ) : (
+        !!props.openingCaptionsSec && (
+          <Captions
+            words={props.words}
+            style={style}
+            until={props.openingCaptionsSec}
+            scale={1.35}
+          />
+        )
+      )}
       {props.teaser && props.teaser.end > 1 && (
         <Sequence durationInFrames={Math.round(props.teaser.end * fps)}>
           <Teaser

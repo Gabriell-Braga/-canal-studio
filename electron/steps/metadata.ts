@@ -94,7 +94,7 @@ ${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter 
     const credits = [
       ...new Set(
         listScenes(videoId)
-          .map((sc) => sc.asset_credit)
+          .flatMap((sc) => [sc.asset_credit, ...sc.extra_assets.map((x) => x.credit)])
           .filter(Boolean)
       )
     ]

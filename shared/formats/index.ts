@@ -49,8 +49,22 @@ export function scriptSchemaFor(pack: FormatPack): z.ZodType<Script> {
   }) as unknown as z.ZodType<Script>
 }
 
-/** Rules every format shares: opening extras and real photos. */
-const BASE_RULES = `- Opening extras: teaser: the hook's most surprising claim, shortened to at most 9 words, shown big on screen during the hook. hook_visual_keywords: 2–4 English words for a REAL, instantly recognizable photo of that subject, different from the first scene's visual_keywords. outro_visual_keywords: same idea for the ending, different from the last scene.
+/** Generic openings and stock promises no format may use. */
+export const BANNED_OPENINGS = [
+  'This is the story of',
+  'What if I told you',
+  'In this video',
+  'Have you ever wondered',
+  "Today we're going to",
+  'Let me tell you',
+  'Stay until the end',
+  "By the end of this video, you'll know"
+]
+
+/** Rules every format shares: the first 30 seconds, opening extras and real photos. */
+const BASE_RULES = `- First 30 seconds: within the first 5–8 seconds the narration delivers the most specific image or fact the title promises (the object, the number, the quote), not a build-up. Between 15 and 30 seconds comes a re-hook: what is at stake, with a number or a consequence, and one concrete question that is only answered at the end. Any promise of what the viewer will learn is written fresh for this video, never a stock phrase.
+- Never open with or use: ${BANNED_OPENINGS.map((b) => `"${b}…"`).join(', ')}.
+- Opening extras: teaser: the hook's most surprising claim, shortened to at most 9 words, shown big on screen during the hook. hook_visual_keywords: 2–4 English words for a REAL, instantly recognizable photo of that subject, different from the first scene's visual_keywords. outro_visual_keywords: same idea for the ending, different from the last scene.
 - Real photos: when a scene is about a specific real person, product, device, place or event, set real_subject to the words that find a real photo of it on Wikimedia Commons: proper names first, plus the year or event when it helps (e.g. "Steve Jobs iPhone Macworld 2007", "Apple I computer"). Devices and machines always count: whenever the narration mentions a specific computer, phone, console, camera, chip, car, plane or gadget, real_subject is its exact maker and model name (e.g. "IBM PC 5150", "Ford Model T"), so the viewer sees the real device and not a generic one. Otherwise real_subject is "". In those scenes visual_keywords must name the subject too, never a generic description (write "Steve Jobs keynote", not "man on stage").`
 
 /**

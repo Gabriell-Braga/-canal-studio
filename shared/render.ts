@@ -24,6 +24,8 @@ export interface RenderScene {
   clipDuration?: number
   /** Images: the point to keep in frame when cropping (top of the main subject) */
   focus?: Focus
+  /** More shots after the main one, sharing the scene's time equally (fast cuts) */
+  shots?: Omit<RenderScene, 'start' | 'end' | 'shots'>[]
 }
 
 /** A point of an image (0–1 of its width and height) and the image's width / height. */
@@ -57,6 +59,8 @@ export interface VideoProps {
   scenes: RenderScene[]
   words: RenderWord[]
   captions: boolean
+  /** Big burned-in captions until this second, even when captions are off */
+  openingCaptionsSec?: number
   /** Up to three tracks in order: opening, dramatic, closing */
   music: MusicTrack[]
   musicVolume: number
@@ -304,3 +308,6 @@ export function plausibleValue(year: number, usd: number): boolean {
   const cap = caps.find(([until]) => year < until)?.[1] ?? Infinity
   return usd > 0 && usd <= cap
 }
+
+/** Big burned-in captions over the opening, where most viewers decide to stay. */
+export const OPENING_CAPTIONS_SEC = 30

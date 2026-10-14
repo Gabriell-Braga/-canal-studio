@@ -13,7 +13,7 @@ import { gatherCandidates, PROVIDER_LABELS, searchReal, usableProviders } from '
 import type { StockCandidate } from '../services/pexels'
 import { fillRealSubjects, pickRelevant } from './relevance'
 import { pythonPost } from '../services/python'
-import type { Step } from './types'
+import type { Step, StepContext } from './types'
 
 /** Hook and first scene: real photos or footage, never AI images, when a bank has anything. */
 const REAL_OPENING = 2
@@ -92,6 +92,23 @@ async function downloadCandidate(
   dir: string,
   signal?: AbortSignal
 ): Promise<void> {
+  const out = await downloadTo(pick, scene, dir, sceneDuration(scene), signal)
+  updateScene(scene.id, {
+    asset_type: pick.kind,
+    asset_path: out,
+    asset_source: pick.source,
+    asset_credit: pick.credit ?? null
+  })
+}
+
+/** Download a pick into the scenes folder (cached by source), trimming long clips. */
+async function downloadTo(
+  pick: StockCandidate,
+  scene: Scene,
+  dir: string,
+  sec: number,
+  signal?: AbortSignal
+): Promise<string> {
   const ext = pick.kind === 'stock_video' ? '.mp4' : '.jpg'
   const out = join(
     dir,
@@ -99,14 +116,96 @@ async function downloadCandidate(
   )
   if (!isValidFile(out)) {
     await download(pick.url, out, signal)
-    if (pick.kind === 'stock_video') await trimLongClip(out, sceneDuration(scene), signal)
+    if (pick.kind === 'stock_video') await trimLongClip(out, sec, signal)
   }
-  updateScene(scene.id, {
-    asset_type: pick.kind,
-    asset_path: out,
-    asset_source: pick.source,
-    asset_credit: pick.credit ?? null
-  })
+  return out
+}
+
+/** Opening seconds with fast cuts: a new image every ~4 s, then every ~7 s. */
+export const FAST_CUTS_SEC = 45
+
+/** How many images a scene shows one after another (its main one included). */
+export function shotCount(start: number, end: number): number {
+  const cadence = start < FAST_CUTS_SEC ? 4 : 7
+  return Math.max(1, Math.min(4, Math.round((end - start) / cadence)))
+}
+
+/**
+ * Extra shots for scenes long enough to need more than one image: more results of the same
+ * search first, AI variations of the scene's prompt when the banks have nothing left.
+ */
+async function fillSubShots(videoId: number, dir: string, ctx: StepContext): Promise<void> {
+  const s = ctx.settings
+  const used = usedSources(videoId)
+  for (const sc of listScenes(videoId)) sc.extra_assets.forEach((x) => used.add(x.source))
+  const ai: { scene: Scene; prompt: string }[] = []
+  let added = 0
+  for (const scene of listScenes(videoId)) {
+    if (ctx.signal.aborted) throw new Error('Cancelado')
+    if (scene.start_sec === null || scene.end_sec === null || scene.locked) continue
+    const want = shotCount(scene.start_sec, scene.end_sec) - 1 - scene.extra_assets.length
+    if (want <= 0) continue
+    const extra = [...scene.extra_assets]
+    if (scene.asset_type !== 'ai_image') {
+      try {
+        const found = await sceneCandidates(scene, s, used, undefined, ctx.signal)
+        for (const pick of found) {
+          if (extra.length - scene.extra_assets.length >= want) break
+          if (used.has(pick.source)) continue
+          const path = await downloadTo(pick, scene, dir, sceneDuration(scene), ctx.signal)
+          used.add(pick.source)
+          extra.push({ type: pick.kind, path, source: pick.source, credit: pick.credit ?? null })
+        }
+      } catch (error) {
+        if (ctx.signal.aborted) throw error
+      }
+    }
+    // AI only imitates generic subjects: a real person or event never gets a made-up shot.
+    const missing = scene.real_subject ? 0 : want - (extra.length - scene.extra_assets.length)
+    const variations = ['close-up detail', 'wide establishing shot', 'different angle']
+    for (let k = 0; k < missing; k++) {
+      ai.push({
+        scene,
+        prompt: `${scene.image_prompt || scene.visual_keywords || scene.narration}, ${variations[k % 3]}`
+      })
+    }
+    if (extra.length > scene.extra_assets.length) {
+      added += extra.length - scene.extra_assets.length
+      updateScene(scene.id, { extra_assets: extra })
+    }
+  }
+  if (ai.length) {
+    await prepareComfy(s, ctx.signal)
+    try {
+      for (const { scene, prompt } of ai) {
+        if (ctx.signal.aborted) throw new Error('Cancelado')
+        const path = join(
+          dir,
+          `scene_${String(scene.index).padStart(3, '0')}_shot_${Date.now()}.png`
+        )
+        try {
+          await generateImage(prompt, path, s, { signal: ctx.signal })
+          const fresh = getScene(scene.id)
+          updateScene(scene.id, {
+            extra_assets: [
+              ...fresh.extra_assets,
+              { type: 'ai_image', path, source: 'comfyui', credit: null }
+            ]
+          })
+          added++
+        } catch (error) {
+          if (ctx.signal.aborted) throw error
+          ctx.log(
+            `Plano extra da cena ${scene.index + 1} falhou: ${(error as Error).message}`,
+            'warn'
+          )
+        }
+      }
+    } finally {
+      await freeComfy(s.comfyUrl)
+    }
+  }
+  if (added) ctx.log(`Planos extras: ${added} (cortes a cada ~4 s no início, ~7 s depois)`)
 }
 
 /**
@@ -337,6 +436,7 @@ export const scenesStep: Step = {
     }
     const missing = listScenes(videoId).filter((sc) => !isValidFile(sc.asset_path))
     if (missing.length) throw new Error(`${missing.length} cena(s) sem imagem ou vídeo`)
+    await fillSubShots(videoId, dir, ctx)
     updateSyntheticLabel(videoId)
     ctx.progress(1)
   }

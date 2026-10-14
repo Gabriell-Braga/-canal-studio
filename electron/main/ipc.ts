@@ -22,7 +22,8 @@ import {
   replaceScenes,
   updateScene,
   updateVideo,
-  cancelPendingJobs
+  cancelPendingJobs,
+  setManualMetrics
 } from '../db/repo'
 import {
   copyChannelSettings,
@@ -48,12 +49,13 @@ import { z } from 'zod'
 import {
   connect as connectYoutube,
   disconnect as disconnectYoutube,
+  importStudioCsv,
   readStats,
   refreshStats
 } from '../services/youtube'
 import { pythonGet, pythonPost } from '../services/python'
 import { join } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 
 type Handler = (...args: never[]) => unknown
 
@@ -259,6 +261,24 @@ export function registerIpc(
   handle('youtube:stats', async (channelId: number, refresh?: boolean) => {
     if (refresh) await refreshStats(channelId)
     return readStats(channelId)
+  })
+  handle(
+    'youtube:setManualMetrics',
+    (videoId: number, m: { ctr?: number | null; impressions?: number | null }) =>
+      setManualMetrics(videoId, m)
+  )
+  handle('youtube:importStudioCsv', async (channelId: number) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const options = {
+      title: 'CSV exportado do YouTube Studio (Table data.csv)',
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: 'CSV', extensions: ['csv'] }]
+    }
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled || !result.filePaths[0]) return null
+    return importStudioCsv(channelId, readFileSync(result.filePaths[0], 'utf8'))
   })
 
   handle('channels:list', () => channelSummaries())

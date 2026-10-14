@@ -5,9 +5,11 @@ import { createServer } from 'http'
 import { youtube, type youtube_v3 } from '@googleapis/youtube'
 import { youtubeAnalytics } from '@googleapis/youtubeanalytics'
 import { OAuth2Client } from 'google-auth-library'
-import type { ChannelStats } from '../../shared/types'
+import type { ChannelStats, StudioImportResult } from '../../shared/types'
 import { db, now } from '../db'
-import { listVideos, updateChannel } from '../db/repo'
+import { listVideos, manualMetrics, setManualMetrics, updateChannel } from '../db/repo'
+import { anchored, lastDay, stillWatchingAt, viewsAtAge } from '../../shared/performance'
+import { matchStudioRows, parseStudioCsv } from '../../shared/studio-csv'
 import { getSettings, setSettings } from '../db/settings'
 import { brandColorsFromImage } from './brand'
 
@@ -378,7 +380,12 @@ export async function refreshStats(channelId: number): Promise<void> {
   const save = db().prepare(
     'INSERT INTO analytics (video_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
   )
-  for (const v of listVideos(channelId).filter((x) => x.youtube_id)) {
+  const published = listVideos(channelId).filter((x) => x.youtube_id)
+  const durations = await videoDurations(
+    channelId,
+    published.map((v) => v.youtube_id as string)
+  )
+  for (const v of published) {
     const start = (v.scheduled_at ?? v.created_at).slice(0, 10)
     const res = await analytics.reports.query({
       ids: 'channel==MINE',
@@ -404,12 +411,70 @@ export async function refreshStats(channelId: number): Promise<void> {
         avgViewPercentage: views
           ? rows.reduce((t, r) => t + (r[1] as number) * (r[4] as number), 0) / views
           : 0,
-        daily: rows.map((r) => [r[0], r[1]])
+        daily: rows.map((r) => [r[0], r[1]]),
+        durationSec: durations.get(v.youtube_id as string) ?? null,
+        ...(await retentionAndTraffic(
+          analytics,
+          v.youtube_id as string,
+          start > today ? today : start,
+          today
+        ))
       }),
       now()
     )
   }
   setChannelState(channelId, 'statsUpdatedAt', now())
+}
+
+/** ISO 8601 duration (PT1H2M3S) in seconds. */
+function isoSeconds(iso: string | null | undefined): number | null {
+  const m = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso ?? '')
+  if (!m) return null
+  const [d, h, min, sec] = m.slice(1).map((x) => Number(x ?? 0))
+  return d * 86400 + h * 3600 + min * 60 + sec
+}
+
+async function videoDurations(channelId: number, ids: string[]): Promise<Map<string, number>> {
+  const yt = youtube({ version: 'v3', auth: authed(channelId) })
+  const out = new Map<string, number>()
+  for (let i = 0; i < ids.length; i += 50) {
+    const res = await yt.videos.list({ part: ['contentDetails'], id: ids.slice(i, i + 50) })
+    addQuota(COST.list)
+    for (const item of res.data.items ?? []) {
+      const sec = isoSeconds(item.contentDetails?.duration)
+      if (item.id && sec) out.set(item.id, sec)
+    }
+  }
+  return out
+}
+
+/**
+ * Retention curve and traffic sources of one video. Each part is empty when Analytics has
+ * no data yet (new videos, too few views) instead of failing the whole refresh.
+ */
+async function retentionAndTraffic(
+  analytics: ReturnType<typeof youtubeAnalytics>,
+  youtubeId: string,
+  startDate: string,
+  endDate: string
+): Promise<{ retention: [number, number, number][]; traffic: [string, number][] }> {
+  const base = { ids: 'channel==MINE', startDate, endDate, filters: `video==${youtubeId}` }
+  const retention = await analytics.reports
+    .query({
+      ...base,
+      metrics: 'audienceWatchRatio,relativeRetentionPerformance',
+      dimensions: 'elapsedVideoTimeRatio',
+      sort: 'elapsedVideoTimeRatio'
+    })
+    .then((r) => (r.data.rows ?? []).map((row) => row.map(Number) as [number, number, number]))
+    .catch(() => [])
+  const traffic = await analytics.reports
+    .query({ ...base, metrics: 'views', dimensions: 'insightTrafficSourceType', sort: '-views' })
+    .then((r) =>
+      (r.data.rows ?? []).map((row) => [String(row[0]), Number(row[1])] as [string, number])
+    )
+    .catch(() => [])
+  return { retention, traffic }
 }
 
 function channelState(channelId: number, key: string): string | null {
@@ -447,6 +512,7 @@ export function readStats(channelId: number): ChannelStats {
     list.push(r)
     snaps.set(r.video_id, list)
   }
+  const manual = manualMetrics(channelId)
   const state = (key: string): string | null => channelState(channelId, key)
   return {
     connected: isConnected(channelId),
@@ -457,26 +523,105 @@ export function readStats(channelId: number): ChannelStats {
     liveUpdatedAt: state('liveUpdatedAt'),
     videos: listVideos(channelId)
       .filter((v) => v.youtube_id)
-      .map((v) => ({
-        video_id: v.id,
-        youtube_id: v.youtube_id as string,
-        title: v.title ?? v.topic,
-        views: 0,
-        watchMinutes: 0,
-        avgViewDurationSec: 0,
-        subscribersGained: 0,
-        avgViewPercentage: 0,
-        daily: [],
-        ...(byId.get(v.id) ?? {}),
-        privacy: snaps.get(v.id)?.at(-1)?.privacy ?? null,
-        snapshots: (snaps.get(v.id) ?? []).map(({ at, views, likes, comments }) => ({
-          at,
-          views,
-          likes,
-          comments
-        })),
-        // Impressions CTR is only shown in YouTube Studio; the public Analytics API does not expose it.
-        impressionsCtr: null
-      }))
+      .map((v) => {
+        const a = byId.get(v.id) ?? {}
+        return {
+          video_id: v.id,
+          youtube_id: v.youtube_id as string,
+          title: v.title ?? v.topic,
+          views: 0,
+          watchMinutes: 0,
+          avgViewDurationSec: 0,
+          subscribersGained: 0,
+          avgViewPercentage: 0,
+          daily: [],
+          retention: [],
+          traffic: [],
+          durationSec: null,
+          ...a,
+          retention30: stillWatchingAt(a.retention ?? [], a.durationSec),
+          privacy: snaps.get(v.id)?.at(-1)?.privacy ?? null,
+          snapshots: (snaps.get(v.id) ?? []).map(({ at, views, likes, comments }) => ({
+            at,
+            views,
+            likes,
+            comments
+          })),
+          // Impressions CTR is only shown in YouTube Studio; the public Analytics API does not expose it.
+          impressionsCtr: manual.get(v.id)?.ctr ?? null,
+          impressions: manual.get(v.id)?.impressions ?? null
+        }
+      })
   }
+}
+
+/** Store CTR/impressions from a YouTube Studio "Table data.csv" export. */
+export function importStudioCsv(channelId: number, text: string): StudioImportResult {
+  const { matched, unmatched } = matchStudioRows(parseStudioCsv(text), listVideos(channelId))
+  for (const { videoId, row } of matched) {
+    setManualMetrics(videoId, {
+      ...(row.ctr !== null ? { ctr: row.ctr } : {}),
+      ...(row.impressions !== null ? { impressions: row.impressions } : {})
+    })
+  }
+  return {
+    matched: matched.length,
+    unmatched: unmatched.map((r) => r.title ?? r.youtubeId ?? '?')
+  }
+}
+
+export interface VideoPerf {
+  title: string
+  views: number
+  ctr: number | null
+  retention30: number | null
+  avgViewPct: number | null
+}
+
+/**
+ * Top and bottom `n` long videos of the channel, ranked by views at 7 days so older videos
+ * do not win on age alone. Videos younger than 7 days are left out.
+ */
+export function bestAndWorst(channelId: number, n = 3): { best: VideoPerf[]; worst: VideoPerf[] } {
+  const stats = readStats(channelId)
+  const end = lastDay(stats.videos.map((s) => s.daily))
+  const videos = new Map(listVideos(channelId).map((v) => [v.id, v]))
+  const ranked = stats.videos
+    .flatMap((s) => {
+      const v = videos.get(s.video_id)
+      if (!v || v.kind !== 'long') return []
+      const release = v.scheduled_at ?? v.created_at
+      const week = viewsAtAge(anchored(s.snapshots, s.daily, end), s.daily, release, 168, end)
+      if (week === null) return []
+      const perf: VideoPerf = {
+        title: s.title,
+        views: s.snapshots.at(-1)?.views ?? s.views,
+        ctr: s.impressionsCtr,
+        retention30: s.retention30,
+        avgViewPct: s.avgViewPercentage || null
+      }
+      return [{ week, perf }]
+    })
+    .sort((a, b) => b.week - a.week)
+    .map((r) => r.perf)
+  return { best: ranked.slice(0, n), worst: ranked.slice(n).slice(-n).reverse() }
+}
+
+/** Short English block for LLM prompts about what works on this channel; '' without data. */
+export function perfPromptBlock(channelId: number): string {
+  const { best, worst } = bestAndWorst(channelId)
+  if (!best.length) return ''
+  const line = (p: VideoPerf): string => {
+    const parts = [`${p.views} views`]
+    if (p.ctr !== null) parts.push(`CTR ${p.ctr.toFixed(1)}%`)
+    if (p.retention30 !== null) parts.push(`${Math.round(p.retention30)}% still watching at 0:30`)
+    if (p.avgViewPct !== null) parts.push(`${Math.round(p.avgViewPct)}% average viewed`)
+    return `- "${p.title}" (${parts.join(', ')})`
+  }
+  return [
+    'Best performing videos on this channel (views at 7 days):',
+    ...best.map(line),
+    ...(worst.length ? ['Worst:', ...worst.map(line)] : []),
+    'Lean toward what the best ones share; avoid what the worst ones share.'
+  ].join('\n')
 }

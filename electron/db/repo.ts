@@ -555,3 +555,39 @@ export function logsForVideo(videoId: number, limit = 200): LogEntry[] {
     .all(videoId, limit) as LogEntry[]
   return rows.reverse()
 }
+
+export interface ManualMetrics {
+  /** Impressions click-through rate, % */
+  ctr: number | null
+  impressions: number | null
+}
+
+/** CTR/impressions from Studio; a field left undefined keeps its stored value. */
+export function setManualMetrics(videoId: number, m: Partial<ManualMetrics>): void {
+  db()
+    .prepare(
+      `INSERT INTO manual_metrics (video_id, ctr, impressions, updated_at) VALUES (@id, @ctr, @impressions, @at)
+       ON CONFLICT(video_id) DO UPDATE SET
+         ctr = CASE WHEN @hasCtr THEN excluded.ctr ELSE ctr END,
+         impressions = CASE WHEN @hasImp THEN excluded.impressions ELSE impressions END,
+         updated_at = excluded.updated_at`
+    )
+    .run({
+      id: videoId,
+      ctr: m.ctr ?? null,
+      impressions: m.impressions ?? null,
+      hasCtr: m.ctr !== undefined ? 1 : 0,
+      hasImp: m.impressions !== undefined ? 1 : 0,
+      at: now()
+    })
+  notify('videos')
+}
+
+export function manualMetrics(channelId: number): Map<number, ManualMetrics> {
+  const rows = db()
+    .prepare(
+      'SELECT video_id, ctr, impressions FROM manual_metrics WHERE video_id IN (SELECT id FROM videos WHERE channel_id = ?)'
+    )
+    .all(channelId) as ({ video_id: number } & ManualMetrics)[]
+  return new Map(rows.map((r) => [r.video_id, { ctr: r.ctr, impressions: r.impressions }]))
+}

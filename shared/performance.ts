@@ -165,3 +165,25 @@ export function anchored(snapshots: Snapshot[], daily: Daily, end: string | null
   const views = daily.reduce((t, [d, v]) => (d <= end ? t + v : t), 0)
   return [{ at, views }, ...snapshots]
 }
+
+/** Retention curve point: [elapsed share of the video 0–1, audienceWatchRatio, relativeRetentionPerformance]. */
+export type RetentionPoint = [number, number, number]
+
+/**
+ * % of viewers still watching `sec` seconds in, interpolated on the Analytics retention
+ * curve. Capped at 100 (rewatches of the opening push the ratio above 1). Null without data.
+ */
+export function stillWatchingAt(
+  curve: RetentionPoint[],
+  durationSec: number | null | undefined,
+  sec = 30
+): number | null {
+  if (!curve.length || !durationSec || durationSec <= sec) return null
+  const t = sec / durationSec
+  const i = curve.findIndex(([r]) => r >= t)
+  if (i < 0) return null
+  const [r1, w1] = curve[i]
+  const [r0, w0] = i ? curve[i - 1] : [0, w1]
+  const w = r1 === r0 ? w1 : w0 + ((w1 - w0) * (t - r0)) / (r1 - r0)
+  return Math.min(100, w * 100)
+}

@@ -71,7 +71,9 @@ const api: Api = {
   youtube: {
     connect: invoke('youtube:connect'),
     disconnect: invoke('youtube:disconnect'),
-    stats: invoke('youtube:stats')
+    stats: invoke('youtube:stats'),
+    setManualMetrics: invoke('youtube:setManualMetrics'),
+    importStudioCsv: invoke('youtube:importStudioCsv')
   },
   onChanged: (callback) => {
     const listener = (_: unknown, topic: string): void => callback(topic)

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import {
   anchored,
@@ -17,6 +17,8 @@ import type { VideoKind } from '../../shared/types'
 import { Banner, Button, Card, PageHeader } from '../components/ui'
 import { api, errorText, formatDate, mediaUrl, useLive } from '../lib/api'
 import { useChannel } from '../lib/channel'
+import { DiagnosisPanel, VerdictBadge, type Medians } from '../components/Diagnosis'
+import { median } from '../../shared/eta'
 
 const BRAND = 'var(--color-brand-300)'
 /** Categorical slots for the dark surface, in fixed order (dataviz reference palette). */
@@ -336,6 +338,8 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
   const [filter, setFilter] = useState<Filter>('all')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [open, setOpen] = useState<number | null>(null)
 
   const byId = new Map((stats?.videos ?? []).map((s) => [s.video_id, s]))
   const end = lastDay((stats?.videos ?? []).map((s) => s.daily))
@@ -411,6 +415,35 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
     }
   }
 
+  async function importCsv(): Promise<void> {
+    setError(null)
+    setNotice(null)
+    try {
+      const res = await api.youtube.importStudioCsv(channel.id)
+      if (!res) return
+      setNotice(
+        `CSV importado: ${res.matched} vídeo(s) atualizados` +
+          (res.unmatched.length ? `; sem correspondência: ${res.unmatched.join(', ')}` : '')
+      )
+      reload()
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
+  // Channel medians per kind, so a short is diagnosed against shorts and a video against videos.
+  const mediansFor = (kind: VideoKind): Medians => {
+    const stats = rows.flatMap((r) => (r.video.kind === kind && r.stats ? [r.stats] : []))
+    const of = (pick: (s: (typeof stats)[number]) => number | null): number | null =>
+      median(stats.map(pick).filter((v): v is number => v !== null && v > 0)) ?? null
+    return {
+      ctr: of((s) => s.impressionsCtr),
+      retention30: of((s) => s.retention30),
+      avgViewPct: of((s) => s.avgViewPercentage)
+    }
+  }
+  const medians = { long: mediansFor('long'), short: mediansFor('short') }
+
   const FILTERS: { id: Filter; label: string }[] = [
     { id: 'all', label: 'Tudo' },
     { id: 'long', label: 'Vídeos' },
@@ -442,6 +475,12 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
                 </button>
               ))}
             </div>
+            <Button
+              onClick={importCsv}
+              title="YouTube Studio → Analytics → Modo avançado → Exportar → CSV"
+            >
+              Importar CSV do Studio
+            </Button>
             {stats?.connected && (
               <Button disabled={busy} onClick={refresh}>
                 {busy ? 'Atualizando…' : 'Atualizar agora'}
@@ -451,6 +490,7 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
         }
       />
       {error && <Banner kind="error">{error}</Banner>}
+      {notice && <Banner kind="info">{notice}</Banner>}
       {stuck.length > 0 && (
         <Banner kind="warn">
           {stuck.length} vídeo(s) já passaram do horário e continuam <b>privados</b> no YouTube:{' '}
@@ -529,7 +569,8 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
               <th className="px-3 py-2.5 text-right font-medium">Retenção</th>
               <th className="px-3 py-2.5 text-right font-medium">Likes</th>
               <th className="px-3 py-2.5 text-right font-medium">Coment.</th>
-              <th className="px-4 py-2.5 text-right font-medium">Inscritos</th>
+              <th className="px-3 py-2.5 text-right font-medium">Inscritos</th>
+              <th className="px-4 py-2.5 font-medium">Diagnóstico</th>
             </tr>
           </thead>
           <tbody>
@@ -538,97 +579,126 @@ export default function Published({ onOpen }: { onOpen: (id: number) => void }):
               const thumb = v.thumbnail_paths[v.chosen_thumbnail ?? 0]
               const privacy = r.stats?.privacy ? PRIVACY[r.stats.privacy] : null
               return (
-                <tr
-                  key={v.id}
-                  data-testid="published-row"
-                  onClick={() => onOpen(v.id)}
-                  className="cursor-pointer border-b border-ink-800/60 transition-colors hover:bg-ink-850"
-                >
-                  <td className="px-4 py-2">
-                    <div className="flex items-center gap-3">
-                      {thumb && (
-                        <img
-                          src={mediaUrl(thumb)}
-                          alt=""
-                          className={`shrink-0 rounded object-cover ${
-                            v.kind === 'short' ? 'aspect-[9/16] h-14' : 'aspect-video w-24'
-                          }`}
-                        />
-                      )}
-                      <div className="min-w-0">
-                        <div className="line-clamp-2 text-ink-100">
-                          {v.kind === 'short' && (
-                            <span className="mr-1.5 inline-flex -translate-y-px rounded bg-brand-400/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-brand-200">
-                              Short
-                            </span>
-                          )}
-                          {v.title ?? v.topic}
-                        </div>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-500">
-                          <span>{formatDate(r.release)}</span>
-                          {privacy && (
-                            <span className={`rounded px-1.5 py-px text-[10px] ${privacy.tone}`}>
-                              {privacy.label}
-                            </span>
-                          )}
-                          {v.youtube_id && (
-                            <a
-                              href={`https://youtu.be/${v.youtube_id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-brand-300 hover:underline"
-                            >
-                              abrir no YouTube
-                            </a>
-                          )}
+                <Fragment key={v.id}>
+                  <tr
+                    data-testid="published-row"
+                    onClick={() => onOpen(v.id)}
+                    className="cursor-pointer border-b border-ink-800/60 transition-colors hover:bg-ink-850"
+                  >
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-3">
+                        {thumb && (
+                          <img
+                            src={mediaUrl(thumb)}
+                            alt=""
+                            className={`shrink-0 rounded object-cover ${
+                              v.kind === 'short' ? 'aspect-[9/16] h-14' : 'aspect-video w-24'
+                            }`}
+                          />
+                        )}
+                        <div className="min-w-0">
+                          <div className="line-clamp-2 text-ink-100">
+                            {v.kind === 'short' && (
+                              <span className="mr-1.5 inline-flex -translate-y-px rounded bg-brand-400/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-brand-200">
+                                Short
+                              </span>
+                            )}
+                            {v.title ?? v.topic}
+                          </div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-500">
+                            <span>{formatDate(r.release)}</span>
+                            {privacy && (
+                              <span className={`rounded px-1.5 py-px text-[10px] ${privacy.tone}`}>
+                                {privacy.label}
+                              </span>
+                            )}
+                            {v.youtube_id && (
+                              <a
+                                href={`https://youtu.be/${v.youtube_id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-brand-300 hover:underline"
+                              >
+                                abrir no YouTube
+                              </a>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-right font-medium tabular-nums text-white">
-                    {fmt(r.views)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.last24 === null ? '—' : fmt(r.last24)}
-                  </td>
-                  {r.ages.map((value, i) => {
-                    const avg = average(v.kind, i)
-                    return (
-                      <td key={i} className="px-3 py-2 text-right tabular-nums">
-                        {value === null ? (
-                          <span className="text-ink-600">—</span>
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium tabular-nums text-white">
+                      {fmt(r.views)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {r.last24 === null ? '—' : fmt(r.last24)}
+                    </td>
+                    {r.ages.map((value, i) => {
+                      const avg = average(v.kind, i)
+                      return (
+                        <td key={i} className="px-3 py-2 text-right tabular-nums">
+                          {value === null ? (
+                            <span className="text-ink-600">—</span>
+                          ) : (
+                            <>
+                              {fmt(value)}
+                              {avg ? (
+                                <div title="vs. média do mesmo tipo">
+                                  <Change value={value / avg - 1} />
+                                </div>
+                              ) : null}
+                            </>
+                          )}
+                        </td>
+                      )
+                    })}
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {r.stats?.avgViewPercentage
+                        ? `${Math.round(r.stats.avgViewPercentage)}%`
+                        : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {r.likes === null ? '—' : fmt(r.likes)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {r.comments === null ? '—' : fmt(r.comments)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {fmt(r.stats?.subscribersGained ?? 0)}
+                    </td>
+                    <td className="px-4 py-2">
+                      <button
+                        data-testid="diagnosis-toggle"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setOpen(open === v.id ? null : v.id)
+                        }}
+                        className="cursor-pointer"
+                        title="Abrir diagnóstico"
+                      >
+                        <VerdictBadge s={r.stats} medians={medians[v.kind]} />
+                      </button>
+                    </td>
+                  </tr>
+                  {open === v.id && (
+                    <tr className="border-b border-ink-800/60 bg-ink-950/40">
+                      <td colSpan={11}>
+                        {r.stats ? (
+                          <DiagnosisPanel s={r.stats} medians={medians[v.kind]} />
                         ) : (
-                          <>
-                            {fmt(value)}
-                            {avg ? (
-                              <div title="vs. média do mesmo tipo">
-                                <Change value={value / avg - 1} />
-                              </div>
-                            ) : null}
-                          </>
+                          <div className="px-4 py-4 text-xs text-ink-500">
+                            Sem estatísticas ainda: atualize o Analytics.
+                          </div>
                         )}
                       </td>
-                    )
-                  })}
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.stats?.avgViewPercentage ? `${Math.round(r.stats.avgViewPercentage)}%` : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.likes === null ? '—' : fmt(r.likes)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.comments === null ? '—' : fmt(r.comments)}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
-                    {fmt(r.stats?.subscribersGained ?? 0)}
-                  </td>
-                </tr>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
             {!rows.length && (
               <tr>
-                <td colSpan={10} className="px-4 py-4 text-ink-500">
+                <td colSpan={11} className="px-4 py-4 text-ink-500">
                   Nada publicado neste filtro. Os agendados aparecem aqui quando entram no ar.
                 </td>
               </tr>

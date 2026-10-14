@@ -152,6 +152,15 @@ const migrations: string[] = [
     privacy TEXT
   );
   CREATE INDEX idx_snapshots_video ON snapshots(video_id, at);
+  `,
+  // Impressions and CTR typed by hand or imported from the YouTube Studio CSV (the API has no CTR).
+  `
+  CREATE TABLE manual_metrics (
+    video_id INTEGER PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+    ctr REAL,
+    impressions INTEGER,
+    updated_at TEXT NOT NULL
+  );
   `
 ]
 

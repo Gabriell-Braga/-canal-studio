@@ -23,7 +23,9 @@ function scene(i: number, start: number, end: number): Scene {
     start_sec: start,
     end_sec: end,
     locked: false,
-    year: null
+    year: null,
+    realistic: false,
+    extra_assets: []
   }
 }
 

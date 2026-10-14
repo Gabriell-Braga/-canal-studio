@@ -26,7 +26,7 @@ import {
   updateVideo,
   videosByStatus
 } from '../db/repo'
-import { getSettings, getState, setState } from '../db/settings'
+import { getSettings, getState, setSettings, setState } from '../db/settings'
 import { Pipeline } from '../pipeline'
 import { Scheduler, type QueueEvent } from '../queue/scheduler'
 import { refreshPath } from '../services/exec'
@@ -295,6 +295,12 @@ app.whenReady().then(async () => {
   })
   const pipeline = new Pipeline(scheduler)
   pipeline.approveAllShorts()
+  // Once (v2): voice reading our own script, archive scans and abstract backgrounds do not
+  // need the synthetic label; the scenes step turns it on when an AI image looks real.
+  if (!getState('v2.syntheticOff', false)) {
+    for (const channel of listChannels()) setSettings({ syntheticDefault: false }, channel.id)
+    setState('v2.syntheticOff', true)
+  }
   // Once: every video not public yet is made again with the teaser and channel intro.
   if (!getState('reprocess.teaser', false) && process.env.CANAL_FAKE_STEPS !== '1') {
     const done = pipeline.reprocessAll()

@@ -1,7 +1,10 @@
 import { copyFileSync, mkdirSync, renameSync, rmSync } from 'fs'
 import { extname, join } from 'path'
 import type { Scene, Settings } from '../../shared/types'
-import { getScene, getVideo, listScenes, updateScene } from '../db/repo'
+import { z } from 'zod'
+import { getScene, getVideo, listScenes, updateScene, updateVideo } from '../db/repo'
+import { generateStructured } from '../services/llm'
+import { polishSettings } from './polish'
 import { ensureComfy, freeComfy, generateImage } from '../services/comfy'
 import { isValidFile, probeDuration, runTool } from '../services/ffmpeg'
 import { unloadAll } from '../services/ollama'
@@ -148,11 +151,61 @@ export async function prepareComfy(s: Settings, signal?: AbortSignal): Promise<v
   await ensureComfy(s, signal)
 }
 
+const realisticSchema = z.object({
+  scenes: z.array(z.object({ scene: z.number().int(), realistic: z.boolean() }))
+})
+
+/**
+ * Which AI images would need YouTube's synthetic-content label: a photorealistic picture of a
+ * real, identifiable person, or one a viewer could take for a real event. Generic objects,
+ * places, textures and abstract backgrounds do not. When the check fails, a scene about a
+ * named real subject counts as realistic (the safe side).
+ */
+export async function markRealistic(
+  scenes: Scene[],
+  s: Settings,
+  signal?: AbortSignal
+): Promise<Map<number, boolean>> {
+  const out = new Map(scenes.map((sc) => [sc.id, !!sc.real_subject]))
+  if (!scenes.length) return out
+  try {
+    const { scenes: marks } = await generateStructured(
+      `These prompts become photorealistic AI images in a documentary video. For each, answer realistic=true when the image would show a real, identifiable person, or could be mistaken for a real photo or footage of a real event. Answer false for generic objects, products, places, landscapes, textures, abstract or atmospheric backgrounds and anonymous people.
+${scenes.map((sc, i) => `${i + 1}. ${sc.image_prompt || sc.visual_keywords} (narration: ${sc.narration.slice(0, 160)})`).join('\n')}
+Return ONLY JSON: {"scenes": [{"scene": 1, "realistic": false}, ...]}`,
+      realisticSchema,
+      { settings: polishSettings(s), signal, temperature: 0 }
+    )
+    for (const m of marks) {
+      const sc = scenes[m.scene - 1]
+      if (sc) out.set(sc.id, m.realistic)
+    }
+  } catch (error) {
+    if (signal?.aborted) throw error
+  }
+  return out
+}
+
+/**
+ * Turn the synthetic-content label on when an AI image in the video looks real, with the
+ * reason shown in the final review. Off otherwise (narration, scans, generic images).
+ */
+export function updateSyntheticLabel(videoId: number): void {
+  const real = listScenes(videoId).filter((sc) => sc.asset_type === 'ai_image' && sc.realistic)
+  updateVideo(videoId, {
+    synthetic_content: real.length > 0,
+    synthetic_reason: real.length
+      ? `${real.length} imagem(ns) de IA fotorrealista(s) que mostram pessoa real ou parecem evento real (cenas ${real.map((sc) => sc.index + 1).join(', ')}).`
+      : null
+  })
+}
+
 export async function assignAi(
   scene: Scene,
   dir: string,
   s: Settings,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  realistic?: boolean
 ): Promise<void> {
   const prompt = scene.image_prompt || scene.visual_keywords || scene.narration
   const out = join(dir, `scene_${String(scene.index).padStart(3, '0')}_ai_${Date.now()}.png`)
@@ -161,8 +214,10 @@ export async function assignAi(
     asset_type: 'ai_image',
     asset_path: out,
     asset_source: 'comfyui',
-    asset_credit: null
+    asset_credit: null,
+    realistic: realistic ?? !!scene.real_subject
   })
+  updateSyntheticLabel(scene.video_id)
 }
 
 export const scenesStep: Step = {
@@ -265,12 +320,15 @@ export const scenesStep: Step = {
     ctx.log(`Cenas: ${stock} de banco, ${needAi.length} para IA, ${kept} já prontas`)
 
     if (needAi.length) {
+      const realistic = await markRealistic(needAi, s, ctx.signal)
+      const real = needAi.filter((sc) => realistic.get(sc.id)).length
+      if (real) ctx.log(`${real} imagem(ns) de IA parecem reais: selo de conteúdo sintético ligado`)
       await prepareComfy(s, ctx.signal)
       try {
         // All images of this video in one batch, so the model loads once.
         for (const [k, scene] of needAi.entries()) {
           if (ctx.signal.aborted) throw new Error('Cancelado')
-          await assignAi(getScene(scene.id), dir, s, ctx.signal)
+          await assignAi(getScene(scene.id), dir, s, ctx.signal, realistic.get(scene.id))
           ctx.progress(0.3 + (0.7 * (k + 1)) / needAi.length)
         }
       } finally {
@@ -279,6 +337,7 @@ export const scenesStep: Step = {
     }
     const missing = listScenes(videoId).filter((sc) => !isValidFile(sc.asset_path))
     if (missing.length) throw new Error(`${missing.length} cena(s) sem imagem ou vídeo`)
+    updateSyntheticLabel(videoId)
     ctx.progress(1)
   }
 }

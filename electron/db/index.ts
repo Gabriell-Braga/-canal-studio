@@ -161,6 +161,16 @@ const migrations: string[] = [
     impressions INTEGER,
     updated_at TEXT NOT NULL
   );
+  `,
+  // v2: AI scenes that look real (synthetic label), extra shots per scene, the reason the
+  // synthetic label is on, the face edit check, named series and the final review checklist.
+  `
+  ALTER TABLE scenes ADD COLUMN realistic INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE scenes ADD COLUMN extra_assets TEXT;
+  ALTER TABLE videos ADD COLUMN synthetic_reason TEXT;
+  ALTER TABLE videos ADD COLUMN face_check TEXT;
+  ALTER TABLE videos ADD COLUMN series TEXT;
+  ALTER TABLE videos ADD COLUMN checklist TEXT;
   `
 ]
 

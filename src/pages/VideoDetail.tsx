@@ -548,6 +548,32 @@ function PublishTab({
         ) : (
           <p className="text-sm text-ink-500">Thumbnails ainda não geradas.</p>
         )}
+        {video.face_check && (
+          <div className="mt-4 grid gap-2">
+            <div className="text-xs text-ink-400">
+              Rosto de {video.face_check.person}: foto real × expressão editada (
+              {video.face_check.preset}).{' '}
+              {video.face_check.edited
+                ? video.face_check.ok
+                  ? `Checagem de identidade aprovada (${video.face_check.similarity?.toFixed(2)}).`
+                  : `Checagem reprovou (${video.face_check.similarity?.toFixed(2)} < 0,60): a thumbnail usa a foto original.`
+                : 'Sem edição: a thumbnail usa a foto original.'}
+              {video.face_check.credit ? ` Crédito: ${video.face_check.credit}` : ''}
+            </div>
+            <div className="flex gap-3">
+              <img
+                src={mediaUrl(video.face_check.original, video.updated_at)}
+                className="h-40 rounded object-contain"
+              />
+              {video.face_check.edited && (
+                <img
+                  src={mediaUrl(video.face_check.edited, video.updated_at)}
+                  className="h-40 rounded object-contain"
+                />
+              )}
+            </div>
+          </div>
+        )}
       </Card>
       <Card className="grid gap-4 p-5">
         {video.kind === 'long' && video.title_options.length > 1 && (
@@ -612,6 +638,11 @@ function PublishTab({
             />
             Conteúdo alterado ou sintético (divulgação do YouTube)
           </label>
+          {video.synthetic_reason && (
+            <p className="text-xs text-ink-400 md:col-span-2">
+              Ligado automaticamente: {video.synthetic_reason} Desmarque se discordar.
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           <Button onClick={save}>Salvar</Button>

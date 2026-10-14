@@ -141,6 +141,8 @@ export interface ThumbnailProps {
   background2?: string | null
   /** 2–4 words, drawn very big */
   text: string
+  /** Real face cut out of its photo (expression edited), for layouts that show one */
+  face?: string | null
   /** Company logo, shown on a white plate in the top corner */
   logo?: string | null
   [key: string]: unknown

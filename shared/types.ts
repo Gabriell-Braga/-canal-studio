@@ -200,6 +200,14 @@ export interface Video {
   scheduled_at: string | null
   youtube_id: string | null
   synthetic_content: boolean
+  /** Why the synthetic-content label was turned on automatically (pt-BR); null when it was not */
+  synthetic_reason: string | null
+  /** The real photo and its expression edit used on the thumbnail, with the identity check */
+  face_check: FaceCheck | null
+  /** Named series the video belongs to (one playlist per series) */
+  series: string | null
+  /** Final review checklist: item id → checked */
+  checklist: Record<string, boolean>
   error_message: string | null
   error_step: JobType | null
   created_at: string
@@ -224,6 +232,28 @@ export interface Scene {
   end_sec: number | null
   locked: boolean
   year: number | null
+  /** AI image that shows a real person or could pass for a real event */
+  realistic: boolean
+  /** More shots shown one after another inside the scene (fast cuts in the opening) */
+  extra_assets: SubShot[]
+}
+
+export interface SubShot {
+  type: AssetType
+  path: string
+  source: string
+  credit: string | null
+}
+
+export interface FaceCheck {
+  person: string
+  original: string
+  edited: string | null
+  preset: string
+  similarity: number | null
+  /** The edit kept the person recognizable (cosine ≥ 0.6); otherwise the original is used */
+  ok: boolean
+  credit: string | null
 }
 
 export interface Job {
@@ -438,6 +468,8 @@ export type VideoPatch = Partial<
     | 'template'
     | 'niche'
     | 'duration_target_min'
+    | 'series'
+    | 'checklist'
   >
 >
 

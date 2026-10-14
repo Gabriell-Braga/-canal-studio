@@ -29,6 +29,8 @@ export interface WikimediaOptions {
   allowCcBySa?: boolean
   /** Searching for a real person or event: accept smaller and squarer photos too */
   relaxed?: boolean
+  /** Portraits of a person: tall photos are fine, only the face size matters */
+  portrait?: boolean
 }
 
 function strip(html: string | undefined): string {
@@ -82,7 +84,11 @@ export async function searchWikimedia(
     if (!info || exclude.has(source)) continue
     // Landscape-ish and big enough to fill 1080p after a Ken Burns zoom. A real event photo is
     // worth a softer or squarer frame (cropped to 16:9) over generic stock.
-    const [minWidth, minRatio] = options.relaxed ? [900, 0.95] : [1200, 1.2]
+    const [minWidth, minRatio] = options.portrait
+      ? [500, 0.4]
+      : options.relaxed
+        ? [900, 0.95]
+        : [1200, 1.2]
     if (info.width < minWidth || info.width / info.height < minRatio) continue
     const license = strip(info.extmetadata?.LicenseShortName?.value)
     const free = FREE.test(license)

@@ -1,5 +1,5 @@
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs'
-import { join, relative } from 'path'
+import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs'
+import { extname, join, relative } from 'path'
 import { z } from 'zod'
 import { formatOf, type FormatPack } from '../../shared/formats'
 import { THUMB, THUMB_CHECK, thumbProblems, thumbText, type ThumbReading } from '../../shared/thumb'
@@ -7,7 +7,15 @@ import { pythonPost } from '../services/python'
 import { getState } from '../db/settings'
 import { THUMB_KIND_LABELS, formatUsd } from '../../shared/render'
 import type { ThumbnailProps } from '../../shared/render'
-import type { Video } from '../../shared/types'
+import type { FaceCheck, Video } from '../../shared/types'
+import {
+  checkIdentity,
+  editExpression,
+  expressionAvailable,
+  findFacePhoto,
+  PRESETS,
+  type ExpressionPreset
+} from '../services/faces'
 import { getVideo, listScenes, listVideos, updateVideo } from '../db/repo'
 import { perfPromptBlock } from '../services/youtube'
 import { RECENT_TITLES, passingTitles } from '../../shared/titles'
@@ -34,7 +42,14 @@ interface ScoredTitle {
 
 interface PackAnswer {
   titles: ScoredTitle[]
-  thumbs: { approach: string; text: string; image: string; image2: string }[]
+  thumbs: {
+    approach: string
+    text: string
+    image: string
+    image2: string
+    person: string
+    emotion: string
+  }[]
 }
 
 function packSchema(pack: FormatPack): z.ZodType<PackAnswer> {
@@ -56,7 +71,9 @@ function packSchema(pack: FormatPack): z.ZodType<PackAnswer> {
           approach: z.enum(modelIds(pack)),
           text: z.string().min(1),
           image: z.string().min(1),
-          image2: z.string().default('')
+          image2: z.string().default(''),
+          person: z.string().default(''),
+          emotion: z.string().default('')
         })
       )
       .min(pack.thumbModels.length)
@@ -212,6 +229,65 @@ async function previewProblems(file: string, ctx: StepContext): Promise<string[]
   }
 }
 
+/**
+ * A real, freely licensed photo of a public figure, its expression changed by editing that
+ * photo (never a generated face), kept only when it is still recognizably the same person,
+ * then cut out of its background. Null when no usable photo exists: the model goes faceless.
+ */
+async function realFace(
+  person: string,
+  emotion: ExpressionPreset,
+  dir: string,
+  ctx: StepContext
+): Promise<{ cutout: string; check: FaceCheck } | null> {
+  const s = ctx.settings
+  const photo = await findFacePhoto(person, s, ctx.signal)
+  if (!photo) {
+    ctx.log(`Sem foto real utilizável de ${person}; thumbnail sem rosto`, 'warn')
+    return null
+  }
+  const slug = person.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  const original = join(dir, `face_${slug}${extname(photo.file) || '.jpg'}`)
+  copyFileSync(photo.file, original)
+  const check: FaceCheck = {
+    person,
+    original,
+    edited: null,
+    preset: emotion,
+    similarity: null,
+    ok: false,
+    credit: photo.credit ?? null
+  }
+  let chosen = original
+  if (await expressionAvailable(s)) {
+    const edited = join(dir, `face_${slug}_${emotion}.png`)
+    try {
+      await prepareComfy(s, ctx.signal)
+      await editExpression(original, emotion, edited, s, ctx.signal)
+      const id = await checkIdentity(original, edited, ctx.signal)
+      Object.assign(check, { edited, similarity: id.similarity, ok: id.ok })
+      if (id.ok) chosen = edited
+      else
+        ctx.log(
+          `Expressão editada de ${person} não parece a mesma pessoa (${id.similarity.toFixed(2)}); usando a foto original`,
+          'warn'
+        )
+    } catch (error) {
+      if (ctx.signal.aborted) throw error
+      ctx.log(`Edição de expressão falhou (${(error as Error).message}); foto original`, 'warn')
+    } finally {
+      await freeComfy(s.comfyUrl)
+    }
+  } else {
+    ctx.log('Editor de expressão não instalado (LivePortrait/InsightFace); foto original', 'warn')
+  }
+  const cutout = join(dir, `face_${slug}_cutout.png`)
+  await pythonPost('/cutout', { image_path: chosen, out_path: cutout }, ctx.signal)
+  return { cutout, check }
+}
+
+const EXPRESSIONS = Object.keys(PRESETS) as ExpressionPreset[]
+
 /** Test & compare results needed before the winning model goes first. */
 export const WINNER_AFTER_TESTS = 6
 
@@ -231,6 +307,8 @@ export interface Packaging {
   titles: string[]
   thumbs: { approach: string; text: string; file: string }[]
   preview: string | null
+  /** Real face used on a thumbnail, for the side-by-side check in the review */
+  faceCheck: FaceCheck | null
 }
 
 /**
@@ -290,7 +368,14 @@ For each:
 - "text": 0 to ${THUMB_CHECK.maxWords} words (a figure like "$250B → $0" counts as one idea; "" is fine when the image says it all). It must COMPLEMENT the ${keepTitle ? 'title' : 'first title'}, never repeat its words: if the title names the deal, the thumbnail shows the number; if the title asks why, the thumbnail shows the stakes. No quotes, no emojis.
 - "image": English prompt for an AI image generator: ONE big, instantly recognizable subject (the real iconic object of the story as it looked then, or a famous place of the story), filling at least a third of the frame, subject on the right half. At most 2 main elements and 1 accent color. No sepia or vintage filter, no readable text or logos.
 - "image2": only for "contrast": the ruin version of the same subject (empty, broken, grey). "" otherwise.
-Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "distinct": 0}, ...], "thumbs": [{"approach": "...", "text": "...", "image": "...", "image2": "..."}]}`,
+- "person": only for models that show a face (${
+      format.thumbModels
+        .filter((m) => m.face)
+        .map((m) => `"${m.id}"`)
+        .join(', ') || 'none'
+    }): the full name of the real public historical figure at the center of the story (founder, CEO, maker), whose real photo will be used. "" otherwise or when there is none.
+- "emotion": for those models, the expression that fits the story: laugh, shock, smug or worried. "" otherwise.
+Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "distinct": 0}, ...], "thumbs": [{"approach": "...", "text": "...", "image": "...", "image2": "...", "person": "", "emotion": ""}]}`,
     packSchema(format),
     {
       settings: { ...polishSettings(s), claudeModel: 'opus' },
@@ -343,6 +428,27 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
     return file
   }
 
+  // Real faces with an edited expression, only on the thumbnail (never inside the video).
+  const faces = new Map<string, string>()
+  let faceCheck: FaceCheck | null = null
+  for (const c of concepts) {
+    const model = format.thumbModels.find((m) => m.id === c.approach)
+    if (!model?.face || !c.person.trim()) continue
+    const emotion = (EXPRESSIONS as string[]).includes(c.emotion)
+      ? (c.emotion as ExpressionPreset)
+      : 'shock'
+    try {
+      const face = await realFace(c.person.trim(), emotion, dir, ctx)
+      if (face) {
+        faces.set(c.approach, face.cutout)
+        faceCheck = face.check
+      }
+    } catch (error) {
+      if (ctx.signal.aborted) throw error
+      ctx.log(`Rosto real indisponível (${(error as Error).message})`, 'warn')
+    }
+  }
+
   const headTitle = keepTitle ?? titles[0] ?? ''
   const stills = concepts.map((c, i) => {
     const props: ThumbnailProps = {
@@ -354,7 +460,8 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
         layoutOf(c.approach) === 'contrast' ? url(ctx.projectDir, imageFor('contrast_2')) : null,
       text: thumbText(c.text, headTitle),
       // No white logo plate: it shrinks the subject and reads as an ad.
-      logo: null
+      logo: null,
+      face: faces.has(c.approach) ? url(ctx.projectDir, faces.get(c.approach) as string) : null
     }
     return { out: join(outDir, `thumb_${i + 1}_${c.approach}.png`), props }
   })
@@ -414,7 +521,8 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
       text: st.props.text,
       file: st.out
     })),
-    preview: isValidFile(preview) ? preview : null
+    preview: isValidFile(preview) ? preview : null,
+    faceCheck
   }
 }
 
@@ -467,6 +575,7 @@ export const thumbnailStep: Step = {
       thumbnail_paths: pack.thumbs.map((t) => t.file),
       chosen_thumbnail: 0,
       title_options: pack.titles,
+      face_check: pack.faceCheck,
       ...(keepTitle ? {} : { title: pack.titles[0] })
     })
     // Thumbnails from an earlier run are no longer listed anywhere.

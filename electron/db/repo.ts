@@ -62,6 +62,10 @@ function toVideo(r: Row): Video {
     scheduled_at: (r.scheduled_at as string) ?? null,
     youtube_id: (r.youtube_id as string) ?? null,
     synthetic_content: Boolean(r.synthetic_content),
+    synthetic_reason: (r.synthetic_reason as string) ?? null,
+    face_check: parse(r.face_check, null),
+    series: (r.series as string) ?? null,
+    checklist: parse(r.checklist, {}),
     error_message: (r.error_message as string) ?? null,
     error_step: (r.error_step as JobType) ?? null,
     created_at: r.created_at as string,
@@ -211,6 +215,8 @@ export interface VideoFields extends VideoPatch {
   review_alerts?: Video['review_alerts']
   title_options?: string[]
   short_end?: number | null
+  synthetic_reason?: string | null
+  face_check?: Video['face_check']
 }
 
 const jsonColumns: Record<string, string> = {
@@ -218,7 +224,9 @@ const jsonColumns: Record<string, string> = {
   script: 'script_json',
   review_alerts: 'review_json',
   thumbnail_paths: 'thumbnail_paths',
-  title_options: 'title_options'
+  title_options: 'title_options',
+  face_check: 'face_check',
+  checklist: 'checklist'
 }
 
 export function updateVideo(id: number, fields: VideoFields): Video {
@@ -275,7 +283,9 @@ function toScene(r: Row): Scene {
     start_sec: (r.start_sec as number) ?? null,
     end_sec: (r.end_sec as number) ?? null,
     locked: Boolean(r.locked),
-    year: (r.year as number) ?? null
+    year: (r.year as number) ?? null,
+    realistic: Boolean(r.realistic),
+    extra_assets: parse(r.extra_assets, [])
   }
 }
 
@@ -342,7 +352,15 @@ export function updateScene(
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined) continue
     sets.push(`${key} = ?`)
-    values.push(typeof value === 'boolean' ? (value ? 1 : 0) : value)
+    values.push(
+      typeof value === 'boolean'
+        ? value
+          ? 1
+          : 0
+        : Array.isArray(value)
+          ? JSON.stringify(value)
+          : value
+    )
   }
   if (sets.length) {
     values.push(id)

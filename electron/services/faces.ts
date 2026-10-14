@@ -119,7 +119,7 @@ export async function findFacePhoto(
 ): Promise<{ file: string; credit?: string; source: string; box: FaceBox['box'] } | null> {
   const candidates = await searchWikimedia(
     `${name} portrait`,
-    { allowCcBy: true, allowCcBySa: true, relaxed: true },
+    { allowCcBy: true, allowCcBySa: true, relaxed: true, portrait: true },
     new Set(),
     signal
   )

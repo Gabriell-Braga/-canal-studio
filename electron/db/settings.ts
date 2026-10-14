@@ -58,7 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
     { weekday: 5, time: '14:00' }
   ],
   publishTimezone: 'America/New_York',
-  syntheticDefault: true,
+  syntheticDefault: false,
   brandPrimary: '#ffd34d',
   brandSecondary: '#ffffff',
   brandFont: 'Impact',

@@ -124,7 +124,9 @@ export function registerIpc(
       'chosen_thumbnail',
       'template',
       'niche',
-      'duration_target_min'
+      'duration_target_min',
+      'series',
+      'checklist'
     ]
     const clean = Object.fromEntries(
       Object.entries(patch).filter(([k]) => allowed.includes(k as keyof VideoPatch))

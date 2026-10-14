@@ -350,6 +350,8 @@ export interface Settings {
   publishSlots: PublishSlot[]
   publishTimezone: string
   syntheticDefault: boolean
+  /** Cap on full videos published per week (shorts not counted) */
+  maxLongPerWeek: number
   /** Channel look for thumbnails and shorts captions */
   brandPrimary: string
   brandSecondary: string
@@ -394,6 +396,7 @@ export const CHANNEL_SETTING_KEYS = [
   'publishSlots',
   'publishTimezone',
   'syntheticDefault',
+  'maxLongPerWeek',
   'brandPrimary',
   'brandSecondary',
   'brandFont',

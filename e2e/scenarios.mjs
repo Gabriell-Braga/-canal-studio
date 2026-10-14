@@ -616,15 +616,17 @@ async function shorts({ launch, api, shot, log, waitUntil }) {
       ]).toString()
     )
     const v = probe.streams.find((x) => x.codec_type === 'video')
-    log(
-      `  "${s.title}" ${v.width}x${v.height} ${Number(probe.format.duration).toFixed(1)} s (${s.short_start.toFixed(0)}–${s.short_end.toFixed(0)} s do original)`
-    )
+    log(`  "${s.title}" ${v.width}x${v.height} ${Number(probe.format.duration).toFixed(1)} s `)
     assert(v.width === 1080 && v.height === 1920, 'vertical 1080x1920')
-    assert(Number(probe.format.duration) <= 60, 'at most 60 s')
+    assert(Number(probe.format.duration) <= 40, 'own-script short: at most ~35 s')
   }
   await page.waitForTimeout(1500)
   await shot(page, 'shorts-tab')
   if ((await api(page, 'videos.get', video.id)).video.status === 'FINAL_REVIEW') {
+    // The checklist is mandatory before approval.
+    await api(page, 'videos.update', video.id, {
+      checklist: { title: true, hook: true, sources: true, thumb: true, face: true, unique: true }
+    })
     await page.getByTestId('approve-final').click()
     await page.getByText('Aprovado e agendado').waitFor()
   }

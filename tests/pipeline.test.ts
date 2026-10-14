@@ -1,3 +1,4 @@
+import { CHECKLIST } from '../shared/checklist'
 import { mkdirSync, readFileSync, utimesSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -10,9 +11,11 @@ import { freshDb } from './helpers'
 
 const scheduler = { kick: () => undefined } as unknown as Scheduler
 
+const ALL_CHECKED = Object.fromEntries(CHECKLIST.map((c) => [c.id, true]))
+
 function finishedVideo(): number {
   const v = createVideo({ topic: 'Rome', durationMin: 8, synthetic: false })
-  updateVideo(v.id, { status: 'FINAL_REVIEW', video_path: 'C:/v.mp4' })
+  updateVideo(v.id, { status: 'FINAL_REVIEW', video_path: 'C:/v.mp4', checklist: ALL_CHECKED })
   return v.id
 }
 
@@ -143,5 +146,22 @@ describe('publish slots', () => {
     updateVideo(failed, { status: 'ERROR' })
     const next = pipeline.approveFinal(finishedVideo()).scheduled_at
     expect(next).not.toBe(first)
+  })
+})
+
+describe('final review checklist', () => {
+  beforeEach(() => {
+    freshDb()
+  })
+
+  it('blocks approval until every item is checked', () => {
+    const pipeline = new Pipeline({ kick: () => undefined } as unknown as Scheduler)
+    const v = createVideo({ topic: 'Tonic', durationMin: 8, synthetic: false })
+    updateVideo(v.id, {
+      status: 'FINAL_REVIEW',
+      video_path: 'C:/v.mp4',
+      checklist: { title: true }
+    })
+    expect(() => pipeline.approveFinal(v.id)).toThrow(/checklist/)
   })
 })

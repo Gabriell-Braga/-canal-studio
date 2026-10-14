@@ -52,3 +52,21 @@ describe('short slots', () => {
     )
   })
 })
+
+describe('weekly cap', () => {
+  it('skips weeks that already have the maximum of full videos', async () => {
+    const { nextFreeSlot } = await import('../electron/queue/slots')
+    const slots = [
+      { weekday: 1, time: '14:00' },
+      { weekday: 3, time: '14:00' },
+      { weekday: 5, time: '14:00' }
+    ]
+    const from = new Date('2026-10-12T00:00:00Z') // Monday
+    const mon = nextFreeSlot(slots, 'UTC', [], from, 2)
+    const wed = nextFreeSlot(slots, 'UTC', [mon], from, 2)
+    const next = nextFreeSlot(slots, 'UTC', [mon, wed], from, 2)
+    expect(mon).toBe('2026-10-12T14:00:00.000Z')
+    expect(wed).toBe('2026-10-14T14:00:00.000Z')
+    expect(next).toBe('2026-10-19T14:00:00.000Z')
+  })
+})

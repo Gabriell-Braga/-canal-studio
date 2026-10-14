@@ -44,7 +44,7 @@ describe('cpi', () => {
       then: '$1.00',
       today: '$19',
       text: '$1.00 in 1924 ≈ $19 today',
-      estimate: false,
+      estimate: false
     })
     expect(priceTag(0.5, 1924)!.then).toBe('50¢')
     expect(priceTag(1500, 1950)!.text).toBe('$1,500 in 1950 ≈ $20,000 today')

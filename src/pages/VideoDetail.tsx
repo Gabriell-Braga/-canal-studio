@@ -8,6 +8,7 @@ import {
   type VideoDetail as Detail
 } from '../../shared/types'
 import { THUMB } from '../../shared/thumb'
+import { checklistFor, type ChecklistId } from '../../shared/checklist'
 import { THUMB_KIND_LABELS, thumbKindOf } from '../../shared/render'
 import ScriptEditor from '../components/ScriptEditor'
 import {
@@ -409,6 +410,43 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** Mandatory before approval: each item is a promise the video keeps. */
+function Checklist({ video }: { video: Video }): React.JSX.Element {
+  const [checked, setChecked] = useState(video.checklist ?? {})
+  const sources = video.script?.sources?.length ?? 0
+  const hints: Partial<Record<ChecklistId, string>> = {
+    sources: `${sources} fonte(s) no roteiro`,
+    face: video.face_check
+      ? video.face_check.ok
+        ? 'identidade aprovada'
+        : 'edição reprovada: thumbnail usa a foto original'
+      : undefined
+  }
+  function toggle(id: string, value: boolean): void {
+    const next = { ...checked, [id]: value }
+    setChecked(next)
+    void api.videos.update(video.id, { checklist: next })
+  }
+  return (
+    <div className="grid gap-1.5 rounded-md border border-ink-700 p-3">
+      <div className="text-sm font-medium text-ink-300">Checklist antes de aprovar</div>
+      {checklistFor(video).map((c) => (
+        <label key={c.id} className={inlineCheckClass}>
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            data-testid={`check-${c.id}`}
+            checked={!!checked[c.id]}
+            onChange={(e) => toggle(c.id, e.target.checked)}
+          />
+          {c.label}
+          {hints[c.id] && <span className="text-xs text-ink-500">({hints[c.id]})</span>}
+        </label>
+      ))}
+    </div>
+  )
+}
+
 function PublishTab({
   video,
   act
@@ -644,6 +682,7 @@ function PublishTab({
             </p>
           )}
         </div>
+        {video.kind === 'long' && video.status === 'FINAL_REVIEW' && <Checklist video={video} />}
         <div className="flex gap-2">
           <Button onClick={save}>Salvar</Button>
           {video.status === 'FINAL_REVIEW' && (

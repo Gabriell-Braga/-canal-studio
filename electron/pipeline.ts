@@ -16,6 +16,7 @@ import { getSettings, getState, setState } from './db/settings'
 import { generateStructured } from './services/llm'
 import { formatOf, scriptSchemaFor } from '../shared/formats'
 import { perfPromptBlock } from './services/youtube'
+import { checklistMissing } from '../shared/checklist'
 import { polishSettings } from './steps/polish'
 import { z } from 'zod'
 import { staleShorts } from './steps/shorts'
@@ -167,6 +168,9 @@ Return ONLY JSON: {"topics": ["...", ...]}`,
     const v = getVideo(id)
     if (v.status !== 'FINAL_REVIEW') throw new Error('O vídeo não está em revisão final')
     if (!v.video_path) throw new Error('O vídeo ainda não foi renderizado')
+    const missing = v.kind === 'long' ? checklistMissing(v) : []
+    if (missing.length)
+      throw new Error(`Complete o checklist antes de aprovar: ${missing.join('; ')}`)
     const scheduledAt =
       v.scheduled_at ?? (v.kind === 'short' ? this.shortSlot(v) : this.nextSlot(v.channel_id))
     const updated = updateVideo(id, { status: 'SCHEDULED', scheduled_at: scheduledAt })
@@ -325,7 +329,7 @@ ${JSON.stringify(v.script)}`,
       // Any video holding a time keeps it, even one in ERROR waiting to be sent again.
       .filter((v) => v.scheduled_at)
       .map((v) => v.scheduled_at as string)
-    return nextFreeSlot(s.publishSlots, s.publishTimezone, taken)
+    return nextFreeSlot(s.publishSlots, s.publishTimezone, taken, new Date(), s.maxLongPerWeek)
   }
 
   /** Rotate templates so consecutive videos do not look identical. */

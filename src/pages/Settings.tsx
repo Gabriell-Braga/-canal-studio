@@ -904,6 +904,19 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               </Button>
             </div>
           </div>
+          <Field
+            label="Máximo de vídeos longos por semana"
+            hint="Os horários pulam semanas cheias. Shorts não contam."
+          >
+            <input
+              className={inputClass}
+              type="number"
+              min={1}
+              max={14}
+              value={s.maxLongPerWeek}
+              onChange={(e) => set('maxLongPerWeek', num(e.target.value))}
+            />
+          </Field>
           <Field label="Fuso horário dos horários" hint="Ex.: America/New_York, America/Sao_Paulo">
             <input
               className={inputClass}

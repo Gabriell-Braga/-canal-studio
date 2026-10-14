@@ -53,19 +53,32 @@ function zonedDate(
   }
 }
 
+/** Monday-based week of an instant in a time zone (days since epoch / 7). */
+export function weekOf(instant: Date, timeZone: string): number {
+  const { y, m, d, wd } = zonedDate(instant, timeZone)
+  const day = Date.UTC(y, m - 1, d) / 86_400_000
+  return Math.floor((day - ((wd + 6) % 7)) / 7)
+}
+
 /**
- * First slot after `from` (plus a 1 h margin so the upload has time) that no other video uses.
- * Returns an ISO string in UTC.
+ * At most `maxPerWeek` videos per Monday-based week. Returns an ISO string in UTC.
+ * At most  videos per Monday-based week. Returns an ISO string in UTC.
  */
 export function nextFreeSlot(
   slots: PublishSlot[],
   timeZone: string,
   taken: string[],
-  from: Date = new Date()
+  from: Date = new Date(),
+  maxPerWeek = Infinity
 ): string {
   if (!slots.length) throw new Error('Nenhum horário de publicação configurado')
   const minTime = from.getTime() + 60 * 60_000
   const takenSet = new Set(taken.map((t) => new Date(t).getTime()))
+  const perWeek = new Map<number, number>()
+  for (const t of taken) {
+    const w = weekOf(new Date(t), timeZone)
+    perWeek.set(w, (perWeek.get(w) ?? 0) + 1)
+  }
   const start = zonedDate(from, timeZone)
   for (let dayOffset = 0; dayOffset < 400; dayOffset++) {
     const base = new Date(Date.UTC(start.y, start.m - 1, start.d + dayOffset))
@@ -81,7 +94,9 @@ export function nextFreeSlot(
       })
       .sort((a, b) => a.getTime() - b.getTime())
     for (const c of candidates) {
-      if (c.getTime() >= minTime && !takenSet.has(c.getTime())) return c.toISOString()
+      if (c.getTime() < minTime || takenSet.has(c.getTime())) continue
+      if ((perWeek.get(weekOf(c, timeZone)) ?? 0) >= maxPerWeek) continue
+      return c.toISOString()
     }
   }
   throw new Error('Nenhum horário livre encontrado')

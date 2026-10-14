@@ -53,12 +53,12 @@ export const DEFAULT_SETTINGS: Settings = {
   musicVolume: 0.12,
   templates: ['documentary', 'bold', 'minimal'],
   publishSlots: [
-    { weekday: 1, time: '14:00' },
-    { weekday: 3, time: '14:00' },
+    { weekday: 2, time: '14:00' },
     { weekday: 5, time: '14:00' }
   ],
   publishTimezone: 'America/New_York',
   syntheticDefault: false,
+  maxLongPerWeek: 2,
   brandPrimary: '#ffd34d',
   brandSecondary: '#ffffff',
   brandFont: 'Impact',

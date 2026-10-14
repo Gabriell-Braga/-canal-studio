@@ -1,7 +1,6 @@
 import { createHash } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from 'fs'
 import { dirname, join, relative } from 'path'
-import { z } from 'zod'
 import type {
   RenderCompany,
   RenderJob,
@@ -10,15 +9,15 @@ import type {
   YearCard
 } from '../../shared/render'
 import type { Scene, Video } from '../../shared/types'
-import { createShort, deleteVideo, getVideo, listScenes, listShorts, updateVideo } from '../db/repo'
+import { deleteVideo, getVideo, listScenes, listShorts, updateVideo } from '../db/repo'
 import { isValidFile, probeDuration } from '../services/ffmpeg'
-import { generateStructured } from '../services/llm'
 import { pythonPost } from '../services/python'
 import { runRender } from '../services/remotion'
 import { readWords, type Word } from './transcribe'
 import { formatOf, hasOverlay } from '../../shared/formats'
 import { renderCompanies, yearCardsFor } from './overlays'
 import { sceneFocus } from './focus'
+import { makeOwnShorts } from './shortscript'
 import type { Step, StepContext } from './types'
 
 /**
@@ -29,20 +28,6 @@ export const MIN_SEGMENT = 18
 export const MAX_SEGMENT = 32
 /** End on a line that flows back into the opening claim instead of the end card */
 const LOOP = true
-
-const segmentsSchema = z.object({
-  segments: z.array(
-    z.object({
-      first_scene: z.number().int(),
-      last_scene: z.number().int(),
-      headline: z.string().min(1),
-      hook: z.string().default(''),
-      loop_line: z.string().default(''),
-      title: z.string().min(1),
-      description: z.string()
-    })
-  )
-})
 
 export interface Segment {
   first: number
@@ -509,86 +494,8 @@ export const shortsStep: Step = {
     }
     const existing = listShorts(videoId)
     const kit = await shortKit(video, ctx)
-    const length = (a: number, b: number): number => spokenLength(kit.words, a, b)
-
-    ctx.log(`Escolhendo ${count} trecho(s) para shorts`)
-    const list = scenes
-      .map(
-        (sc, i) => `#${i} [${sc.start_sec?.toFixed(0)}–${sc.end_sec?.toFixed(0)} s] ${sc.narration}`
-      )
-      .join('\n')
-    let segments: Segment[] = []
-    try {
-      // The times listed still hold the pauses the short drops, hence the longer range asked.
-      const { segments: picks } = await generateStructured(
-        `You pick YouTube Shorts from a documentary narration about "${video.topic}" (video title: "${video.title}").
-Scenes with their times:
-${list}
-
-Choose ${count} different segments of CONSECUTIVE scenes, each ${MIN_SEGMENT + 5}–${MAX_SEGMENT + 8} seconds long, that work on their own and stop on a cliffhanger. Prefer the most surprising stretches. Do not overlap segments. Avoid the final call to subscribe.
-What works on this channel: ${formatOf(s.format).shortsRules.brief}
-For each give:
-- first_scene and last_scene (the # numbers)
-- hook: the single most shocking claim of the segment as ONE spoken sentence of at most ${formatOf(s.format).shortsRules.hookMaxWords} words, no intro, naming the company and a famous product or rival when possible (model: "Nokia had a touchscreen phone seven years before the iPhone."). It is narrated first, before the segment.
-- loop_line: ${LOOP ? 'one short spoken sentence (max 10 words) said after the segment that leads straight back into the hook, so the short replays seamlessly (e.g. "And it all started with one secret prototype." before a hook about that prototype). No call to action.' : '""'}
-- headline: 2–5 words shown huge on screen from the first frame, naming the company or a famous product, e.g. "NOKIA BURIED ITS OWN IPHONE", no hashtags
-- title: YouTube Shorts title, max 60 characters, no hashtags, one sentence
-- description: one sentence
-Return ONLY JSON: {"segments": [...]}`,
-        segmentsSchema,
-        { settings: s, signal: ctx.signal, temperature: 0.5 }
-      )
-      segments = normalizeSegments(scenes, picks, count, length)
-    } catch (error) {
-      ctx.log(
-        `Escolha automática falhou (${(error as Error).message}); usando trechos espaçados`,
-        'warn'
-      )
-    }
-    if (segments.length < count) {
-      const extra = evenSegments(scenes, count, video.title ?? video.topic, length).filter(
-        (e) => !segments.some((sg) => !(e.last < sg.first || e.first > sg.last))
-      )
-      segments.push(...extra.slice(0, count - segments.length))
-    }
-    if (!segments.length) throw new Error('Vídeo curto demais para shorts')
-    ctx.progress(0.15)
-
-    const dir = join(ctx.projectDir, 'shorts')
-    for (const [k, seg] of segments.entries()) {
-      if (ctx.signal.aborted) throw new Error('Cancelado')
-      const props = await shortProps(kit, scenes, seg, k, ctx)
-      const short = createShort(
-        video,
-        seg.start,
-        seg.end,
-        seg.title.replace(/#\w+/g, '').trim().slice(0, 90),
-        seg.description
-      )
-      const out = join(dir, `short_${short.id}.mp4`)
-      ctx.log(
-        `Short ${k + 1}/${segments.length}: "${short.title}" (${props.segmentDuration.toFixed(0)} s, cenas ${seg.first + 1}–${seg.last + 1})`
-      )
-      try {
-        await runRender(
-          { mode: 'short', root: ctx.projectDir, out, short: props, framed: true, extended: true },
-          join(dir, `short_${short.id}.json`),
-          {
-            progress: (p) => ctx.progress(0.15 + (0.85 * (k + p)) / segments.length),
-            signal: ctx.signal
-          }
-        )
-      } catch (error) {
-        rmSync(out, { force: true })
-        updateVideo(short.id, {
-          status: 'ERROR',
-          error_message: (error as Error).message,
-          error_step: 'short'
-        })
-        throw error
-      }
-      updateVideo(short.id, { video_path: out, status: 'FINAL_REVIEW' })
-    }
-    ctx.log(`${segments.length} short(s) prontos para revisão (já existiam ${existing.length})`)
+    // Each short has its own script, narration and vertical media; nothing is cut from the video.
+    const made = await makeOwnShorts(video, count, ctx, kit.cta, kit.music)
+    ctx.log(`${made} short(s) prontos para revisão (já existiam ${existing.length})`)
   }
 }

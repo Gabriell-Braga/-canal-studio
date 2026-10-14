@@ -357,9 +357,10 @@ export const Short: React.FC<ShortProps> = (props) => {
   const fade = Math.round(FADE_SEC * fps)
   const hookFrames = Math.round((props.hook?.duration ?? 0) * fps)
   const segmentFrames = Math.round(props.segmentDuration * fps)
-  const tailFrames = Math.round(
-    (props.loopEnd ? props.loopEnd.duration : props.cta.duration + 0.4) * fps
-  )
+  const tailFrames =
+    props.ending === 'loop'
+      ? 0
+      : Math.round((props.loopEnd ? props.loopEnd.duration : props.cta.duration + 0.4) * fps)
   const first = props.scenes[0]
   // With a narrated hook the logo already shows on the hook card, and the headline stays put.
   const logoIntro = !hookFrames && !!props.companies?.length
@@ -401,7 +402,11 @@ export const Short: React.FC<ShortProps> = (props) => {
             </Sequence>
           </>
         ) : (
-          <Headline text={props.headline} props={props} instant={hookFrames > 0} />
+          <Headline
+            text={props.headline}
+            props={props}
+            instant={hookFrames > 0 || !!props.ending}
+          />
         )}
         {props.captions && <ShortCaptions words={props.words} props={props} />}
         {(props.cuts ?? [{ from: 0, to: props.segmentDuration, at: 0 }]).map((c, i) => (
@@ -417,22 +422,24 @@ export const Short: React.FC<ShortProps> = (props) => {
           </Sequence>
         ))}
       </Sequence>
-      <Sequence from={hookFrames + segmentFrames} durationInFrames={tailFrames}>
-        {props.loopEnd ? (
-          <>
-            {/* The first scene again, so the picture loops with the words. */}
-            {first && <VerticalScene scene={first} frames={tailFrames} fadeIn={fade} />}
-            <Headline text={props.headline} props={props} instant />
-            <LoopCta props={props} />
-            <Audio src={props.loopEnd.audio} />
-          </>
-        ) : (
-          <>
-            <EndCard props={props} />
-            <Audio src={props.cta.audio} />
-          </>
-        )}
-      </Sequence>
+      {tailFrames > 0 && (
+        <Sequence from={hookFrames + segmentFrames} durationInFrames={tailFrames}>
+          {props.loopEnd ? (
+            <>
+              {/* The first scene again, so the picture loops with the words. */}
+              {first && <VerticalScene scene={first} frames={tailFrames} fadeIn={fade} />}
+              <Headline text={props.headline} props={props} instant />
+              <LoopCta props={props} />
+              <Audio src={props.loopEnd.audio} />
+            </>
+          ) : (
+            <>
+              <EndCard props={props} />
+              <Audio src={props.cta.audio} />
+            </>
+          )}
+        </Sequence>
+      )}
       {props.music && <Audio src={props.music} loop volume={props.musicVolume * 0.8} />}
     </AbsoluteFill>
   )

@@ -96,3 +96,15 @@ describe('extendSegment', () => {
     expect(extendSegment(scenes, 24, 48, 28, [[48, 60]], length)).toBeNull()
   })
 })
+
+describe('own-script shorts', () => {
+  it('spreads each line over its words and keeps lines in order', async () => {
+    const { lineWords } = await import('../electron/steps/shortscript')
+    const w = lineWords(['One two.', 'Three four five.'], [1, 1.5], 0.2)
+    expect(w).toHaveLength(5)
+    expect(w[0].start).toBe(0)
+    expect(w[1].end).toBeCloseTo(1)
+    expect(w[2].start).toBeCloseTo(1.2)
+    expect(w[4].end).toBeCloseTo(2.7)
+  })
+})

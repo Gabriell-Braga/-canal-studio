@@ -122,14 +122,16 @@ export interface ShortProps {
   hook?: { audio: string; duration: number; text: string } | null
   /** Narrated last line that flows back into the hook; replaces the end card so the short loops */
   loopEnd?: { audio: string; duration: number; text: string } | null
+  /** Shorts with their own script: "loop" ends on the narration (it replays into line 1), "cliffhanger" ends on the card */
+  ending?: 'loop' | 'cliffhanger'
   [key: string]: unknown
 }
 
 /** Seconds of a short: hook, the cut, then the loop line or the end card. */
 export function shortDuration(
-  p: Pick<ShortProps, 'segmentDuration' | 'cta' | 'hook' | 'loopEnd'>
+  p: Pick<ShortProps, 'segmentDuration' | 'cta' | 'hook' | 'loopEnd' | 'ending'>
 ): number {
-  const tail = p.loopEnd ? p.loopEnd.duration : p.cta.duration + 0.4
+  const tail = p.ending === 'loop' ? 0 : p.loopEnd ? p.loopEnd.duration : p.cta.duration + 0.4
   return (p.hook?.duration ?? 0) + p.segmentDuration + tail
 }
 

@@ -17,6 +17,7 @@ import { fetchLogos } from '../services/logos'
 import { readTimings } from './audio'
 import { polishSettings } from './polish'
 import type { StepContext } from './types'
+import { formatOf, hasOverlay } from '../../shared/formats'
 
 /**
  * The channel's intro card. The channel picture is copied next to the files the render
@@ -145,8 +146,9 @@ Return ONLY JSON: {"companies": [...]}`,
   return companies
 }
 
-/** Companies with their downloaded logos, as the compositions take them. */
+/** Companies with their downloaded logos, when the channel's format shows them. */
 export async function renderCompanies(video: Video, ctx: StepContext): Promise<RenderCompany[]> {
+  if (!hasOverlay(formatOf(ctx.settings.format), 'companyValue')) return []
   const companies = await companiesOf(video, ctx)
   if (!companies.length) return []
   const logos = await fetchLogos(companies, ctx.projectDir, ctx.signal, (m) => ctx.log(m, 'warn'))

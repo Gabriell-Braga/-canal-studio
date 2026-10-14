@@ -12,6 +12,7 @@ import { channelIntroProps, renderCompanies, yearCardsFor } from './overlays'
 import { readTimings } from './audio'
 import { sceneFocus } from './focus'
 import { musicTurn, planMusic, prepareMusic } from './music'
+import { formatOf, hasOverlay } from '../../shared/formats'
 import type { Step, StepContext } from './types'
 
 let musicFolderFor: (channelId: number) => string = () => ''
@@ -86,8 +87,10 @@ export const renderStep: Step = {
     const words = readWords(pd)
     // Long videos get real YouTube subtitles from this file; burned-in captions are optional.
     writeSrt(words, join(pd, 'captions.srt'))
+    const pack = formatOf(ctx.settings.format)
+    // The render draws only the overlays the channel's format declares.
     const companies = await renderCompanies(video, ctx)
-    const yearCards = yearCardsFor(scenes, pd)
+    const yearCards = hasOverlay(pack, 'yearCard') ? yearCardsFor(scenes, pd) : []
     if (companies.length || yearCards.length)
       ctx.log(
         `Sobreposições: ${companies.map((c) => `${c.name}${c.logo ? '' : ' (sem logo)'}`).join(', ') || 'sem empresas'}; ${yearCards.length} cartão(ões) de ano`
@@ -133,6 +136,7 @@ export const renderStep: Step = {
       ),
       musicVolume: ctx.settings.musicVolume,
       template: (video.template as TemplateId) ?? 'documentary',
+      format: pack.id,
       companies,
       yearCards,
       introSec,

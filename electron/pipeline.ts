@@ -14,9 +14,8 @@ import {
 } from './db/repo'
 import { getSettings, getState, setState } from './db/settings'
 import { generateStructured } from './services/llm'
-import { scriptSchema } from './steps/script'
+import { formatOf, scriptSchemaFor } from '../shared/formats'
 import { polishSettings } from './steps/polish'
-import { SATURATED_TOPICS } from '../shared/growth'
 import { z } from 'zod'
 import { staleShorts } from './steps/shorts'
 import { nextFreeSlot, shortSlotAfter } from './queue/slots'
@@ -35,12 +34,14 @@ export class Pipeline {
     const done = listVideos()
       .filter((v) => v.channel_id === channelId && v.kind === 'long')
       .map((v) => v.title ?? v.topic)
+    const pack = formatOf(s.format)
+    const src = pack.topicSource
     const { topics } = await generateStructured(
-      `You pick topics for a faceless YouTube channel of short business documentaries (rise and fall of companies)${s.defaultNiche ? `, niche: ${s.defaultNiche}` : ''}.
+      `You pick topics for a faceless YouTube channel. Format: ${src.brief}${s.defaultNiche ? `\nNiche: ${s.defaultNiche}` : ''}
 Already on the channel (do not repeat these stories): ${done.join(' | ') || 'none'}
-Saturated stories big channels already told to millions (avoid them, or use them only through a specific angle almost nobody covers): ${SATURATED_TOPICS.join(', ')}
-Give 10 topics. Prefer: little-known companies with a dramatic arc, or a specific, surprising episode of a famous company (one decision, one person, one product, one deal) instead of its whole history. Each must be true and well documented, with a clear turning point, real numbers and named people.
-Write each topic as a short English working title with the hook in it (max 80 characters), e.g. "The Hotel Chain That Sold Its Name and Kept the Buildings".
+Saturated stories big channels already told to millions (avoid them, or use them only through a specific angle almost nobody covers): ${pack.saturatedTopics.join(', ')}
+Give 10 topics.
+Write each topic as a short English working title with the hook in it (max 80 characters)${src.examples.length ? `, e.g. ${src.examples.map((e) => `"${e}"`).join(', ')}` : ''}.
 Return ONLY JSON: {"topics": ["...", ...]}`,
       z.object({ topics: z.array(z.string().min(1)).min(1).max(15) }),
       { settings: { ...polishSettings(s), claudeModel: 'opus' }, temperature: 1, effort: 'medium' }
@@ -248,7 +249,7 @@ ${alerts}
 
 SCRIPT JSON:
 ${JSON.stringify(v.script)}`,
-      scriptSchema,
+      scriptSchemaFor(formatOf(s.format)),
       { settings: s, effort: 'high', webSearch: s.llmProvider !== 'ollama' && s.factCheckWeb }
     )
     replaceScenes(id, fixed)

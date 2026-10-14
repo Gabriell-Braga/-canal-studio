@@ -1,4 +1,4 @@
-import type { ThumbApproach } from './growth'
+import { FORMATS } from './formats'
 
 /** Props passed from the render step to the Remotion compositions. URLs point at render.ts's file server. */
 
@@ -71,6 +71,10 @@ export interface VideoProps {
   teaser?: { text: string; end: number }
   /** The channel's own intro, between the hook and the story */
   channelIntro?: ChannelIntroProps & { start: number; duration: number }
+  /** Channel format: picks the overlay components */
+  format?: string
+  /** Data of the format's own overlays, by overlay id */
+  overlays?: Record<string, unknown>
   /** Black end screen after the narration: starts at this second and runs to the end */
   endScreenAt?: number
   [key: string]: unknown
@@ -126,7 +130,12 @@ export function shortDuration(
 }
 
 export interface ThumbnailProps {
-  approach: ThumbApproach
+  /** Thumbnail model id of the channel's format (see FormatPack.thumbModels) */
+  approach: string
+  /** Layout the format's thumbnail component draws */
+  layout?: string
+  /** Format id: picks the thumbnail component */
+  format?: string
   background: string
   /** "contrast": the ruin image, shown on the right */
   background2?: string | null
@@ -137,13 +146,12 @@ export interface ThumbnailProps {
   [key: string]: unknown
 }
 
-/** Where a thumbnail option came from; the step writes it at the end of the file name. */
-export type ThumbKind = ThumbApproach | 'ai' | 'stock' | 'scene' | 'split' | 'highlight' | 'glow'
+/** Where a thumbnail option came from (a format's model id, or an older kind). */
+export type ThumbKind = string
 
-export const THUMB_KIND_LABELS: Record<ThumbKind, string> = {
-  number: 'Número chocante',
-  product: 'Produto em destaque',
-  contrast: 'Antes × depois',
+/** Labels of every format's thumbnail models, plus the kinds older versions made. */
+export const THUMB_KIND_LABELS: Record<string, string> = {
+  ...Object.fromEntries(FORMATS.flatMap((f) => f.thumbModels.map((m) => [m.id, m.label]))),
   ai: 'Conceito IA',
   stock: 'Banco de imagens',
   scene: 'Cena do vídeo',
@@ -154,8 +162,8 @@ export const THUMB_KIND_LABELS: Record<ThumbKind, string> = {
 
 /** "thumb_3_stock.png" → "stock"; null for files from before the kinds existed. */
 export function thumbKindOf(path: string): ThumbKind | null {
-  const kind = /_([a-z]+)\.png$/i.exec(path)?.[1]
-  return kind && kind in THUMB_KIND_LABELS ? (kind as ThumbKind) : null
+  const kind = /_([a-z0-9-]+)\.png$/i.exec(path)?.[1]
+  return kind && kind in THUMB_KIND_LABELS ? kind : null
 }
 
 /** Shortest channel intro; a narrated tagline can make it longer. */

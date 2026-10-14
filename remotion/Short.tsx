@@ -13,7 +13,7 @@ import {
 } from 'remotion'
 import type { RenderScene, ShortProps } from '../shared/render'
 import { LogoIntro, LogoTile, YearCards } from './Overlays'
-import { THUMB } from '../shared/growth'
+import { THUMB } from '../shared/thumb'
 import { brandTextShadow, template } from './templates'
 import { KenBurns, toPhrases } from './Video'
 

@@ -1,7 +1,8 @@
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { join, relative } from 'path'
 import { z } from 'zod'
-import { THUMB, TITLES, type ThumbApproach } from '../../shared/growth'
+import { formatOf, type FormatPack } from '../../shared/formats'
+import { THUMB } from '../../shared/thumb'
 import { THUMB_KIND_LABELS, formatUsd } from '../../shared/render'
 import type { ThumbnailProps } from '../../shared/render'
 import type { Video } from '../../shared/types'
@@ -15,21 +16,34 @@ import { polishSettings } from './polish'
 import { prepareComfy } from './scenes'
 import type { Step, StepContext } from './types'
 
-const APPROACHES = THUMB.approaches.map((a) => a.id) as [ThumbApproach, ...ThumbApproach[]]
+/** Model ids of the format, as a Zod enum. */
+function modelIds(pack: FormatPack): [string, ...string[]] {
+  return pack.thumbModels.map((m) => m.id) as [string, ...string[]]
+}
 
-const packSchema = z.object({
-  titles: z.array(z.string().min(1)).min(3).max(8),
-  thumbs: z
-    .array(
-      z.object({
-        approach: z.enum(APPROACHES),
-        text: z.string().min(1),
-        image: z.string().min(1),
-        image2: z.string().default('')
-      })
-    )
-    .min(APPROACHES.length)
-})
+interface PackAnswer {
+  titles: string[]
+  thumbs: { approach: string; text: string; image: string; image2: string }[]
+}
+
+function packSchema(pack: FormatPack): z.ZodType<PackAnswer> {
+  return z.object({
+    titles: z.array(z.string().min(1)).min(3).max(8),
+    thumbs: z
+      .array(
+        z.object({
+          approach: z.enum(modelIds(pack)),
+          text: z.string().min(1),
+          image: z.string().min(1),
+          image2: z.string().default('')
+        })
+      )
+      .min(pack.thumbModels.length)
+  }) as z.ZodType<PackAnswer>
+}
+
+/** Worn-out formula "X did Y. Then Z.": two sentences in one title */
+const TWO_SENTENCES = /[.!?]\s+\S/
 
 function url(projectDir: string, file: string): string {
   return `{{root}}/${relative(projectDir, file).split('\\').join('/').split('/').map(encodeURIComponent).join('/')}`
@@ -54,11 +68,11 @@ export function clampWords(text: string, max = THUMB.maxWords): string {
 }
 
 /**
- * Title options as YouTube shows them: no quotes, at most TITLES.maxChars, never the worn-out
+ * Title options as YouTube shows them: no quotes, at most `max` characters, never the worn-out
  * "X did Y. Then Z." formula, no duplicates. Falls back to the shortened originals when the
  * model ignored every rule.
  */
-export function cleanTitles(titles: string[], max = TITLES.maxChars): string[] {
+export function cleanTitles(titles: string[], max = 60): string[] {
   const trim = (t: string): string => {
     const s = t.replace(/^["'“]|["'”]$/g, '').trim()
     return s.length <= max ? s : s.slice(0, max).replace(/\s+\S*$/, '')
@@ -66,7 +80,7 @@ export function cleanTitles(titles: string[], max = TITLES.maxChars): string[] {
   const seen = new Set<string>()
   const ok = titles.map(trim).filter((t) => {
     const key = t.toLowerCase()
-    if (!t || seen.has(key) || TITLES.banned.test(t)) return false
+    if (!t || seen.has(key) || TWO_SENTENCES.test(t)) return false
     seen.add(key)
     return true
   })
@@ -136,7 +150,7 @@ export async function mobilePreview(
 
 export interface Packaging {
   titles: string[]
-  thumbs: { approach: ThumbApproach; text: string; file: string }[]
+  thumbs: { approach: string; text: string; file: string }[]
   preview: string | null
 }
 
@@ -170,23 +184,25 @@ export async function makePackaging(
     .join(' ')
     .slice(0, 3000)
 
+  const format = formatOf(s.format)
+  const tr = format.titleRules
   ctx.log('Pensando em títulos e thumbnails')
   const pack = await generateStructured(
-    `You package a YouTube business documentary for the mobile home feed: title + thumbnail. Topic: ${video.topic}.
+    `You package a YouTube documentary for the mobile home feed: title + thumbnail. Topic: ${video.topic}.
 Story excerpt: ${story}
 ${facts ? `\nFacts you may use for numbers:\n${facts}\n` : ''}
-1) "titles": ${TITLES.count} title options, each at most ${TITLES.maxChars} characters, each with a DIFFERENT structure:
-${TITLES.structures.map((t) => `- ${t}`).join('\n')}
-Prefer specific curiosity (numbers, dates, names) over generic phrases. Accurate, no clickbait lies, no emojis. ONE sentence per title: never the formula "X did Y. Then Z happened." or any title with two sentences. Best option first.
+1) "titles": ${tr.count} title options, each at most ${tr.maxChars} characters.
+${tr.rules}
+${tr.good.length ? `Tone examples (never copy their shape): ${tr.good.map((g) => `"${g}"`).join('; ')}\n` : ''}${tr.banned.length ? `Never use these shapes: ${tr.banned.map((b) => `"${b}"`).join('; ')}\n` : ''}Accurate, no clickbait lies, no emojis. ONE sentence per title: never the formula "X did Y. Then Z happened." or any title with two sentences. Best option first.
 ${keepTitle ? `The video keeps its title: "${keepTitle}". The thumbnails must work with THAT title.\n` : ''}
-2) "thumbs": exactly ${APPROACHES.length} thumbnails, one per approach, in this order:
-${THUMB.approaches.map((a) => `- "${a.id}": ${a.brief}`).join('\n')}
+2) "thumbs": exactly ${format.thumbModels.length} thumbnails, one per approach, in this order:
+${format.thumbModels.map((a) => `- "${a.id}": ${a.brief}`).join('\n')}
 For each:
 - "text": 2 to ${THUMB.maxWords} words (a figure like "$250B → $0" counts as one idea). It must COMPLEMENT the ${keepTitle ? 'title' : 'first title'}, never repeat its words: if the title names the deal, the thumbnail shows the number; if the title asks why, the thumbnail shows the stakes. The company logo is shown next to it, so the text does not need the company name. No quotes, no emojis.
 - "image": English prompt for an AI image generator: ONE big, instantly recognizable subject (the company's real iconic product as it looked then, its storefront, or a famous object of the story), filling most of the frame, subject on the right half. No readable text or logos.
 - "image2": only for "contrast": the ruin version of the same subject (empty, broken, grey). "" otherwise.
 Return ONLY JSON: {"titles": [...], "thumbs": [{"approach": "...", "text": "...", "image": "...", "image2": "..."}]}`,
-    packSchema,
+    packSchema(format),
     {
       settings: { ...polishSettings(s), claudeModel: 'opus' },
       signal: ctx.signal,
@@ -194,8 +210,9 @@ Return ONLY JSON: {"titles": [...], "thumbs": [{"approach": "...", "text": "..."
       effort: 'medium'
     }
   )
-  const titles = cleanTitles(pack.titles)
-  const concepts = APPROACHES.map(
+  const titles = cleanTitles(pack.titles, tr.maxChars)
+  const layoutOf = (id: string): string => format.thumbModels.find((m) => m.id === id)?.layout ?? id
+  const concepts = modelIds(format).map(
     (id) => pack.thumbs.find((t) => t.approach === id) ?? { ...pack.thumbs[0], approach: id }
   )
   ctx.progress(0.15)
@@ -204,7 +221,7 @@ Return ONLY JSON: {"titles": [...], "thumbs": [{"approach": "...", "text": "..."
   const images = new Map<string, string>()
   const wanted = concepts.flatMap((c) => [
     { key: c.approach, prompt: c.image },
-    ...(c.approach === 'contrast'
+    ...(layoutOf(c.approach) === 'contrast'
       ? [{ key: 'contrast_2', prompt: c.image2 || `${c.image}, abandoned, ruined, grey` }]
       : [])
   ])
@@ -240,8 +257,11 @@ Return ONLY JSON: {"titles": [...], "thumbs": [{"approach": "...", "text": "..."
   const stills = concepts.map((c, i) => {
     const props: ThumbnailProps = {
       approach: c.approach,
+      layout: layoutOf(c.approach),
+      format: format.id,
       background: url(ctx.projectDir, imageFor(c.approach)),
-      background2: c.approach === 'contrast' ? url(ctx.projectDir, imageFor('contrast_2')) : null,
+      background2:
+        layoutOf(c.approach) === 'contrast' ? url(ctx.projectDir, imageFor('contrast_2')) : null,
       text: clampWords(c.text),
       logo
     }
@@ -280,7 +300,7 @@ export function packagingText(video: Video, pack: Packaging): string {
     `Vídeo: ${video.title ?? video.topic}`,
     video.youtube_id ? `YouTube: https://youtu.be/${video.youtube_id}` : '',
     '',
-    `Títulos (até ${TITLES.maxChars} caracteres, melhor primeiro):`,
+    'Títulos (melhor primeiro):',
     ...pack.titles.map((t, i) => `${i + 1}. ${t} (${t.length})`),
     '',
     'Thumbnails (para "Testar e comparar"):',

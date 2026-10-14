@@ -18,6 +18,7 @@ SCRIPT:
 {script}`
 
 export const DEFAULT_SETTINGS: Settings = {
+  format: 'business-history',
   llmProvider: 'ollama',
   claudeModel: 'opus',
   anthropicApiKey: '',

@@ -16,7 +16,7 @@ import { generateStructured } from '../services/llm'
 import { pythonPost } from '../services/python'
 import { runRender } from '../services/remotion'
 import { readWords, type Word } from './transcribe'
-import { SHORTS } from '../../shared/growth'
+import { formatOf, hasOverlay } from '../../shared/formats'
 import { renderCompanies, yearCardsFor } from './overlays'
 import { sceneFocus } from './focus'
 import type { Step, StepContext } from './types'
@@ -25,8 +25,10 @@ import type { Step, StepContext } from './types'
  * Seconds of narration in a short, pauses already shrunk (see tightCuts). Shorts above ~60 s
  * lose reach; the end card adds ~4 s.
  */
-export const MIN_SEGMENT = SHORTS.minSec
-export const MAX_SEGMENT = SHORTS.maxSec
+export const MIN_SEGMENT = 18
+export const MAX_SEGMENT = 32
+/** End on a line that flows back into the opening claim instead of the end card */
+const LOOP = true
 
 const segmentsSchema = z.object({
   segments: z.array(
@@ -332,7 +334,9 @@ async function shortKit(video: Video, ctx: StepContext): Promise<ShortKit> {
     root,
     words: readWords(root),
     companies: await renderCompanies(video, ctx),
-    cards: yearCardsFor(listScenes(video.id), root),
+    cards: hasOverlay(formatOf(s.format), 'yearCard')
+      ? yearCardsFor(listScenes(video.id), root)
+      : [],
     music: music ? url(root, join(root, music)) : null,
     cta: {
       audio: url(root, ctaAudio),
@@ -356,7 +360,7 @@ async function shortProps(
   const { root, video } = kit
   const duration = seg.end - seg.start
   const hook = seg.hook?.trim()
-  const loopLine = SHORTS.loop ? seg.loopLine?.trim() : ''
+  const loopLine = LOOP ? seg.loopLine?.trim() : ''
   return tighten({
     hook: hook ? { ...(await speak(hook, root, ctx)), text: hook } : null,
     loopEnd: loopLine ? { ...(await speak(loopLine, root, ctx)), text: loopLine } : null,
@@ -522,11 +526,11 @@ Scenes with their times:
 ${list}
 
 Choose ${count} different segments of CONSECUTIVE scenes, each ${MIN_SEGMENT + 5}–${MAX_SEGMENT + 8} seconds long, that work on their own and stop on a cliffhanger. Prefer the most surprising stretches. Do not overlap segments. Avoid the final call to subscribe.
-What works on this channel: ${SHORTS.winningPattern}
+What works on this channel: ${formatOf(s.format).shortsRules.brief}
 For each give:
 - first_scene and last_scene (the # numbers)
-- hook: the single most shocking claim of the segment as ONE spoken sentence of at most ${SHORTS.hookMaxWords} words, no intro, naming the company and a famous product or rival when possible (model: "Nokia had a touchscreen phone seven years before the iPhone."). It is narrated first, before the segment.
-- loop_line: ${SHORTS.loop ? 'one short spoken sentence (max 10 words) said after the segment that leads straight back into the hook, so the short replays seamlessly (e.g. "And it all started with one secret prototype." before a hook about that prototype). No call to action.' : '""'}
+- hook: the single most shocking claim of the segment as ONE spoken sentence of at most ${formatOf(s.format).shortsRules.hookMaxWords} words, no intro, naming the company and a famous product or rival when possible (model: "Nokia had a touchscreen phone seven years before the iPhone."). It is narrated first, before the segment.
+- loop_line: ${LOOP ? 'one short spoken sentence (max 10 words) said after the segment that leads straight back into the hook, so the short replays seamlessly (e.g. "And it all started with one secret prototype." before a hook about that prototype). No call to action.' : '""'}
 - headline: 2–5 words shown huge on screen from the first frame, naming the company or a famous product, e.g. "NOKIA BURIED ITS OWN IPHONE", no hashtags
 - title: YouTube Shorts title, max 60 characters, no hashtags, one sentence
 - description: one sentence

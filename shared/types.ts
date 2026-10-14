@@ -9,6 +9,8 @@ export type ServiceId =
   | 'comfyui'
   | 'pythonServer'
   | 'espeak'
+  | 'livePortrait'
+  | 'insightface'
 
 export type ServiceState = 'ok' | 'warning' | 'missing'
 
@@ -98,6 +100,8 @@ export interface ScriptScene {
   real_subject?: string
   /** Year the scene takes place in; a change of year gets a black year card before the scene */
   year?: number | null
+  /** Fields of the format's overlays (see FormatPack.overlays) */
+  [field: string]: unknown
 }
 
 /** Company value (market cap, or last private valuation) at a point in time */
@@ -130,6 +134,8 @@ export interface Script {
   companiesChecked?: boolean
   /** Claude's final edit already ran on this script */
   polished?: boolean
+  /** Fields of the format's overlays (see FormatPack.overlays) */
+  [field: string]: unknown
   /** Scene (1-based) where the dramatic music starts; 0 = the story never turns bad */
   music_turn?: number
 }
@@ -260,6 +266,8 @@ export interface PublishSlot {
 export type StockProvider = 'pixabay' | 'pexels' | 'wikimedia' | 'nasa' | 'met' | 'archive'
 
 export interface Settings {
+  /** Channel format (shared/formats): script rules, thumbnails, overlays, topics */
+  format: string
   /** Who writes scripts, reviews, titles and picks shorts */
   llmProvider: LlmProvider
   /** Claude model alias: opus | sonnet */
@@ -333,6 +341,7 @@ export interface Settings {
 
 /** Settings each channel keeps for itself; everything else is shared by the whole app. */
 export const CHANNEL_SETTING_KEYS = [
+  'format',
   'scriptPrompt',
   'reviewPrompt',
   'defaultDurationMin',
@@ -401,6 +410,15 @@ export interface ChannelStats {
     privacy: string | null
     /** Live counters from the Data API, oldest first */
     snapshots: { at: string; views: number; likes: number; comments: number }[]
+    /** Analytics retention curve: [elapsed share 0–1, audienceWatchRatio, relativeRetentionPerformance] */
+    retention: [number, number, number][]
+    /** Views by traffic source (insightTrafficSourceType), most first */
+    traffic: [string, number][]
+    durationSec: number | null
+    /** % still watching at 0:30, from the curve and the duration */
+    retention30: number | null
+    /** Impressions typed by hand or imported from the Studio CSV */
+    impressions: number | null
   }[]
   updatedAt: string | null
   liveUpdatedAt: string | null
@@ -507,6 +525,19 @@ export interface Api {
     connect: (channelId: number) => Promise<StartResult>
     disconnect: (channelId: number) => Promise<void>
     stats: (channelId: number, refresh?: boolean) => Promise<ChannelStats>
+    /** CTR (%) and impressions from YouTube Studio; undefined keeps the stored value */
+    setManualMetrics: (
+      videoId: number,
+      m: { ctr?: number | null; impressions?: number | null }
+    ) => Promise<void>
+    /** Open a file dialog and import the Studio "Table data.csv"; null when canceled */
+    importStudioCsv: (channelId: number) => Promise<StudioImportResult | null>
   }
   onChanged: (callback: (topic: string) => void) => () => void
+}
+
+export interface StudioImportResult {
+  matched: number
+  /** Titles (or ids) of CSV rows that match no video of the channel */
+  unmatched: string[]
 }

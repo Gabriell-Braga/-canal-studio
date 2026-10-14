@@ -6,6 +6,7 @@ import {
   type StockProvider,
   type Settings as SettingsT
 } from '../../shared/types'
+import { FORMATS, formatOf } from '../../shared/formats'
 import {
   Banner,
   Button,
@@ -513,6 +514,29 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
         </Section>
 
         <Section title="Roteiro" scope="channel">
+          <div className="md:col-span-2">
+            <Field
+              label="Formato do canal"
+              hint={`${formatOf(s.format).description} Ao trocar, a voz e a ordem dos bancos de imagem voltam ao padrão do formato.`}
+            >
+              <select
+                className={inputClass}
+                value={formatOf(s.format).id}
+                onChange={(e) => {
+                  const pack = formatOf(e.target.value)
+                  set('format', pack.id)
+                  set('voice', pack.voices.narrator)
+                  set('stockProviders', pack.mediaProviders)
+                }}
+              >
+                {FORMATS.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
           <Field label="Duração padrão (minutos)">
             <input
               className={inputClass}
@@ -901,7 +925,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
         <Section
           title="Identidade visual"
           scope="channel"
-          description="Cores e fonte das legendas dos shorts (as thumbnails usam as regras de shared/growth.ts). Ao conectar o YouTube, as cores vêm da foto do canal."
+          description="Cores e fonte das legendas dos shorts (as thumbnails seguem o formato do canal). Ao conectar o YouTube, as cores vêm da foto do canal."
         >
           <div className="flex flex-wrap items-end gap-5 md:col-span-2">
             <Field label="Destaque">

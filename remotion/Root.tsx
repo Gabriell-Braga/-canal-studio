@@ -8,7 +8,7 @@ import {
 } from '../shared/render'
 import { ChannelIntro } from './ChannelIntro'
 import { Short } from './Short'
-import { Thumbnail } from './Thumbnail'
+import { FormatThumbnail } from './formats'
 import { Video } from './Video'
 
 const defaultVideo: VideoProps = {
@@ -93,7 +93,7 @@ export const Root: React.FC = () => (
     />
     <Still
       id="Thumbnail"
-      component={Thumbnail}
+      component={FormatThumbnail}
       width={1280}
       height={720}
       defaultProps={defaultThumb}

@@ -7,7 +7,7 @@ import {
   type Video,
   type VideoDetail as Detail
 } from '../../shared/types'
-import { THUMB, TITLES } from '../../shared/growth'
+import { THUMB } from '../../shared/thumb'
 import { THUMB_KIND_LABELS, thumbKindOf } from '../../shared/render'
 import ScriptEditor from '../components/ScriptEditor'
 import {
@@ -538,7 +538,7 @@ function PublishTab({
             ))}
           </div>
         )}
-        <Field label="Título" hint={`${title.length}/${TITLES.maxChars} caracteres recomendados`}>
+        <Field label="Título" hint={`${title.length}/60 caracteres recomendados`}>
           <input
             className={inputClass}
             value={title}

@@ -1,6 +1,6 @@
 import React from 'react'
 import { AbsoluteFill, Img } from 'remotion'
-import { THUMB } from '../shared/growth'
+import { THUMB } from '../shared/thumb'
 import type { ThumbnailProps } from '../shared/render'
 
 const H = 720

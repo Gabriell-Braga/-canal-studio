@@ -1,55 +1,11 @@
 import { z } from 'zod'
 import type { Script } from '../../shared/types'
 import { getVideo, replaceScenes, updateVideo } from '../db/repo'
-import { HOOK_RULES } from '../../shared/growth'
+import { formatOf, hasOverlay, scriptSchemaFor, structureRules } from '../../shared/formats'
 import { formatUsd } from '../../shared/render'
 import { generateStructured, llmLabel, type LlmCall } from '../services/llm'
 import { polishScript } from './polish'
 import type { Step, StepContext } from './types'
-
-export const scriptSchema = z.object({
-  title_options: z.array(z.string().min(1)).min(1).max(5),
-  hook: z.string().min(1),
-  scenes: z
-    .array(
-      z.object({
-        narration: z.string().min(1),
-        visual_keywords: z.string(),
-        image_prompt: z.string(),
-        real_subject: z.string(),
-        year: z.number().int().nullable()
-      })
-    )
-    .min(2),
-  outro: z.string(),
-  teaser: z.string().min(1),
-  hook_visual_keywords: z.string(),
-  outro_visual_keywords: z.string(),
-  companies: z
-    .array(
-      z.object({
-        name: z.string().min(1),
-        wikipedia_title: z.string(),
-        values: z.array(z.object({ year: z.number().int(), usd: z.number() }))
-      })
-    )
-    .max(2)
-})
-
-/**
- * Rules the render depends on (years, companies, a real opening image). They are appended to
- * the channel's prompt, which the user can edit, so they always apply.
- */
-export const STRUCTURE_RULES = `
-Extra rules:
-${HOOK_RULES}
-- Opening extras: teaser: the hook's most surprising claim, shortened to at most 9 words, shown big on screen during the hook (e.g. "Xerox gave Apple the future. For free."). hook_visual_keywords: 2–4 English words for a REAL, instantly recognizable photo of that subject (its famous product, headquarters, founder or storefront), different from the first scene's visual_keywords. outro_visual_keywords: same idea for the ending, different from the last scene.
-- Real photos: when a scene is about a specific real person, product, device, place or event (e.g. Steve Jobs unveiling the iPhone, the Apple I, Xerox PARC, the dot-com crash on the NYSE floor), set real_subject to the words that find a real photo of it on Wikimedia Commons: proper names first, plus the year or event when it helps (e.g. "Steve Jobs iPhone Macworld 2007", "Apple I computer", "Xerox Alto"). Devices and machines always count: whenever the narration mentions a specific computer, phone, console, camera, chip, car, plane or gadget, real_subject is its exact maker and model name (e.g. "IBM PC 5150", "Nokia 3310", "Nintendo Entertainment System", "Intel 4004", "Ford Model T"), so the viewer sees the real device and not a generic one. Otherwise real_subject is "". In those scenes visual_keywords must name the subject too, never a generic description (write "Steve Jobs keynote", not "man on stage" or "presentation stage", which return concerts).
-- Outro: slow and calm, never rushed. 3–5 unhurried sentences: first land the story with a reflective conclusion (what it meant, what changed because of it), then a quiet closing thought, and only at the very end ONE short, gentle invitation to subscribe (e.g. "If you enjoy stories like this one, consider subscribing. There are many more coming."). Never list "like, comment, subscribe and hit the bell", never ask for several actions, never add urgency. Do not say goodbye abruptly; the video ends on a black screen with recommended videos right after.
-- Years: give every scene the year it takes place in (year, a number), or null when it has no clear moment in time. Keep years in story order where possible. Whenever a scene moves to a different year than the previous scene with a year, its narration MUST say that year out loud, phrased in a varied way each time (e.g. "By 1984...", "Fast forward to 1997.", "In the spring of 2001,", "Eleven years later, in 1995,", "1976. A garage in Los Altos."). Never repeat the same phrasing twice.
-- Curiosities: every 60–90 seconds of narration, drop in one surprising, little-known but true detail tightly tied to the topic (a strange decision, a near miss, a hidden connection, an odd number) that makes the viewer say "I didn't know that". Weave it into the story; do not announce it as a "fun fact".
-- companies: the companies the video is about, at most 2 (the main one first; e.g. a story about Xerox and Apple lists both). Empty array when the video is not about companies. For each: name (short, as people say it), wikipedia_title (exact English Wikipedia article title, e.g. "Apple Inc.") and values: the company's value in US dollars (market capitalization when public, otherwise its latest known private valuation) at each year the script mentions, plus its founding year with value 0. One entry per year, numbers in plain dollars (e.g. 2500000000 for 2.5 billion). Only use figures you are confident about; leave a year out rather than guess.
-`
 
 export const reviewSchema = z.object({
   alerts: z
@@ -181,15 +137,16 @@ export const scriptStep: Step = {
       numCtx: Math.min(32768, Math.max(8192, Math.round(words * 2.2) + 2048))
     }
 
-    ctx.log(`Gerando roteiro com ${llmLabel(settings)} (~${words} palavras)`)
+    const pack = formatOf(settings.format)
+    ctx.log(`Gerando roteiro com ${llmLabel(settings)} (~${words} palavras, formato ${pack.name})`)
     const prompt =
       fillPrompt(settings.scriptPrompt, {
         topic,
         minutes,
         words,
         scenes: Math.max(3, Math.round((minutes * 60) / 15))
-      }) + STRUCTURE_RULES
-    const script = await generateStructured(prompt, scriptSchema, call)
+      }) + structureRules(pack)
+    const script = await generateStructured(prompt, scriptSchemaFor(pack), call)
     ctx.log(`Primeira versão: ${script.scenes.length} cenas e ${scriptWordCount(script)} palavras`)
     ctx.progress(0.4)
     await expandScript(script, words, video.topic, call, ctx)
@@ -221,7 +178,7 @@ export const scriptStep: Step = {
       ctx.log(`Auto-revisão falhou: ${(error as Error).message}`, 'warn')
       alerts = [{ kind: 'other', message: 'A auto-revisão falhou; revise o roteiro manualmente.' }]
     }
-    const silent = unspokenYears(script)
+    const silent = hasOverlay(pack, 'yearCard') ? unspokenYears(script) : []
     if (silent.length) {
       alerts.unshift({
         kind: 'other',

@@ -13,7 +13,7 @@ import {
 import { objectPosition } from '../shared/framing'
 import type { Focus, RenderScene, RenderWord, VideoProps } from '../shared/render'
 import { ChannelIntroCard, Teaser } from './ChannelIntro'
-import { LogoIntro, TopBadges, YearCards } from './Overlays'
+import { formatComponents } from './formats'
 import { template, type TemplateStyle } from './templates'
 
 const FADE_SEC = 0.5
@@ -232,6 +232,7 @@ export const Video: React.FC<VideoProps> = (props) => {
   const fade = Math.round(FADE_SEC * fps)
   const musicFade = Math.round(2 * fps)
   const accent = typeof style.highlight.color === 'string' ? style.highlight.color : '#ffd166'
+  const { Overlays } = formatComponents(props.format)
 
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
@@ -251,11 +252,6 @@ export const Video: React.FC<VideoProps> = (props) => {
       })}
       <Vignette strength={style.vignette} />
       {props.captions && <Captions words={props.words} style={style} />}
-      {!!props.companies?.length && !!props.introSec && (
-        <Sequence durationInFrames={Math.round(props.introSec * fps)}>
-          <LogoIntro companies={props.companies} seconds={props.introSec} />
-        </Sequence>
-      )}
       {props.teaser && props.teaser.end > 1 && (
         <Sequence durationInFrames={Math.round(props.teaser.end * fps)}>
           <Teaser
@@ -274,17 +270,7 @@ export const Video: React.FC<VideoProps> = (props) => {
           <ChannelIntroCard intro={props.channelIntro} seconds={props.channelIntro.duration} />
         </Sequence>
       )}
-      {!!props.yearCards?.length && (
-        <>
-          <TopBadges
-            companies={props.companies ?? []}
-            cards={props.yearCards}
-            accent={accent}
-            hideUntil={props.introSec ?? 0}
-          />
-          <YearCards cards={props.yearCards} accent={accent} />
-        </>
-      )}
+      <Overlays video={props} accent={accent} />
       {props.endScreenAt !== undefined && <EndScreen at={props.endScreenAt} />}
       <Audio src={props.narration} />
       {props.music.map((track, i) => {

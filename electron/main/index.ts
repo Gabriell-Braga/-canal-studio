@@ -386,7 +386,7 @@ app.whenReady().then(async () => {
     console.log(`New company thumbnails: ${count} video(s)`)
     setState('reprocess.thumbProduct', true)
   }
-  // Once: new click rules (shared/growth.ts). Videos already on YouTube get 3 thumbnails and
+  // Once: new click rules (shared/formats). Videos already on YouTube get 3 thumbnails and
   // title options in a separate folder to upload by hand; their records stay as they are.
   // Full videos not uploaded yet get them in place, and their unsent shorts are cut again
   // with the narrated hook and loop.

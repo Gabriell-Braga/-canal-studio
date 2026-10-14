@@ -23,7 +23,14 @@ const SCOPES = [
 
 /** Default daily quota of a Google Cloud project, and the cost of each call we make. */
 export const QUOTA_LIMIT = 10_000
-export const COST = { insert: 1600, thumbnail: 50, list: 1, captions: 400, delete: 50 }
+export const COST = {
+  insert: 1600,
+  thumbnail: 50,
+  list: 1,
+  captions: 400,
+  delete: 50,
+  playlist: 50
+}
 
 // ---------------------------------------------------------------- secrets (safeStorage)
 
@@ -217,6 +224,8 @@ export interface UploadInput {
   tags: string[]
   publishAt: string
   synthetic: boolean
+  /** YouTube category of the channel format (27 Education) */
+  categoryId?: string
 }
 
 /** videos.insert as private with publishAt, so YouTube publishes it by itself. */
@@ -234,7 +243,7 @@ export async function uploadVideo(
       title: input.title.slice(0, 100),
       description: input.description.slice(0, 5000),
       tags: input.tags,
-      categoryId: '27', // Education
+      categoryId: input.categoryId ?? '27', // Education
       defaultLanguage: 'en',
       defaultAudioLanguage: 'en'
     },
@@ -259,6 +268,43 @@ export async function uploadVideo(
   const id = res.data.id
   if (!id) throw new Error('YouTube não devolveu o ID do vídeo')
   return id
+}
+
+/**
+ * Put a video in the playlist of its series, creating the playlist (public) the first time.
+ * Playlist ids are kept per channel so a rename on YouTube does not create a duplicate.
+ */
+export async function addToSeries(
+  channelId: number,
+  series: string,
+  videoId: string
+): Promise<void> {
+  const key = `state.ch.${channelId}.playlists`
+  const row = db().prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+    { value: string } | undefined
+  const ids = row ? (JSON.parse(row.value) as Record<string, string>) : {}
+  const yt = youtube({ version: 'v3', auth: authed(channelId) })
+  let playlistId = ids[series]
+  if (!playlistId) {
+    const res = await yt.playlists.insert({
+      part: ['snippet', 'status'],
+      requestBody: { snippet: { title: series }, status: { privacyStatus: 'public' } }
+    })
+    addQuota(COST.playlist)
+    playlistId = res.data.id ?? ''
+    if (!playlistId) throw new Error('YouTube não devolveu o ID da playlist')
+    ids[series] = playlistId
+    db()
+      .prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+      )
+      .run(key, JSON.stringify(ids))
+  }
+  await yt.playlistItems.insert({
+    part: ['snippet'],
+    requestBody: { snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } } }
+  })
+  addQuota(COST.playlist)
 }
 
 /** Privacy of an uploaded video ('private', 'unlisted', 'public'), or null when it is gone. */

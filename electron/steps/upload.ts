@@ -2,7 +2,9 @@ import { join } from 'path'
 import { getVideo, listShorts, listVideos, updateVideo } from '../db/repo'
 import { isValidFile, runTool } from '../services/ffmpeg'
 import { nextFreeSlot, shortSlotAfter } from '../queue/slots'
+import { formatOf } from '../../shared/formats'
 import {
+  addToSeries,
   canUploadCaptions,
   deleteYoutubeVideo,
   setThumbnail,
@@ -57,7 +59,13 @@ export const uploadStep: Step = {
       const taken = listVideos(video.channel_id)
         .filter((v) => v.id !== videoId && v.kind === 'long' && v.scheduled_at)
         .map((v) => v.scheduled_at as string)
-      const slot = nextFreeSlot(s.publishSlots, s.publishTimezone, taken)
+      const slot = nextFreeSlot(
+        s.publishSlots,
+        s.publishTimezone,
+        taken,
+        new Date(),
+        s.maxLongPerWeek
+      )
       ctx.log(
         `Horário anterior já passou; novo horário ${new Date(slot).toLocaleString('pt-BR')}`,
         'warn'
@@ -79,12 +87,21 @@ export const uploadStep: Step = {
           description,
           tags: video.tags,
           publishAt: video.scheduled_at as string,
-          synthetic: video.synthetic_content
+          synthetic: video.synthetic_content,
+          categoryId: formatOf(ctx.settings.format).metadataRules.categoryId
         },
         (p) => ctx.progress(p * 0.9)
       )
       video = updateVideo(videoId, { youtube_id: id })
       ctx.log(`Enviado: https://youtu.be/${id}`)
+      if (video.series && video.kind === 'long') {
+        try {
+          await addToSeries(video.channel_id, video.series, id)
+          ctx.log(`Adicionado à playlist da série "${video.series}"`)
+        } catch (error) {
+          ctx.log(`Playlist da série falhou: ${(error as Error).message}`, 'warn')
+        }
+      }
       if (!ctx.settings.youtubeAudited) {
         ctx.log(
           'Projeto do Google Cloud sem auditoria da API: o YouTube trava este vídeo como privado e ignora o agendamento. Publique ou agende no YouTube Studio.',

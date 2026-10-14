@@ -1,13 +1,15 @@
 import { z } from 'zod'
 import type { Scene } from '../../shared/types'
-import { getVideo, listScenes, updateVideo } from '../db/repo'
+import { getVideo, listScenes, listVideos, updateVideo } from '../db/repo'
+import { formatOf } from '../../shared/formats'
 import { generateStructured } from '../services/llm'
 import type { Step } from './types'
 
 const metaSchema = z.object({
   description: z.string().min(1),
   tags: z.array(z.string()).min(5).max(20),
-  chapter_titles: z.array(z.string()).optional()
+  chapter_titles: z.array(z.string()).optional(),
+  series: z.string().default('')
 })
 
 export interface Chapter {
@@ -66,6 +68,15 @@ export const metadataStep: Step = {
 
     // The title comes from the thumbnail step, made together with the thumbnails.
     const title = (video.title ?? video.script?.title_options[0] ?? video.topic).slice(0, 100)
+    const pack = formatOf(s.format)
+    const seriesOptions = [
+      ...new Set([
+        ...pack.metadataRules.series,
+        ...listVideos(video.channel_id)
+          .map((v) => v.series)
+          .filter((x): x is string => !!x)
+      ])
+    ]
     ctx.log('Gerando descrição e tags')
     const meta = await generateStructured(
       `You write YouTube metadata for a faceless documentary channel.
@@ -75,9 +86,10 @@ Hook: ${video.script?.hook ?? ''}
 ${chapters.length ? `Chapters:\n${chapterText}` : ''}
 
 Return JSON with:
-- description: 2 short paragraphs (max 900 characters total) that summarize the story and make people want to watch; end with one line inviting viewers to subscribe. Do NOT include timestamps or hashtags.
+- description: ${pack.metadataRules.description} Do NOT include timestamps, hashtags or a sources list (added separately).
 - tags: 10 to 15 search tags, lowercase, most specific first
-${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter titles (2–6 words), in order` : ''}`,
+${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter titles (2–6 words), in order` : ''}
+- series: the named series this video belongs to, one of: ${seriesOptions.join(' | ') || 'none yet'}. Use a new short name (2–4 words) only when none fits.`,
       metaSchema,
       { settings: s, signal: ctx.signal, temperature: 0.6 }
     )
@@ -107,7 +119,8 @@ ${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter 
       0,
       15
     )
-    updateVideo(videoId, { title, description, tags })
+    const series = video.series ?? (meta.series.trim().slice(0, 60) || null)
+    updateVideo(videoId, { title, description, tags, series })
     ctx.log(`Metadados: "${title}" · ${tags.length} tags · ${chapters.length} capítulos`)
   }
 }

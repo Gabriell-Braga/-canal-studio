@@ -160,6 +160,9 @@ export type ThumbKind = string
 /** Labels of every format's thumbnail models, plus the kinds older versions made. */
 export const THUMB_KIND_LABELS: Record<string, string> = {
   ...Object.fromEntries(FORMATS.flatMap((f) => f.thumbModels.map((m) => [m.id, m.label]))),
+  number: 'Número chocante',
+  product: 'Produto em destaque',
+  contrast: 'Antes × depois',
   ai: 'Conceito IA',
   stock: 'Banco de imagens',
   scene: 'Cena do vídeo',

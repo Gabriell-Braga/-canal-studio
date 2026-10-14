@@ -58,25 +58,26 @@ Curiosities: every 60–90 seconds of narration, drop in one surprising, little-
   },
   thumbModels: [
     {
-      id: 'number',
-      label: 'Número chocante',
-      layout: 'number',
+      id: 'face',
+      label: 'A · Rosto + objeto',
+      layout: 'face',
+      face: true,
       brief:
-        'A shocking number or before→after figure as the whole headline, e.g. "$250B → $0", "7 YEARS EARLY", "99% GONE". Use a real figure from the facts below. The image is a DIFFERENT subject than the product thumbnail: the company\'s headquarters, flagship store, factory floor or a famous moment of the story, bright and vivid.'
+        'The founder or CEO at the center of the story (their real photo, expression edited to fit) on the left, the story\'s object on the right, a red arrow from the face to the object. "image" is the object alone, big, on a plain vivid background, right half of the frame. Text: 0–2 words or "".'
     },
     {
-      id: 'product',
-      label: 'Produto em destaque',
-      layout: 'product',
+      id: 'object-x',
+      label: 'B · Objeto com X',
+      layout: 'object-x',
       brief:
-        'The company\'s iconic product that THIS story is about, close up and big, on a vivid solid-color background. Headline of 2–3 words with an emotional twist (e.g. "THEY BURIED IT", "TOO EARLY").'
+        'The real object of the story (the product, the device, the storefront sign) HUGE in the center on a plain vivid background, crossed by a red X. Text: 1–2 words that add the stakes (e.g. "BANNED", "$1 BILLION").'
     },
     {
-      id: 'contrast',
-      label: 'Antes × depois',
-      layout: 'contrast',
+      id: 'numbers',
+      label: 'C · Antes e depois (números)',
+      layout: 'numbers',
       brief:
-        'Split screen: the left image shows the glory days (bright, golden, crowded), the right image the ruin (empty, broken, grey). Headline of 2–3 words naming the turn specific to THIS story (e.g. "300M USERS → 0", "EVERY HOME → NONE", "1ST → LAST"). Avoid the generic "KING → ...".'
+        'Before and after side by side: left image the glory days, right image the ruin of the same subject. Text: exactly the peak value and the fall value from the checked facts, as "PEAK → FALL" (e.g. "$250B → $0", "40,000 → 12"). "image2" is the ruin version.'
     }
   ],
   overlays: [
@@ -106,24 +107,27 @@ Curiosities: every 60–90 seconds of narration, drop in one surprising, little-
   topicSource: {
     kind: 'llm',
     brief:
-      'Short business documentaries (rise and fall of companies). Prefer little-known companies with a dramatic arc, or a specific, surprising episode of a famous company (one decision, one person, one product, one deal) instead of its whole history. Each must be true and well documented, with a clear turning point, real numbers and named people.',
-    examples: ['The Hotel Chain That Sold Its Name and Kept the Buildings']
+      'Short business documentaries. Prefer stories few channels told: regional chains, niche manufacturers, companies from outside the US (Europe, Japan, Latin America, India), or one specific, surprising episode of a famous company (one decision, one person, one product, one deal) instead of its whole history. Each must be true and well documented, with a clear turning point, real numbers and named people. Group them into named series.',
+    examples: [
+      'The Hotel Chain That Sold Its Name and Kept the Buildings',
+      "Why Japan's Biggest Camera Maker Bet Everything on a Pen"
+    ]
   },
   mediaProviders: ['pixabay', 'wikimedia', 'pexels'],
   voices: { narrator: 'am_michael' },
   saturatedTopics: [
-    'Blockbuster vs Netflix',
-    'Nokia losing to the iPhone',
-    'BlackBerry losing to the iPhone',
-    'Kodak inventing the digital camera',
-    'Xerox PARC and Apple',
-    'MySpace losing to Facebook',
-    'Yahoo turning down Google',
+    'BlackBerry',
+    'Nokia',
+    'Blockbuster and Netflix',
+    'Kodak',
+    'Sears',
+    'Toys R Us',
+    'Yahoo',
+    'MySpace',
+    'Xerox PARC',
     'Enron',
     'Theranos',
-    'WeWork',
-    'Toys R Us',
-    'Sears losing to Amazon'
+    'WeWork'
   ],
   shortsRules: {
     minSec: 18,
@@ -136,6 +140,6 @@ Curiosities: every 60–90 seconds of narration, drop in one surprising, little-
     description:
       '2 short paragraphs (max 900 characters total) that summarize the story and make people want to watch; end with one line inviting viewers to subscribe.',
     categoryId: '27',
-    series: []
+    series: ['Deals That Backfired', 'Forgotten Giants', 'Rivals', 'One Bad Decision']
   }
 }

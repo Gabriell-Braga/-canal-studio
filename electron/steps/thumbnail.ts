@@ -80,6 +80,9 @@ function packSchema(pack: FormatPack): z.ZodType<PackAnswer> {
   }) as z.ZodType<PackAnswer>
 }
 
+/** Layouts that show a before and an after image */
+const TWO_IMAGES = new Set(['contrast', 'numbers'])
+
 /** Worn-out formula "X did Y. Then Z.": two sentences in one title */
 const TWO_SENTENCES = /[.!?]\s+\S/
 
@@ -367,7 +370,12 @@ ${format.thumbModels.map((a) => `- "${a.id}": ${a.brief}`).join('\n')}
 For each:
 - "text": 0 to ${THUMB_CHECK.maxWords} words (a figure like "$250B → $0" counts as one idea; "" is fine when the image says it all). It must COMPLEMENT the ${keepTitle ? 'title' : 'first title'}, never repeat its words: if the title names the deal, the thumbnail shows the number; if the title asks why, the thumbnail shows the stakes. No quotes, no emojis.
 - "image": English prompt for an AI image generator: ONE big, instantly recognizable subject (the real iconic object of the story as it looked then, or a famous place of the story), filling at least a third of the frame, subject on the right half. At most 2 main elements and 1 accent color. No sepia or vintage filter, no readable text or logos.
-- "image2": only for "contrast": the ruin version of the same subject (empty, broken, grey). "" otherwise.
+- "image2": only for split before/after models (${
+      format.thumbModels
+        .filter((m) => TWO_IMAGES.has(m.layout))
+        .map((m) => m.id)
+        .join(', ') || 'none'
+    }): the ruin version of the same subject (empty, broken, grey). "" otherwise.
 - "person": only for models that show a face (${
       format.thumbModels
         .filter((m) => m.face)
@@ -396,8 +404,8 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
   const images = new Map<string, string>()
   const wanted = concepts.flatMap((c) => [
     { key: c.approach, prompt: c.image },
-    ...(layoutOf(c.approach) === 'contrast'
-      ? [{ key: 'contrast_2', prompt: c.image2 || `${c.image}, abandoned, ruined, grey` }]
+    ...(TWO_IMAGES.has(layoutOf(c.approach))
+      ? [{ key: `${c.approach}_2`, prompt: c.image2 || `${c.image}, abandoned, ruined, grey` }]
       : [])
   ])
   try {
@@ -456,8 +464,9 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
       layout: layoutOf(c.approach),
       format: format.id,
       background: url(ctx.projectDir, imageFor(c.approach)),
-      background2:
-        layoutOf(c.approach) === 'contrast' ? url(ctx.projectDir, imageFor('contrast_2')) : null,
+      background2: TWO_IMAGES.has(layoutOf(c.approach))
+        ? url(ctx.projectDir, imageFor(`${c.approach}_2`))
+        : null,
       text: thumbText(c.text, headTitle),
       // No white logo plate: it shrinks the subject and reads as an ad.
       logo: null,

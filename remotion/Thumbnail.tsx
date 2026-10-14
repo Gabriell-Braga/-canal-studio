@@ -124,12 +124,19 @@ function Photo({ src, extra }: { src: string; extra?: React.CSSProperties }): Re
  * with a thick outline, a bright image and the company logo.
  */
 export const Thumbnail: React.FC<ThumbnailProps> = ({
-  approach,
+  approach: model,
+  layout,
   background,
   background2,
   text,
-  logo
+  logo,
+  face
 }) => {
+  const approach = layout ?? model
+  if (approach === 'face') return <FaceLayout background={background} face={face} text={text} />
+  if (approach === 'object-x') return <ObjectXLayout background={background} text={text} />
+  if (approach === 'numbers')
+    return <NumbersLayout background={background} background2={background2} text={text} />
   if (approach === 'contrast') {
     const left = 'polygon(0 0, 54% 0, 46% 100%, 0 100%)'
     return (
@@ -190,6 +197,163 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({
       >
         <Headline text={text} maxWidth={approach === 'number' ? 1100 : 760} align="left" />
       </AbsoluteFill>
+    </AbsoluteFill>
+  )
+}
+
+/** Thick red arrow pointing right, drawn in SVG so it stays sharp at any size. */
+function Arrow({ style }: { style: React.CSSProperties }): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 200 120" style={{ position: 'absolute', ...style }}>
+      <path
+        d="M8 60 H130 M100 18 L172 60 L100 102"
+        fill="none"
+        stroke={C.stroke}
+        strokeWidth={34}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 60 H130 M100 18 L172 60 L100 102"
+        fill="none"
+        stroke={C.alert}
+        strokeWidth={22}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/**
+ * A: the real person (real photo, expression edited) huge on the left, the story's object on
+ * the right, a red arrow between them. Without a usable face, the object fills the frame.
+ */
+function FaceLayout({
+  background,
+  face,
+  text
+}: Pick<ThumbnailProps, 'background' | 'face' | 'text'>): React.JSX.Element {
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#111' }}>
+      <Photo src={background} extra={{ objectPosition: '75% 50%' }} />
+      {face && (
+        <>
+          <AbsoluteFill
+            style={{
+              background:
+                'linear-gradient(90deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.2) 45%, transparent 60%)'
+            }}
+          />
+          <Img
+            src={face}
+            style={{
+              position: 'absolute',
+              left: -20,
+              bottom: 0,
+              height: '104%',
+              maxWidth: '58%',
+              objectFit: 'contain',
+              objectPosition: 'left bottom',
+              filter: 'drop-shadow(0 0 18px rgba(0,0,0,0.6)) brightness(1.08) contrast(1.08)'
+            }}
+          />
+          <Arrow style={{ left: 560, top: 250, width: 230 }} />
+        </>
+      )}
+      {text && (
+        <AbsoluteFill
+          style={{ justifyContent: 'flex-start', alignItems: 'flex-end', padding: '40px 50px 0 0' }}
+        >
+          <Headline text={text} maxWidth={620} align="center" />
+        </AbsoluteFill>
+      )}
+    </AbsoluteFill>
+  )
+}
+
+/** B: the real object huge on a plain background, crossed by a red X; 1–2 words. */
+function ObjectXLayout({
+  background,
+  text
+}: Pick<ThumbnailProps, 'background' | 'text'>): React.JSX.Element {
+  const bar: React.CSSProperties = {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 760,
+    height: 64,
+    marginLeft: -380,
+    marginTop: -32,
+    background: C.alert,
+    borderRadius: 18,
+    boxShadow: `0 0 0 10px ${C.stroke}`,
+    opacity: 0.92
+  }
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#1a1a1a' }}>
+      <Photo src={background} />
+      <div style={{ ...bar, transform: 'rotate(35deg)' }} />
+      <div style={{ ...bar, transform: 'rotate(-35deg)' }} />
+      {text && (
+        <AbsoluteFill
+          style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 30 }}
+        >
+          <Headline text={text} maxWidth={1180} align="center" />
+        </AbsoluteFill>
+      )}
+    </AbsoluteFill>
+  )
+}
+
+/** C: before and after side by side, each with its big number ("$250B → $0"). */
+function NumbersLayout({
+  background,
+  background2,
+  text
+}: Pick<ThumbnailProps, 'background' | 'background2' | 'text'>): React.JSX.Element {
+  const [before, after] = text.split('→').map((t) => t.trim())
+  const number = (value: string, color: string): React.JSX.Element => (
+    <div
+      style={{
+        fontFamily: THUMB.font,
+        fontSize: Math.min(250, 1200 / Math.max(3, value.length * 1.1)),
+        color,
+        textShadow: outline(THUMB.stroke),
+        lineHeight: 1
+      }}
+    >
+      {value}
+    </div>
+  )
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#222', flexDirection: 'row' }}>
+      <div style={{ position: 'relative', width: '50%', height: '100%', overflow: 'hidden' }}>
+        <Photo src={background} />
+        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+          {number(before ?? text, C.accent)}
+        </AbsoluteFill>
+      </div>
+      <div style={{ position: 'relative', width: '50%', height: '100%', overflow: 'hidden' }}>
+        <Photo
+          src={background2 ?? background}
+          extra={{ filter: 'grayscale(0.9) contrast(1.25) brightness(0.9)' }}
+        />
+        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+          {after ? number(after, C.alert) : null}
+        </AbsoluteFill>
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: 0,
+          bottom: 0,
+          width: 14,
+          marginLeft: -7,
+          background: C.stroke
+        }}
+      />
     </AbsoluteFill>
   )
 }

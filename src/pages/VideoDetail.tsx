@@ -457,6 +457,7 @@ function PublishTab({
   const [title, setTitle] = useState(video.title ?? '')
   const [description, setDescription] = useState(video.description ?? '')
   const [tags, setTags] = useState(video.tags.join(', '))
+  const [series, setSeries] = useState(video.series ?? '')
   const [when, setWhen] = useState(toLocalInput(video.scheduled_at))
   const [synthetic, setSynthetic] = useState(video.synthetic_content)
   const [chosen, setChosen] = useState(video.chosen_thumbnail ?? 0)
@@ -504,7 +505,8 @@ function PublishTab({
             .filter(Boolean),
           scheduled_at: when ? new Date(when).toISOString() : null,
           synthetic_content: synthetic,
-          chosen_thumbnail: chosen
+          chosen_thumbnail: chosen,
+          series: series.trim() || null
         }),
       'Publicação salva.'
     )
@@ -649,6 +651,15 @@ function PublishTab({
         <Field label="Tags (separadas por vírgula)">
           <input className={inputClass} value={tags} onChange={(e) => setTags(e.target.value)} />
         </Field>
+        {video.kind === 'long' && (
+          <Field label="Série" hint="Cada série vira uma playlist no YouTube no upload.">
+            <input
+              className={inputClass}
+              value={series}
+              onChange={(e) => setSeries(e.target.value)}
+            />
+          </Field>
+        )}
         <div className="grid gap-4 md:grid-cols-2">
           <Field
             label="Data de publicação (horário local)"

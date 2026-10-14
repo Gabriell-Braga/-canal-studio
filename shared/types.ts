@@ -489,6 +489,9 @@ export interface Api {
     suggestedSlot: (id: number) => Promise<string>
     /** Fresh topic ideas for the channel, away from stories big channels already told */
     suggestTopics: (channelId: number) => Promise<string[]>
+    /** Thumbnail model that won "Testar e comparar" for this video */
+    thumbWinner: (id: number) => Promise<string | null>
+    setThumbWinner: (id: number, model: string | null) => Promise<void>
   }
   scenes: {
     update: (

@@ -2,7 +2,9 @@ import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { join, relative } from 'path'
 import { z } from 'zod'
 import { formatOf, type FormatPack } from '../../shared/formats'
-import { THUMB } from '../../shared/thumb'
+import { THUMB, THUMB_CHECK, thumbProblems, thumbText, type ThumbReading } from '../../shared/thumb'
+import { pythonPost } from '../services/python'
+import { getState } from '../db/settings'
 import { THUMB_KIND_LABELS, formatUsd } from '../../shared/render'
 import type { ThumbnailProps } from '../../shared/render'
 import type { Video } from '../../shared/types'
@@ -194,6 +196,37 @@ export async function mobilePreview(
   )
 }
 
+/** Problems of a thumbnail at feed size; none when the check cannot run (sidecar down). */
+async function previewProblems(file: string, ctx: StepContext): Promise<string[]> {
+  try {
+    const r = await pythonPost<ThumbReading>(
+      '/thumb_check',
+      { image_path: file, width: THUMB.preview.width, height: THUMB.preview.height },
+      ctx.signal
+    )
+    return thumbProblems(r)
+  } catch (error) {
+    if (ctx.signal.aborted) throw error
+    ctx.log(`Checagem da prévia indisponível: ${(error as Error).message}`, 'warn')
+    return []
+  }
+}
+
+/** Test & compare results needed before the winning model goes first. */
+export const WINNER_AFTER_TESTS = 6
+
+/**
+ * The format's thumbnail models, the most frequent test winner first once the channel has
+ * WINNER_AFTER_TESTS results. Every model is still made.
+ */
+export function orderModels(ids: string[], wins: Record<string, string>): string[] {
+  const results = Object.values(wins).filter((m) => ids.includes(m))
+  if (results.length < WINNER_AFTER_TESTS) return ids
+  const count = (id: string): number => results.filter((m) => m === id).length
+  const best = [...ids].sort((a, b) => count(b) - count(a))[0]
+  return [best, ...ids.filter((id) => id !== best)]
+}
+
 export interface Packaging {
   titles: string[]
   thumbs: { approach: string; text: string; file: string }[]
@@ -254,8 +287,8 @@ ${keepTitle ? `The video keeps its title: "${keepTitle}". The thumbnails must wo
 2) "thumbs": exactly ${format.thumbModels.length} thumbnails, one per approach, in this order:
 ${format.thumbModels.map((a) => `- "${a.id}": ${a.brief}`).join('\n')}
 For each:
-- "text": 2 to ${THUMB.maxWords} words (a figure like "$250B → $0" counts as one idea). It must COMPLEMENT the ${keepTitle ? 'title' : 'first title'}, never repeat its words: if the title names the deal, the thumbnail shows the number; if the title asks why, the thumbnail shows the stakes. The company logo is shown next to it, so the text does not need the company name. No quotes, no emojis.
-- "image": English prompt for an AI image generator: ONE big, instantly recognizable subject (the company's real iconic product as it looked then, its storefront, or a famous object of the story), filling most of the frame, subject on the right half. No readable text or logos.
+- "text": 0 to ${THUMB_CHECK.maxWords} words (a figure like "$250B → $0" counts as one idea; "" is fine when the image says it all). It must COMPLEMENT the ${keepTitle ? 'title' : 'first title'}, never repeat its words: if the title names the deal, the thumbnail shows the number; if the title asks why, the thumbnail shows the stakes. No quotes, no emojis.
+- "image": English prompt for an AI image generator: ONE big, instantly recognizable subject (the real iconic object of the story as it looked then, or a famous place of the story), filling at least a third of the frame, subject on the right half. At most 2 main elements and 1 accent color. No sepia or vintage filter, no readable text or logos.
 - "image2": only for "contrast": the ruin version of the same subject (empty, broken, grey). "" otherwise.
 Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "distinct": 0}, ...], "thumbs": [{"approach": "...", "text": "...", "image": "...", "image2": "..."}]}`,
     packSchema(format),
@@ -268,7 +301,8 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
   )
   const titles = rankTitles(pack.titles, tr.maxChars, recent, entities).slice(0, 3)
   const layoutOf = (id: string): string => format.thumbModels.find((m) => m.id === id)?.layout ?? id
-  const concepts = modelIds(format).map(
+  const wins = getState<Record<string, string>>(`thumbWins.ch.${video.channel_id}`, {})
+  const concepts = orderModels(modelIds(format), wins).map(
     (id) => pack.thumbs.find((t) => t.approach === id) ?? { ...pack.thumbs[0], approach: id }
   )
   ctx.progress(0.15)
@@ -309,7 +343,7 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
     return file
   }
 
-  const logo = companies.find((c) => c.logo)?.logo ?? null
+  const headTitle = keepTitle ?? titles[0] ?? ''
   const stills = concepts.map((c, i) => {
     const props: ThumbnailProps = {
       approach: c.approach,
@@ -318,8 +352,9 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
       background: url(ctx.projectDir, imageFor(c.approach)),
       background2:
         layoutOf(c.approach) === 'contrast' ? url(ctx.projectDir, imageFor('contrast_2')) : null,
-      text: clampWords(c.text),
-      logo
+      text: thumbText(c.text, headTitle),
+      // No white logo plate: it shrinks the subject and reads as an ad.
+      logo: null
     }
     return { out: join(outDir, `thumb_${i + 1}_${c.approach}.png`), props }
   })
@@ -328,6 +363,39 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
     join(ctx.projectDir, 'thumb-job.json'),
     { progress: (p) => ctx.progress(0.8 + 0.15 * p), log: (m) => ctx.log(m), signal: ctx.signal }
   )
+  // Mobile-size check: a small subject or flat contrast gets a new, closer AI image.
+  for (let round = 0; round < 2; round++) {
+    const failing: typeof stills = []
+    for (const st of stills) {
+      const problems = await previewProblems(st.out, ctx)
+      if (!problems.length) continue
+      ctx.log(`Thumbnail ${st.props.approach} reprovada na prévia: ${problems.join('; ')}`, 'warn')
+      const concept = concepts.find((c) => c.approach === st.props.approach)
+      if (!concept) continue
+      const out = join(dir, `bg_${concept.approach}_r${round + 1}.png`)
+      try {
+        await prepareComfy(s, ctx.signal)
+        await generateImage(
+          `${concept.image}, extreme close-up, the subject fills the frame, strong contrast against a plain contrasting background, ${THUMB.imageStyle}`,
+          out,
+          s,
+          { signal: ctx.signal }
+        )
+        st.props = { ...st.props, background: url(ctx.projectDir, out) }
+        failing.push(st)
+      } catch (error) {
+        if (ctx.signal.aborted) throw error
+        ctx.log(`Nova imagem da thumbnail falhou (${(error as Error).message})`, 'warn')
+      }
+    }
+    await freeComfy(s.comfyUrl)
+    if (!failing.length) break
+    await runRender(
+      { mode: 'stills', root: ctx.projectDir, out: '', stills: failing },
+      join(ctx.projectDir, 'thumb-job.json'),
+      { log: (m) => ctx.log(m), signal: ctx.signal }
+    )
+  }
   const preview = join(outDir, 'preview_mobile.png')
   try {
     await mobilePreview(

@@ -423,6 +423,16 @@ function PublishTab({
   const [synthetic, setSynthetic] = useState(video.synthetic_content)
   const [chosen, setChosen] = useState(video.chosen_thumbnail ?? 0)
   const [mobile, setMobile] = useState(false)
+  const [winner, setWinner] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.videos.thumbWinner(video.id).then(setWinner, () => undefined)
+  }, [video.id])
+
+  function markWinner(model: string | null): void {
+    setWinner(model)
+    void api.videos.setThumbWinner(video.id, model)
+  }
 
   useEffect(() => {
     if (!video.scheduled_at)
@@ -515,6 +525,21 @@ function PublishTab({
                 {thumbKindOf(p) && !mobile && (
                   <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-white">
                     {THUMB_KIND_LABELS[thumbKindOf(p) ?? 'ai']}
+                  </span>
+                )}
+                {video.youtube_id && thumbKindOf(p) && !mobile && (
+                  <span
+                    role="checkbox"
+                    aria-checked={winner === thumbKindOf(p)}
+                    title="Marque o modelo que venceu o Testar e comparar do YouTube Studio"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const kind = thumbKindOf(p)
+                      markWinner(winner === kind ? null : kind)
+                    }}
+                    className={`absolute bottom-1.5 right-1.5 rounded px-1.5 py-0.5 text-[11px] ${winner === thumbKindOf(p) ? 'bg-brand-500 text-black' : 'bg-black/70 text-white'}`}
+                  >
+                    {winner === thumbKindOf(p) ? 'Venceu o teste' : 'Marcar vencedora'}
                   </span>
                 )}
               </button>

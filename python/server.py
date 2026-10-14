@@ -387,3 +387,40 @@ def color_match(req: ColorMatchRequest):
         raise HTTPException(500, "encode failed")
     buf.tofile(req.path)
     return {"path": req.path, "width": out.shape[1], "height": out.shape[0]}
+
+
+class ThumbCheckRequest(BaseModel):
+    image_path: str
+    width: int = 246
+    height: int = 138
+
+
+@app.post("/thumb_check")
+def thumb_check(req: ThumbCheckRequest):
+    """How a thumbnail reads at mobile feed size: subject coverage and contrast.
+
+    coverage: share of the frame the main subject (salient object) fills.
+    contrast: RMS contrast of the luminance (0-1). subject_contrast: luminance gap between the
+    subject and the background (0-1).
+    """
+    from PIL import Image
+
+    if not Path(req.image_path).exists():
+        raise HTTPException(404, f"image not found: {req.image_path}")
+    small = Image.open(req.image_path).convert("RGB").resize((req.width, req.height), Image.LANCZOS)
+    with _lock:
+        session = _cutout_session()
+        x = np.asarray(small.resize((1024, 1024), Image.LANCZOS), dtype=np.float32)
+        x = x / max(float(x.max()), 1e-6) - 0.5
+        x = x.transpose(2, 0, 1)[None]
+        pred = session.run(None, {session.get_inputs()[0].name: x})[0][0, 0]
+        pred = (pred - pred.min()) / max(float(pred.max() - pred.min()), 1e-6)
+    mask = np.asarray(Image.fromarray((pred * 255).astype(np.uint8)).resize(small.size)) > 127
+    lum = np.asarray(small.convert("L"), dtype=np.float32) / 255.0
+    inside = float(lum[mask].mean()) if mask.any() else 0.0
+    outside = float(lum[~mask].mean()) if (~mask).any() else 0.0
+    return {
+        "coverage": float(mask.mean()),
+        "contrast": float(lum.std()),
+        "subject_contrast": abs(inside - outside),
+    }

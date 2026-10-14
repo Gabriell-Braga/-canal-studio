@@ -165,6 +165,10 @@ export function registerIpc(
   handle('videos:rejectFinal', (id: number, step: JobType) => pipeline.rejectFinal(id, step))
   handle('videos:suggestedSlot', (id: number) => pipeline.suggestedSlot(id))
   handle('videos:suggestTopics', (channelId: number) => pipeline.suggestTopics(channelId))
+  handle('videos:thumbWinner', (id: number) => pipeline.thumbWinner(id))
+  handle('videos:setThumbWinner', (id: number, model: string | null) =>
+    pipeline.setThumbWinner(id, model)
+  )
   handle('videos:rerender', (id: number) => pipeline.rerender(id))
   handle('videos:generateShorts', (id: number, count: number) => pipeline.generateShorts(id, count))
   handle('videos:shorts', (id: number) => listShorts(id))

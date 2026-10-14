@@ -41,7 +41,9 @@ const api: Api = {
     shorts: invoke('videos:shorts'),
     rejectFinal: invoke('videos:rejectFinal'),
     suggestedSlot: invoke('videos:suggestedSlot'),
-    suggestTopics: invoke('videos:suggestTopics')
+    suggestTopics: invoke('videos:suggestTopics'),
+    thumbWinner: invoke('videos:thumbWinner'),
+    setThumbWinner: invoke('videos:setThumbWinner')
   },
   scenes: {
     update: invoke('scenes:update'),

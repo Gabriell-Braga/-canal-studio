@@ -267,6 +267,22 @@ ${JSON.stringify(v.script)}`,
     })
   }
 
+  /** Thumbnail model that won YouTube's "Test & compare" for this video, if recorded. */
+  thumbWinner(id: number): string | null {
+    const v = getVideo(id)
+    return getState<Record<string, string>>(`thumbWins.ch.${v.channel_id}`, {})[id] ?? null
+  }
+
+  /** Record (or clear) a test winner; after 6 results the winner's model goes first. */
+  setThumbWinner(id: number, model: string | null): void {
+    const v = getVideo(id)
+    const key = `thumbWins.ch.${v.channel_id}`
+    const wins = getState<Record<string, string>>(key, {})
+    if (model) wins[id] = model
+    else delete wins[id]
+    setState(key, wins)
+  }
+
   /** Cut vertical shorts from a rendered video; they land in FINAL_REVIEW on their own. */
   generateShorts(id: number, count: number): void {
     const v = getVideo(id)

@@ -15,6 +15,7 @@ import {
 import { getSettings, getState, setState } from './db/settings'
 import { generateStructured } from './services/llm'
 import { formatOf, scriptSchemaFor } from '../shared/formats'
+import { perfPromptBlock } from './services/youtube'
 import { polishSettings } from './steps/polish'
 import { z } from 'zod'
 import { staleShorts } from './steps/shorts'
@@ -40,6 +41,7 @@ export class Pipeline {
       `You pick topics for a faceless YouTube channel. Format: ${src.brief}${s.defaultNiche ? `\nNiche: ${s.defaultNiche}` : ''}
 Already on the channel (do not repeat these stories): ${done.join(' | ') || 'none'}
 Saturated stories big channels already told to millions (avoid them, or use them only through a specific angle almost nobody covers): ${pack.saturatedTopics.join(', ')}
+${perfPromptBlock(channelId)}
 Give 10 topics.
 Write each topic as a short English working title with the hook in it (max 80 characters)${src.examples.length ? `, e.g. ${src.examples.map((e) => `"${e}"`).join(', ')}` : ''}.
 Return ONLY JSON: {"topics": ["...", ...]}`,

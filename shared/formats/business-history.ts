@@ -24,15 +24,18 @@ Curiosities: every 60–90 seconds of narration, drop in one surprising, little-
   titleRules: {
     count: 5,
     maxChars: 60,
-    rules: `Each title option uses a DIFFERENT one of these structures:
-- a question with a specific detail ("Why Did Nokia Hide Its Own iPhone?")
-- a specific number or date ("The $50 Million Deal Blockbuster Laughed At")
-- a person's name ("The Memo Stephen Elop Wrote That Sank Nokia")
-- a contradiction ("The Phone Company That Invented the iPhone First")
-- "The mistake that..." / "The day that..." ("The 2007 Mistake That Killed BlackBerry")
-Prefer specific curiosity (numbers, dates, names) over generic phrases.`,
-    good: [],
-    banned: ['X did Y. Then Z happened.']
+    rules: `Every option has a different sentence shape: vary between a question, a number, a person's name, a quoted phrase and a contradiction, and never open two options with the same words. Prefer specific curiosity (numbers, names, objects) over generic phrases. Never put a year at the start of a title.`,
+    good: [
+      'Why Did Nokia Hide Its Own iPhone?',
+      'The $50 Million Deal Blockbuster Laughed At',
+      'The Memo Stephen Elop Wrote That Sank Nokia'
+    ],
+    banned: [
+      'The <year> Mistake That…',
+      'The Day That…',
+      'The Mistake That…',
+      'X did Y. Then Z happened.'
+    ]
   },
   thumbModels: [
     {

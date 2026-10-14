@@ -526,7 +526,11 @@ function PublishTab({
       </Card>
       <Card className="grid gap-4 p-5">
         {video.kind === 'long' && video.title_options.length > 1 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-ink-500">
+              Melhores títulos (pontuados e checados contra os últimos 15; suba os 3 no &quot;Testar
+              e comparar&quot;):
+            </span>
             {video.title_options.map((t) => (
               <button
                 key={t}

@@ -6,7 +6,9 @@ import { THUMB } from '../../shared/thumb'
 import { THUMB_KIND_LABELS, formatUsd } from '../../shared/render'
 import type { ThumbnailProps } from '../../shared/render'
 import type { Video } from '../../shared/types'
-import { getVideo, listScenes, updateVideo } from '../db/repo'
+import { getVideo, listScenes, listVideos, updateVideo } from '../db/repo'
+import { perfPromptBlock } from '../services/youtube'
+import { RECENT_TITLES, passingTitles } from '../../shared/titles'
 import { freeComfy, generateImage } from '../services/comfy'
 import { isValidFile, probeDuration, runTool } from '../services/ffmpeg'
 import { generateStructured } from '../services/llm'
@@ -21,14 +23,31 @@ function modelIds(pack: FormatPack): [string, ...string[]] {
   return pack.thumbModels.map((m) => m.id) as [string, ...string[]]
 }
 
+interface ScoredTitle {
+  title: string
+  curiosity: number
+  clarity: number
+  distinct: number
+}
+
 interface PackAnswer {
-  titles: string[]
+  titles: ScoredTitle[]
   thumbs: { approach: string; text: string; image: string; image2: string }[]
 }
 
 function packSchema(pack: FormatPack): z.ZodType<PackAnswer> {
   return z.object({
-    titles: z.array(z.string().min(1)).min(3).max(8),
+    titles: z
+      .array(
+        z.object({
+          title: z.string().min(1),
+          curiosity: z.number(),
+          clarity: z.number(),
+          distinct: z.number()
+        })
+      )
+      .min(3)
+      .max(10),
     thumbs: z
       .array(
         z.object({
@@ -85,6 +104,33 @@ export function cleanTitles(titles: string[], max = 60): string[] {
     return true
   })
   return ok.length ? ok : titles.map(trim).slice(0, 3)
+}
+
+/** The channel's last RECENT_TITLES long-video titles, newest first, without this video. */
+export function recentTitles(video: Video): string[] {
+  return listVideos(video.channel_id)
+    .filter((v) => v.kind === 'long' && v.id !== video.id && v.title)
+    .slice(0, RECENT_TITLES)
+    .map((v) => v.title as string)
+}
+
+/**
+ * Best titles first: cleaned, checked against the recent ones (same opening, same shape,
+ * too similar, nothing concrete) and sorted by the model's curiosity + clarity + distinct
+ * scores. Failing titles only come back when none passes.
+ */
+export function rankTitles(
+  scored: ScoredTitle[],
+  max: number,
+  recent: string[],
+  entities: string[]
+): string[] {
+  const total = (t: ScoredTitle): number => t.curiosity + t.clarity + t.distinct
+  const clean = cleanTitles(
+    [...scored].sort((a, b) => total(b) - total(a)).map((t) => t.title),
+    max
+  )
+  return passingTitles(clean, recent, entities)
 }
 
 /** Frame from a video file (scene media), for when AI images are not available. */
@@ -186,6 +232,13 @@ export async function makePackaging(
 
   const format = formatOf(s.format)
   const tr = format.titleRules
+  const recent = recentTitles(video)
+  const entities = [
+    video.topic,
+    ...companies.map((c) => c.name),
+    ...listScenes(video.id).map((sc) => sc.real_subject)
+  ].filter(Boolean)
+  const perf = perfPromptBlock(video.channel_id)
   ctx.log('Pensando em títulos e thumbnails')
   const pack = await generateStructured(
     `You package a YouTube documentary for the mobile home feed: title + thumbnail. Topic: ${video.topic}.
@@ -193,7 +246,10 @@ Story excerpt: ${story}
 ${facts ? `\nFacts you may use for numbers:\n${facts}\n` : ''}
 1) "titles": ${tr.count} title options, each at most ${tr.maxChars} characters.
 ${tr.rules}
-${tr.good.length ? `Tone examples (never copy their shape): ${tr.good.map((g) => `"${g}"`).join('; ')}\n` : ''}${tr.banned.length ? `Never use these shapes: ${tr.banned.map((b) => `"${b}"`).join('; ')}\n` : ''}Accurate, no clickbait lies, no emojis. ONE sentence per title: never the formula "X did Y. Then Z happened." or any title with two sentences. Best option first.
+${tr.good.length ? `Tone examples (never copy their shape): ${tr.good.map((g) => `"${g}"`).join('; ')}\n` : ''}${tr.banned.length ? `Never use these shapes: ${tr.banned.map((b) => `"${b}"`).join('; ')}\n` : ''}Every title needs one concrete element: a name, a sum, an object or a quoted phrase.
+Accurate, no clickbait lies, no emojis. ONE sentence per title: never the formula "X did Y. Then Z happened." or any title with two sentences.
+Recent titles of this channel (never reuse their first words or their sentence shape): ${recent.join(' | ') || 'none'}
+${perf ? `${perf}\n` : ''}Score each title from 1 to 10 on: curiosity (how much it makes you need to click), clarity (understood in one second on a phone), distinct (unlike the usual titles of this niche).
 ${keepTitle ? `The video keeps its title: "${keepTitle}". The thumbnails must work with THAT title.\n` : ''}
 2) "thumbs": exactly ${format.thumbModels.length} thumbnails, one per approach, in this order:
 ${format.thumbModels.map((a) => `- "${a.id}": ${a.brief}`).join('\n')}
@@ -201,7 +257,7 @@ For each:
 - "text": 2 to ${THUMB.maxWords} words (a figure like "$250B → $0" counts as one idea). It must COMPLEMENT the ${keepTitle ? 'title' : 'first title'}, never repeat its words: if the title names the deal, the thumbnail shows the number; if the title asks why, the thumbnail shows the stakes. The company logo is shown next to it, so the text does not need the company name. No quotes, no emojis.
 - "image": English prompt for an AI image generator: ONE big, instantly recognizable subject (the company's real iconic product as it looked then, its storefront, or a famous object of the story), filling most of the frame, subject on the right half. No readable text or logos.
 - "image2": only for "contrast": the ruin version of the same subject (empty, broken, grey). "" otherwise.
-Return ONLY JSON: {"titles": [...], "thumbs": [{"approach": "...", "text": "...", "image": "...", "image2": "..."}]}`,
+Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "distinct": 0}, ...], "thumbs": [{"approach": "...", "text": "...", "image": "...", "image2": "..."}]}`,
     packSchema(format),
     {
       settings: { ...polishSettings(s), claudeModel: 'opus' },
@@ -210,7 +266,7 @@ Return ONLY JSON: {"titles": [...], "thumbs": [{"approach": "...", "text": "..."
       effort: 'medium'
     }
   )
-  const titles = cleanTitles(pack.titles, tr.maxChars)
+  const titles = rankTitles(pack.titles, tr.maxChars, recent, entities).slice(0, 3)
   const layoutOf = (id: string): string => format.thumbModels.find((m) => m.id === id)?.layout ?? id
   const concepts = modelIds(format).map(
     (id) => pack.thumbs.find((t) => t.approach === id) ?? { ...pack.thumbs[0], approach: id }
@@ -337,6 +393,8 @@ export const thumbnailStep: Step = {
     const keepTitle = video.youtube_id ? (video.title ?? undefined) : undefined
     const dir = join(ctx.projectDir, 'thumbs')
     const pack = await makePackaging(video, ctx, dir, keepTitle)
+    // The 3 best titles and the 3 thumbnails, ready for YouTube Studio's "Test & compare".
+    writeFileSync(join(dir, 'titulos.txt'), packagingText(video, pack), 'utf8')
     updateVideo(videoId, {
       thumbnail_paths: pack.thumbs.map((t) => t.file),
       chosen_thumbnail: 0,

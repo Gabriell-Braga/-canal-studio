@@ -132,6 +132,12 @@ export interface Script {
   companies?: ScriptCompany[]
   /** Claude checked the companies and gave a value for every year of the script */
   companiesChecked?: boolean
+  /** Facts beyond the obvious with a named source; listed in the description */
+  sources?: { claim: string; source: string }[]
+  /** Narrative structure of the format this script follows */
+  structure?: string
+  /** The facts were checked on the web */
+  verified?: boolean
   /** Claude's final edit already ran on this script */
   polished?: boolean
   /** Fields of the format's overlays (see FormatPack.overlays) */

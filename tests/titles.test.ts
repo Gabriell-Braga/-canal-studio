@@ -56,3 +56,14 @@ describe('title checks', () => {
     expect(passingTitles(['Vague One', 'The $5 Tonic'], [])).toEqual(['The $5 Tonic'])
   })
 })
+
+describe('format structures', () => {
+  it('rotates to the structure after the latest one', async () => {
+    const { formatOf, nextStructure } = await import('../shared/formats')
+    const pack = formatOf('business-history')
+    const ids = pack.scriptRules.structures.map((s) => s.id)
+    expect(nextStructure(pack, []).id).toBe(ids[0])
+    expect(nextStructure(pack, [undefined, ids[0]]).id).toBe(ids[1])
+    expect(nextStructure(pack, [ids[ids.length - 1]]).id).toBe(ids[0])
+  })
+})

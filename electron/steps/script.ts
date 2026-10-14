@@ -1,11 +1,18 @@
 import { z } from 'zod'
-import type { Script } from '../../shared/types'
-import { getVideo, replaceScenes, updateVideo } from '../db/repo'
-import { formatOf, hasOverlay, scriptSchemaFor, structureRules } from '../../shared/formats'
+import type { Script, Video } from '../../shared/types'
+import { getVideo, listVideos, replaceScenes, updateVideo } from '../db/repo'
+import {
+  formatOf,
+  hasOverlay,
+  nextStructure,
+  scriptSchemaFor,
+  structureRules,
+  type FormatPack
+} from '../../shared/formats'
 import { formatUsd } from '../../shared/render'
 import { generateStructured, llmLabel, type LlmCall } from '../services/llm'
 import { polishScript } from './polish'
-import type { Step, StepContext } from './types'
+import type { Step } from './types'
 
 export const reviewSchema = z.object({
   alerts: z
@@ -56,70 +63,6 @@ export function unspokenYears(script: Script): { scene: number; year: number }[]
   return out
 }
 
-const expandSchema = z.object({ narrations: z.array(z.string().min(1)) })
-
-/**
- * Local models write far shorter scripts than asked (e.g. 377 words for an 8-minute target).
- * Rewrite scene narrations in batches until the script reaches ~90% of the target length.
- */
-export async function expandScript(
-  script: Script,
-  targetWords: number,
-  topic: string,
-  call: LlmCall,
-  ctx: Pick<StepContext, 'log' | 'signal'>
-): Promise<void> {
-  const BATCH = 6
-  for (let round = 0; round < 3; round++) {
-    const total = scriptWordCount(script)
-    if (total >= targetWords * 0.85 || !script.scenes.length) return
-    const fixed = scriptWordCount({ ...script, scenes: [] })
-    const perScene = Math.min(
-      60,
-      Math.max(25, Math.round((targetWords - fixed) / script.scenes.length))
-    )
-    // The model writes ~60% of the words it is asked for, so ask for more and keep the longer text.
-    const ask = Math.min(90, Math.round(perScene * 1.6))
-    ctx.log(
-      `Roteiro curto (${total}/${targetWords} palavras); expandindo cenas para ~${perScene} palavras`
-    )
-    const outline = script.scenes
-      .map((sc, i) => `${i + 1}. ${sc.narration.slice(0, 120)}`)
-      .join('\n')
-    for (let start = 0; start < script.scenes.length; start += BATCH) {
-      if (ctx.signal.aborted) throw new Error('Cancelado')
-      const batch = script.scenes.slice(start, start + BATCH)
-      const numbered = batch.map((sc, i) => `SCENE ${start + i + 1}: ${sc.narration}`).join('\n')
-      try {
-        const { narrations } = await generateStructured(
-          `You are expanding the narration of a YouTube documentary script about: ${topic}.
-Full outline (for context, do not repeat other scenes):
-${outline}
-
-Rewrite EACH of the following scenes so its narration is about ${ask} words (at least ${perScene}). Keep the same facts, order and meaning; add concrete details, context and tension in short spoken sentences. Keep every year the scene mentions. Do not add greetings or "in this video". Do not invent precise numbers or quotes you are unsure about.
-${numbered}
-
-Return ONLY JSON: {"narrations": ["scene ${start + 1} text", ...]} with exactly ${batch.length} items.`,
-          expandSchema,
-          call
-        )
-        if (narrations.length === batch.length) {
-          narrations.forEach((n, i) => {
-            if (n.split(/\s+/).length > batch[i].narration.split(/\s+/).length) {
-              batch[i].narration = n.trim()
-            }
-          })
-        }
-      } catch (error) {
-        ctx.log(
-          `Expansão das cenas ${start + 1}–${start + batch.length} falhou: ${(error as Error).message}`,
-          'warn'
-        )
-      }
-    }
-  }
-}
-
 export const scriptStep: Step = {
   type: 'script',
   status: 'SCRIPT_GENERATING',
@@ -138,19 +81,21 @@ export const scriptStep: Step = {
     }
 
     const pack = formatOf(settings.format)
-    ctx.log(`Gerando roteiro com ${llmLabel(settings)} (~${words} palavras, formato ${pack.name})`)
+    const structure = pickStructure(pack, video)
+    ctx.log(
+      `Gerando roteiro com ${llmLabel(settings)} (até ~${words} palavras, formato ${pack.name}, estrutura "${structure.name}")`
+    )
     const prompt =
       fillPrompt(settings.scriptPrompt, {
         topic,
         minutes,
         words,
         scenes: Math.max(3, Math.round((minutes * 60) / 15))
-      }) + structureRules(pack)
+      }) + structureRules(pack, structure.id)
     const script = await generateStructured(prompt, scriptSchemaFor(pack), call)
+    script.structure = structure.id
     ctx.log(`Primeira versão: ${script.scenes.length} cenas e ${scriptWordCount(script)} palavras`)
-    ctx.progress(0.4)
-    await expandScript(script, words, video.topic, call, ctx)
-    ctx.progress(0.7)
+    ctx.progress(0.6)
     if (settings.scriptPolish) {
       try {
         ctx.log('Revisão final do roteiro com Claude Sonnet')
@@ -167,6 +112,7 @@ export const scriptStep: Step = {
     const webCheck = settings.llmProvider !== 'ollama' && settings.factCheckWeb
     ctx.log(webCheck ? 'Checando fatos na web' : 'Rodando auto-revisão')
     let alerts: z.infer<typeof reviewSchema>['alerts'] = []
+    let reviewFailed = false
     try {
       const review = await generateStructured(
         fillPrompt(settings.reviewPrompt, { topic: video.topic, script: scriptAsText(script) }),
@@ -175,6 +121,7 @@ export const scriptStep: Step = {
       )
       alerts = review.alerts
     } catch (error) {
+      reviewFailed = true
       ctx.log(`Auto-revisão falhou: ${(error as Error).message}`, 'warn')
       alerts = [{ kind: 'other', message: 'A auto-revisão falhou; revise o roteiro manualmente.' }]
     }
@@ -185,10 +132,20 @@ export const scriptStep: Step = {
         message: `O narrador não diz o ano em ${silent.length} mudança(s) de ano (cenas ${silent.map((x) => `${x.scene}: ${x.year}`).join(', ')}). Cite o ano na narração ou corrija o ano da cena.`
       })
     }
-    if (count < words * 0.7) {
+    if ((script.sources?.length ?? 0) < 2) {
       alerts.unshift({
-        kind: 'pacing',
-        message: `Roteiro curto: ${count} palavras (~${(count / 150).toFixed(1)} min) para uma meta de ${minutes} min.`
+        kind: 'dubious_fact',
+        message:
+          'O roteiro precisa de pelo menos 2 fatos fora do óbvio com fonte nomeada (vão na descrição). Use "Corrigir com IA" ou adicione à mão.'
+      })
+    }
+    script.verified = webCheck && !reviewFailed
+    if (!script.verified) {
+      alerts.unshift({
+        kind: 'dubious_fact',
+        message: webCheck
+          ? 'A checagem na web falhou: roteiro NÃO verificado. Confira os fatos antes de aprovar.'
+          : 'Roteiro NÃO verificado: nenhum provedor com busca na web (escolha Claude em Configurações para checar os fatos).'
       })
     }
 
@@ -200,4 +157,15 @@ export const scriptStep: Step = {
       review_alerts: alerts
     })
   }
+}
+
+/** The structure this video uses: the next one after the channel's latest script. */
+function pickStructure(
+  pack: FormatPack,
+  video: Video
+): FormatPack['scriptRules']['structures'][number] {
+  const recent = listVideos(video.channel_id)
+    .filter((v) => v.kind === 'long' && v.id !== video.id)
+    .map((v) => v.script?.structure)
+  return nextStructure(pack, recent)
 }

@@ -43,7 +43,7 @@ export const LATEST_CPI_YEAR = FIRST_OFFICIAL_CPI_YEAR + BLS.length - 1
 
 const TABLE: [number, number][] = [
   ...Object.entries(HIST_1967).map(([y, v]): [number, number] => [Number(y), (v * 9.9) / 29.7]),
-  ...BLS.map((v, i): [number, number] => [FIRST_OFFICIAL_CPI_YEAR + i, v]),
+  ...BLS.map((v, i): [number, number] => [FIRST_OFFICIAL_CPI_YEAR + i, v])
 ]
 
 /** CPI (1982-84 = 100) for a year; linear interpolation between known points, null out of range. */
@@ -71,18 +71,26 @@ export function roundToday(usd: number): number {
 function money(usd: number): string {
   if (usd < 1) return `${Math.round(usd * 100)}¢`
   const cents = usd < 100 || !Number.isInteger(usd)
-  return '$' + usd.toLocaleString('en-US', { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: 2 })
+  return (
+    '$' +
+    usd.toLocaleString('en-US', { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: 2 })
+  )
 }
 
 /** "$1.00 in 1924 ≈ $19 today"; estimate = year predates the official BLS series. */
 export function priceTag(
   usd: number,
-  year: number,
+  year: number
 ): { then: string; today: string; text: string; estimate: boolean } | null {
   const now = inflate(usd, year)
   if (now === null) return null
   const then = money(usd)
   const r = roundToday(now)
   const today = r >= 1 && Number.isInteger(r) ? '$' + r.toLocaleString('en-US') : money(r)
-  return { then, today, text: `${then} in ${year} ≈ ${today} today`, estimate: year < FIRST_OFFICIAL_CPI_YEAR }
+  return {
+    then,
+    today,
+    text: `${then} in ${year} ≈ ${today} today`,
+    estimate: year < FIRST_OFFICIAL_CPI_YEAR
+  }
 }

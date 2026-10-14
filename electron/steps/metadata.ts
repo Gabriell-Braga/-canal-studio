@@ -90,6 +90,9 @@ ${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter 
       )
       description += `\n\nChapters\n${lines.join('\n')}`
     }
+    const sources = video.script?.sources ?? []
+    if (sources.length)
+      description += `\n\nSources\n${sources.map((x) => `- ${x.claim}: ${x.source}`).join('\n')}`
     // Licenses like CC BY require crediting the author where the work is used.
     const credits = [
       ...new Set(

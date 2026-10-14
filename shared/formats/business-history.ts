@@ -12,13 +12,31 @@ export const businessHistory: FormatPack = {
       'Between 15 and 30 seconds: what was at stake in dollars, jobs or market share, and one concrete question the ending answers (e.g. "So why did the board say no to a deal that would have saved them?"). Phrase it fresh each time.',
     body: `Scene 1 never opens on the company's founding or a date line ("1865. ..."). Pick up right after the hook; the origin story, if needed, comes later and lasts at most 45 seconds of narration.
 Curiosities: every 60–90 seconds of narration, drop in one surprising, little-known but true detail tightly tied to the topic (a strange decision, a near miss, a hidden connection, an odd number) that makes the viewer say "I didn't know that". Weave it into the story; do not announce it as a "fun fact".`,
-    ending: `Outro: slow and calm, never rushed. 3–5 unhurried sentences: first land the story with a reflective conclusion (what it meant, what changed because of it), then a quiet closing thought, and only at the very end ONE short, gentle invitation to subscribe (e.g. "If you enjoy stories like this one, consider subscribing. There are many more coming."). Never list "like, comment, subscribe and hit the bell", never ask for several actions, never add urgency. Do not say goodbye abruptly; the video ends on a black screen with recommended videos right after.`,
+    ending: `Outro: slow and calm, never rushed. 3–5 unhurried sentences: first answer the question the re-hook asked and land the story with a clear conclusion (what it meant, what changed because of it), then a hook for the next story of the series (one concrete teaser of another company's turn, without a date promise), and at most ONE short, gentle invitation to subscribe. Never list "like, comment, subscribe and hit the bell", never ask for several actions, never add urgency. The video ends on a black screen with recommended videos right after.`,
     banned: [],
     structures: [
       {
         id: 'rise-fall',
         name: 'Ascensão e queda',
         outline: 'the turning point first, then the rise, the peak, the mistake and the fall'
+      },
+      {
+        id: 'one-decision',
+        name: 'Uma decisão',
+        outline:
+          'one meeting or decision, told almost minute by minute: who was in the room, the options on the table, what they chose, then what it cost over the following years'
+      },
+      {
+        id: 'two-rivals',
+        name: 'Dois rivais',
+        outline:
+          'two companies (or two people) side by side: how each one bet, the moment their paths split, who won and why the loser could not see it coming'
+      },
+      {
+        id: 'investigation',
+        name: 'Investigação',
+        outline:
+          'start from a strange fact (a number, a product, a document) and investigate it like a case: clues in order, a false lead, then the real explanation'
       }
     ]
   },

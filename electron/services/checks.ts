@@ -197,6 +197,47 @@ async function checkEspeak(): Promise<ServiceStatus> {
   }
 }
 
+/** Expression edits on thumbnail faces. Optional: thumbnails work without it, so never 'missing'. */
+async function checkLivePortrait(): Promise<ServiceStatus> {
+  const base = { id: 'livePortrait', name: 'LivePortrait (expressões)' } as const
+  try {
+    const node = await fetchJson<Record<string, unknown>>(
+      `${config.comfyUrl}/object_info/ExpressionEditor`
+    )
+    if (node.ExpressionEditor) return { ...base, state: 'ok', detail: 'Expression Editor (PHM)' }
+  } catch {
+    if (
+      existsSync(join(config.comfyPath, 'ComfyUI', 'custom_nodes', 'ComfyUI-AdvancedLivePortrait'))
+    ) {
+      return { ...base, state: 'ok', detail: 'Instalado (ComfyUI parado).' }
+    }
+  }
+  return {
+    ...base,
+    state: 'warning',
+    detail: 'Opcional: muda a expressão de rostos reais nas thumbnails.',
+    hint: `cd "${join(config.comfyPath, 'ComfyUI', 'custom_nodes')}" && git clone https://github.com/PowerHouseMan/ComfyUI-AdvancedLivePortrait && "${join(config.comfyPath, 'python_embeded', 'python.exe')}" -m pip install -r ComfyUI-AdvancedLivePortrait/requirements.txt (reinicie o ComfyUI)`
+  }
+}
+
+async function checkInsightface(): Promise<ServiceStatus> {
+  const base = { id: 'insightface', name: 'InsightFace' } as const
+  if (
+    hasVenv() &&
+    existsSync(join(venvPython(), '..', '..', 'Lib', 'site-packages', 'insightface'))
+  ) {
+    return { ...base, state: 'ok', detail: 'Detecção e identidade de rostos (buffalo_l)' }
+  }
+  return {
+    ...base,
+    state: 'warning',
+    detail: 'Opcional: escolhe fotos de rosto e confere a identidade após a edição.',
+    hint: hasVenv()
+      ? `"${venvPython()}" -m pip install insightface onnxruntime`
+      : 'Instale o Servidor Python primeiro.'
+  }
+}
+
 export async function checkAll(): Promise<ServiceStatus[]> {
   await refreshPath()
   const results = await Promise.all([
@@ -208,7 +249,9 @@ export async function checkAll(): Promise<ServiceStatus[]> {
     checkOllama(),
     checkComfy(),
     checkPythonServer(),
-    checkEspeak()
+    checkEspeak(),
+    checkLivePortrait(),
+    checkInsightface()
   ])
   return results.flat()
 }

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import gc
 import glob
+import importlib.util
 import logging
 import os
 import sys
@@ -101,6 +102,7 @@ def health():
         "ok": True,
         "kokoro_loaded": list(_pipelines.keys()),
         "whisper": {"key": _whisper["key"], "device": _whisper["device"]},
+        "insightface": importlib.util.find_spec("insightface") is not None,
     }
 
 
@@ -276,3 +278,112 @@ def unload():
         except Exception:
             pass
     return {"ok": True}
+
+
+# InsightFace (buffalo_l: RetinaFace detection + ArcFace embeddings), CPU on purpose like the cutout.
+_faces: dict[str, object] = {"app": None}
+
+
+class FaceInfoRequest(BaseModel):
+    path: str
+
+
+class FaceSimilarityRequest(BaseModel):
+    a: str
+    b: str
+
+
+def _face_app():
+    if _faces["app"] is None:
+        try:
+            from insightface.app import FaceAnalysis
+        except ImportError:
+            raise HTTPException(501, "insightface não instalado: venv\Scripts\pip install insightface onnxruntime")
+        fa = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+        fa.prepare(ctx_id=-1, det_size=(640, 640))
+        _faces["app"] = fa
+    return _faces["app"]
+
+
+def _faces_of(path: str):
+    import cv2
+
+    if not Path(path).exists():
+        raise HTTPException(404, f"image not found: {path}")
+    img = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)  # imread fails on non-ASCII paths
+    if img is None:
+        raise HTTPException(400, f"not an image: {path}")
+    with _lock:
+        return img, _face_app().get(img)
+
+
+def _yaw(face) -> float:
+    pose = getattr(face, "pose", None)
+    if pose is not None:
+        return float(pose[1])
+    # 5-point fallback: nose offset from the eye midpoint, relative to eye distance (~0.5 at 45 degrees).
+    (lx, _), (rx, _), (nx, _) = face.kps[0], face.kps[1], face.kps[2]
+    return float(np.degrees(np.arcsin(np.clip(2 * (nx - (lx + rx) / 2) / max(abs(rx - lx), 1e-6), -1, 1))) / 2)
+
+
+@app.post("/face_info")
+def face_info(req: FaceInfoRequest):
+    """Faces in a photo, biggest first: box [x, y, w, h], yaw in degrees, blur = Laplacian variance (higher is sharper)."""
+    import cv2
+
+    img, faces = _faces_of(req.path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    out = []
+    for f in faces:
+        x0, y0, x1, y1 = (int(v) for v in f.bbox)
+        x0, y0 = max(x0, 0), max(y0, 0)
+        crop = gray[y0:y1, x0:x1]
+        # Fixed size so the blur score does not depend on the face's resolution.
+        blur = float(cv2.Laplacian(cv2.resize(crop, (256, 256)), cv2.CV_64F).var()) if crop.size else 0.0
+        out.append({"box": [x0, y0, x1 - x0, y1 - y0], "height": y1 - y0, "yaw": _yaw(f), "blur": blur})
+    out.sort(key=lambda f: f["box"][2] * f["box"][3], reverse=True)
+    return {"faces": out, "width": img.shape[1], "height": img.shape[0]}
+
+
+@app.post("/face_similarity")
+def face_similarity(req: FaceSimilarityRequest):
+    """Cosine similarity of the ArcFace embeddings of the biggest face in each image."""
+    embs = []
+    for p in (req.a, req.b):
+        _, faces = _faces_of(p)
+        if not faces:
+            raise HTTPException(422, f"no face found: {p}")
+        biggest = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+        embs.append(biggest.normed_embedding)
+    return {"similarity": float(np.dot(embs[0], embs[1]))}
+
+
+class ColorMatchRequest(BaseModel):
+    reference: str
+    path: str
+    min_height: int = 1080
+
+
+@app.post("/color_match")
+def color_match(req: ColorMatchRequest):
+    """Upscale `path` (Lanczos) to min_height if smaller, match its colors to `reference`
+    (per-channel mean/std in LAB) and overwrite it. Used after an expression edit."""
+    import cv2
+
+    src = cv2.imdecode(np.fromfile(req.reference, dtype=np.uint8), cv2.IMREAD_COLOR)
+    dst = cv2.imdecode(np.fromfile(req.path, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if src is None or dst is None:
+        raise HTTPException(404, "image not found")
+    if dst.shape[0] < req.min_height:
+        scale = req.min_height / dst.shape[0]
+        dst = cv2.resize(dst, (round(dst.shape[1] * scale), req.min_height), interpolation=cv2.INTER_LANCZOS4)
+    s = cv2.cvtColor(src, cv2.COLOR_BGR2LAB).astype(np.float32)
+    d = cv2.cvtColor(dst, cv2.COLOR_BGR2LAB).astype(np.float32)
+    for c in range(3):
+        d[..., c] = (d[..., c] - d[..., c].mean()) / max(float(d[..., c].std()), 1e-6) * s[..., c].std() + s[..., c].mean()
+    out = cv2.cvtColor(np.clip(d, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
+    ok, buf = cv2.imencode(Path(req.path).suffix or ".png", out)
+    if not ok:
+        raise HTTPException(500, "encode failed")
+    buf.tofile(req.path)
+    return {"path": req.path, "width": out.shape[1], "height": out.shape[0]}

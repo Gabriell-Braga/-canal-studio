@@ -83,15 +83,34 @@ The app runs several YouTube channels side by side. It opens on the channel pick
 
 ## Shorts
 
-Open a finished video → **Shorts** tab → choose how many → **Gerar shorts**. The local model picks the strongest stretches of consecutive scenes (18–52 s) that open with a surprising line and stop on a cliffhanger. Each short:
+Open a finished video → **Shorts** tab → choose how many → **Gerar shorts**. Each short is original, not a cut of the long video:
 
-- is vertical 1080x1920: blurred background, the scene media cropped tall in the middle, a headline on top and big word-by-word captions;
-- reuses the video's narration, scene media and music, so no new GPU images are needed;
-- ends with a card "Watch the full video" with the video's thumbnail and title, an arrow to the description, and a narrated line in the channel's voice (Configurações do canal → Shorts);
+- the model writes its own 3–6 line script (20–35 s), the strongest line first, with a headline on screen from the first frame;
+- each line is narrated in the channel's voice and gets its own image (real photo, bank, or a vertical AI image for generic subjects), shown vertical 1080x1920 with big word-by-word captions;
+- it ends either in a loop (the last line flows back into the first) or in a cliffhanger with the card "Watch the full video", never both;
 - uploads only after the full video is on YouTube, with `▶ Watch the full video: https://youtu.be/…` at the top of the description and `#shorts` at the end;
 - is scheduled one day after the full video (one short per day).
 
 The YouTube API cannot set a short's **Related video** link (the clickable pill under shorts). Set it once per short in YouTube Studio → the short → Related video. Shorts can also be generated automatically when a video reaches the final review (Configurações do canal → Shorts).
+
+## Formats
+
+Each channel picks a format in **Configurações do canal → Roteiro → Formato do canal** (`shared/formats/`). A format holds the script and title rules, the 3 thumbnail models, the signature overlays, where topics and media come from, the voices, the shorts rules and the description rules. A new format is one file in `shared/formats/` plus its components in `remotion/formats/`.
+
+- **História de empresas** (`business-history`): company value badge and year cards. Thumbnails: A founder face + object + arrow, B object with a red X, C before/after numbers.
+- **Ads on Trial** (`vintage-ads`): one real newspaper ad (1880–1930) per video, from the Library of Congress (Chronicling America). Price Tag (then → today, CPI table), Claim Check stamp (only with a named source), Paper Trail card, What Was Inside label and the closing *Would It Run Today?* verdict. Literal ad lines are read by a second voice through an old-radio filter. Nothing published after 1930 is used; AI images are abstract paper textures only.
+
+For every format: titles are checked against the channel's last 15 (same opening, same shape, too similar, nothing concrete) and the 3 best go to the final review for YouTube's **Testar e comparar**; the 3 thumbnails are checked at 246×138 (subject ≥30%, contrast) and made again when they fail; mark the test winner on the video and, after 6 tests, the winning model goes first; the final review has a mandatory checklist; at most 2 full videos per week by default.
+
+Real faces on thumbnails are always real, freely licensed photos; only their expression is edited (ComfyUI-AdvancedLivePortrait), and the edit is kept only when InsightFace still recognizes the person (cosine ≥ 0.6). Install once:
+
+```powershell
+cd D:\ComfyUI_windows_portable\ComfyUI\custom_nodes
+git clone https://github.com/PowerHouseMan/ComfyUI-AdvancedLivePortrait
+D:\ComfyUI_windows_portable\python_embeded\python.exe -m pip install -r ComfyUI-AdvancedLivePortrait\requirements.txt
+```
+
+Then **Serviços → Instalar** on the Python server again (adds `insightface` and `onnxruntime`). Without them, thumbnails use the original photo.
 
 ## Media sources
 

@@ -40,7 +40,9 @@ Steps (`electron/steps/`): each implements `Step.run(videoId, ctx)` (see `types.
 
 LLM (`electron/services/llm.ts`): `generateStructured(prompt, zodSchema, opts)` routes to Ollama, Claude via the user's Claude Code login, or the Anthropic API, depending on settings, and always returns Zod-validated data. For Claude, the system prompt is `.claude/skills/documentary-scriptwriter/SKILL.md`, so editing that skill changes production scripts.
 
-Channel growth rules (hooks, structure, title/thumbnail approaches, shorts, saturated topics) live in `shared/growth.ts` and are injected into prompts.
+Formats (`shared/formats/`): each channel picks a `FormatPack` (settings key `format`) holding script/title rules, 3 thumbnail models, overlays (each declares Zod fields merged into the script schema by `scriptSchemaFor`), topic source, media providers, voices, shorts and metadata rules. Steps read rules via `formatOf(settings.format)`; the render draws only overlays the format declares, through `remotion/formats/` (overlay components and thumbnail layouts per format). New format = one file in `shared/formats/` + its components in `remotion/formats/`.
+
+Remotion assets (fonts) live in `remotion/public` (bundled via `publicDir`). Shorts have their own script/narration/media (`electron/steps/shortscript.ts`); `shorts.ts` only re-renders old cut-based shorts.
 
 Settings (`electron/db/settings.ts`): per-channel settings plus shared settings (one GPU, one queue). Data folder resolution in `electron/main/paths.ts`: `CANAL_DATA_DIR`, then a pointer file in userData, then `dados/` in dev. Channel 1 keeps pre-multi-channel paths (`dados/musica`); other channels use `dados/canais/<id>/`.
 

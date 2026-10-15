@@ -83,14 +83,15 @@ const NEUTRAL: ExpressionParams = {
 
 /**
  * Moderate values inside the node's ranges (smile -0.3..1.3, aaa -30..120, eyebrow -10..15,
- * blink -20..5 where negative opens the eyes): strong enough to read at thumbnail size,
+ * blink -20..5 where negative closes the eyes): strong enough to read at thumbnail size,
  * mild enough that ArcFace still sees the same person.
  */
 export const PRESETS: Record<ExpressionPreset, ExpressionParams> = {
   laugh: { ...NEUTRAL, smile: 1, aaa: 35, eee: 6, eyebrow: 4, blink: 1 },
-  shock: { ...NEUTRAL, aaa: 55, woo: 4, eyebrow: 11, blink: -7 },
+  // In this node, negative blink closes the eyes; positive opens them wide.
+  shock: { ...NEUTRAL, aaa: 80, woo: 6, eyebrow: 15, blink: 5 },
   smug: { ...NEUTRAL, smile: 0.6, eyebrow: -3, blink: 2, rotate_roll: 4, rotate_pitch: -3 },
-  worried: { ...NEUTRAL, smile: -0.2, eyebrow: 8, woo: 3, aaa: 8, blink: -3, pupil_y: 3 }
+  worried: { ...NEUTRAL, smile: -0.2, eyebrow: 8, woo: 3, aaa: 8, blink: 2, pupil_y: 3 }
 }
 
 export function expressionWorkflow(image: string, preset: ExpressionPreset): object {

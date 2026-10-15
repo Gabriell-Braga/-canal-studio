@@ -89,7 +89,7 @@ const NEUTRAL: ExpressionParams = {
 export const PRESETS: Record<ExpressionPreset, ExpressionParams> = {
   laugh: { ...NEUTRAL, smile: 1, aaa: 35, eee: 6, eyebrow: 4, blink: 1 },
   // In this node, negative blink closes the eyes; positive opens them wide.
-  shock: { ...NEUTRAL, aaa: 80, woo: 6, eyebrow: 14, blink: 4 },
+  shock: { ...NEUTRAL, aaa: 80, woo: 6, eyebrow: 12, blink: 4 },
   smug: { ...NEUTRAL, smile: 0.6, eyebrow: -3, blink: 2, rotate_roll: 4, rotate_pitch: -3 },
   worried: { ...NEUTRAL, smile: -0.2, eyebrow: 8, woo: 3, aaa: 8, blink: 2, pupil_y: 3 }
 }

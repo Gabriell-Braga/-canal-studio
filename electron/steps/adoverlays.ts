@@ -25,7 +25,9 @@ function longDate(iso: string): string {
  */
 export function adOverlays(
   script: Script | null,
-  scenes: Scene[]
+  scenes: Scene[],
+  /** false when no real ad is attached to the video: claims are not stamped over scans */
+  hasEvidence = true
 ): { overlays: AdOverlays; scans: Map<number, NonNullable<RenderScene['scan']>> } {
   const overlays: AdOverlays = {
     priceTags: [],
@@ -96,6 +98,7 @@ export function adOverlays(
     if (!t) continue
     const quote = String(c.quote ?? '')
     const scan = scanOf.get(index)
+    if (scan && !hasEvidence) continue
     if (scan) {
       const boxes = quoteBoxes(scan, quote)
       if (boxes.length) scans.get(index)?.highlights.push({ at: 0.6, boxes })

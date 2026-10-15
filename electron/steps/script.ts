@@ -13,7 +13,7 @@ import { formatUsd } from '../../shared/render'
 import { generateStructured, llmLabel, type LlmCall } from '../services/llm'
 import { polishScript } from './polish'
 import type { Step } from './types'
-import { videoEvidence } from './evidence'
+import { findVideoEvidence, type Evidence } from './evidence'
 import { adQuotes, quoteInText } from '../../shared/formats/vintage-ads'
 
 export const reviewSchema = z.object({
@@ -73,7 +73,24 @@ export const scriptStep: Step = {
     const { settings } = ctx
     const minutes = video.duration_target_min
     const words = Math.round(minutes * 150)
-    const ev = videoEvidence(videoId)
+    const pack = formatOf(settings.format)
+    // Ads on Trial: a topic typed by hand gets its real ad looked up before the script.
+    const adsFormat = hasOverlay(pack, 'claimCheck')
+    let ev: Evidence | null = null
+    if (adsFormat) {
+      try {
+        ev = await findVideoEvidence(video, settings, ctx.signal)
+        ctx.log(
+          ev
+            ? `Anúncio real: ${ev.page.newspaper}, ${ev.page.date}`
+            : 'Nenhum anúncio real encontrado (loc.gov e Commons)',
+          ev ? 'info' : 'warn'
+        )
+      } catch (error) {
+        if (ctx.signal.aborted) throw error
+        ctx.log(`Busca do anúncio real falhou: ${(error as Error).message}`, 'warn')
+      }
+    }
     const topic =
       (video.niche ? `${video.topic} (channel niche: ${video.niche})` : video.topic) +
       (ev
@@ -91,7 +108,6 @@ ${ev.excerpt}
       numCtx: Math.min(32768, Math.max(8192, Math.round(words * 2.2) + 2048))
     }
 
-    const pack = formatOf(settings.format)
     const structure = pickStructure(pack, video)
     ctx.log(
       `Gerando roteiro com ${llmLabel(settings)} (até ~${words} palavras, formato ${pack.name}, estrutura "${structure.name}")`
@@ -162,6 +178,12 @@ ${ev.excerpt}
           })
       }
     }
+    if (adsFormat && !ev)
+      alerts.unshift({
+        kind: 'other',
+        message:
+          'Sem anúncio real anexado: nada encontrado no loc.gov nem no Commons. O vídeo não terá carimbos sobre scan.'
+      })
     script.verified = webCheck && !reviewFailed
     if (!script.verified) {
       alerts.unshift({

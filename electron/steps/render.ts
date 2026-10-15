@@ -20,6 +20,7 @@ import { sceneFocus } from './focus'
 import { musicTurn, planMusic, prepareMusic } from './music'
 import { formatOf, hasOverlay } from '../../shared/formats'
 import { adOverlays } from './adoverlays'
+import { videoEvidence } from './evidence'
 import type { Step, StepContext } from './types'
 
 let musicFolderFor: (channelId: number) => string = () => ''
@@ -111,7 +112,9 @@ export const renderStep: Step = {
     const companies = await renderCompanies(video, ctx)
     const yearCards = hasOverlay(pack, 'yearCard') ? yearCardsFor(scenes, pd) : []
     // Ads on Trial: price tags, stamps, provenance, label and verdict, plus highlights on scans.
-    const ads = hasOverlay(pack, 'claimCheck') ? adOverlays(video.script, scenes) : null
+    const ads = hasOverlay(pack, 'claimCheck')
+      ? adOverlays(video.script, scenes, !!videoEvidence(videoId))
+      : null
     if (ads) {
       scenes.forEach((sc, i) => {
         const scan = ads.scans.get(sc.index)

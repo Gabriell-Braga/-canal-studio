@@ -17,9 +17,11 @@ npm run lint
 npm run build                # typecheck + electron-vite build into out/
 npm run deploy:desktop       # build, refresh desktop shortcut, restart running app on the new build
 npm run build:win            # installer in dist/
+npm run test:intro           # checks the channel intro fade (scripts/check-intro-fade.mjs)
+npm run check-setup          # verifies local prerequisites (scripts/check-setup.ps1)
 ```
 
-E2E (Playwright drives the built app from `out/`; run `npm run build` first): `node e2e/run.mjs <phase1..phase5>`. The window opens without focus (`CANAL_E2E=1`) so it does not disturb the user's screen. `CANAL_FAKE_STEPS=1` replaces every step with a timed stub to exercise the queue without GPU work. `CANAL_DATA_DIR` points the app at a throwaway data folder (tests and E2E always use one; never touch the real `dados/`).
+E2E (Playwright drives the built app from `out/`): `npm run test:e2e` builds and runs all; `node e2e/run.mjs <phase1..phase5>` runs one phase against an existing build. The window opens without focus (`CANAL_E2E=1`) so it does not disturb the user's screen. `CANAL_FAKE_STEPS=1` replaces every step with a timed stub to exercise the queue without GPU work. `CANAL_DATA_DIR` points the app at a throwaway data folder (tests and E2E always use one; never touch the real `dados/`).
 
 After any change, run `npm run deploy:desktop` so the desktop app picks it up, then commit and push.
 
@@ -47,3 +49,5 @@ Remotion assets (fonts) live in `remotion/public` (bundled via `publicDir`). Sho
 Settings (`electron/db/settings.ts`): per-channel settings plus shared settings (one GPU, one queue). Data folder resolution in `electron/main/paths.ts`: `CANAL_DATA_DIR`, then a pointer file in userData, then `dados/` in dev. Channel 1 keeps pre-multi-channel paths (`dados/musica`); other channels use `dados/canais/<id>/`.
 
 Tests: `tests/helpers.ts` `freshDb()` opens a temp SQLite DB per test; use it instead of mocking the repo.
+
+Ads on Trial (`vintage-ads`): real ads come from Chronicling America. Every loc.gov request goes through `locFetch` in `electron/services/locgate.ts` (official rate limits, 65-minute lockout on 429/403/challenge, never worked around); `findAdPages` in `commonsads.ts` falls back to the public-domain Commons mirrors (≤ 1930). A video's ad is its evidence (`electron/steps/evidence.ts`, stored in state): suggested topics carry it, hand-typed topics get it looked up by the script step; without it the script review shows "Sem anúncio real anexado" and the render skips claim stamps over scans.

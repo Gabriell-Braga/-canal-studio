@@ -1,6 +1,6 @@
 import { pythonPost } from './python'
 import { download } from './pexels'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import {
   cropAd,
   fetchOcrWords,
@@ -47,6 +47,12 @@ export function ocrToWords(r: {
   return { words, confidence: r.confidence, text: words.map((w) => w.text).join(' ') }
 }
 
+/** Download an image, or copy it when the user picked a local file. */
+export async function fetchImage(src: string, out: string, signal?: AbortSignal): Promise<void> {
+  if (/^https?:\/\//i.test(src)) await download(src, out, signal)
+  else copyFileSync(src, out)
+}
+
 /** OCR of a local scan through the Python sidecar (PaddleOCR models). */
 export async function localOcr(file: string, signal?: AbortSignal): Promise<OcrResult> {
   try {
@@ -91,7 +97,7 @@ export async function scanAd(
 ): Promise<ScanInfo> {
   // A Commons mirror is already the cropped ad, without OCR: read it locally.
   if (page.mirror) {
-    await download(page.mirror, out, signal)
+    await fetchImage(page.mirror, out, signal)
     const ocr = await localOcr(out, signal)
     const words = ocr.confidence >= OCR_MIN_CONFIDENCE ? ocr.words : []
     const hit = locatePhrase(words, phrase)

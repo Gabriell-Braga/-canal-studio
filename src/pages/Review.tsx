@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Trash2, Wand2 } from 'lucide-react'
+import { Paperclip, Trash2, Wand2 } from 'lucide-react'
+import AttachAdModal from '../components/AttachAdModal'
 import DeleteVideoModal from '../components/DeleteVideoModal'
 import type { ReviewAlert, Video } from '../../shared/types'
 import ScriptEditor from '../components/ScriptEditor'
@@ -36,6 +37,7 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
   const [fixing, setFixing] = useState<number | null>(null)
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null)
   const [deleting, setDeleting] = useState<Video | null>(null)
+  const [attaching, setAttaching] = useState<Video | null>(null)
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
 
   const visibleSelected = [...selected].filter((id) => videos.some((v) => v.id === id))
@@ -190,10 +192,12 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
                     </div>
                   ) : (
                     <>
-                      <p className="mt-3 text-sm text-ink-200">
-                        <span className="text-ink-500">Gancho: </span>
-                        {v.script?.hook}
-                      </p>
+                      {v.script && (
+                        <p className="mt-3 text-sm text-ink-200">
+                          <span className="text-ink-500">Gancho: </span>
+                          {v.script.hook}
+                        </p>
+                      )}
                       {isOpen && (
                         <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-ink-300">
                           {v.script?.scenes.map((s, i) => (
@@ -244,10 +248,11 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
                           ))}
                         </ul>
                       )}
-                      <div className="mt-3 flex gap-2">
+                      <div className="mt-3 flex flex-wrap gap-2">
                         <Button
                           size="sm"
                           variant="ghost"
+                          className={v.script ? '' : 'hidden'}
                           onClick={() =>
                             setExpanded((s) => {
                               const n = new Set(s)
@@ -259,9 +264,21 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
                         >
                           {isOpen ? 'Recolher' : 'Ver roteiro completo'}
                         </Button>
-                        <Button size="sm" onClick={() => setEditing(v.id)}>
-                          Editar
-                        </Button>
+                        {v.review_alerts.some((a) => a.action === 'attachAd') && (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            data-testid="attach-ad"
+                            onClick={() => setAttaching(v)}
+                          >
+                            <Paperclip size={14} /> Anexar anúncio manualmente
+                          </Button>
+                        )}
+                        {v.script && (
+                          <Button size="sm" onClick={() => setEditing(v.id)}>
+                            Editar
+                          </Button>
+                        )}
                         <Button size="sm" onClick={() => redo(v.id)}>
                           Refazer
                         </Button>
@@ -289,6 +306,16 @@ export default function Review({ onOpen }: { onOpen: (id: number) => void }): Re
           )
         })}
       </div>
+      {attaching && (
+        <AttachAdModal
+          video={attaching}
+          onClose={() => setAttaching(null)}
+          onAttached={() => {
+            setAttaching(null)
+            setMessage({ kind: 'info', text: 'Anúncio anexado. Gerando o roteiro.' })
+          }}
+        />
+      )}
       {deleting && (
         <DeleteVideoModal
           video={deleting}

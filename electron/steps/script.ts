@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import type { Script, Video } from '../../shared/types'
+import type { ReviewAlert, Script, Video } from '../../shared/types'
+import { ORIGIN_LABELS, type AdPage } from '../services/chroniclingamerica'
 import { getVideo, listVideos, replaceScenes, updateVideo } from '../db/repo'
 import {
   formatOf,
@@ -15,6 +16,21 @@ import { polishScript } from './polish'
 import type { Step } from './types'
 import { findVideoEvidence, type Evidence } from './evidence'
 import { adQuotes, quoteInText } from '../../shared/formats/vintage-ads'
+
+export const NO_AD_ALERT: ReviewAlert = {
+  kind: 'other',
+  action: 'attachAd',
+  message:
+    'Sem anúncio real anexado: nada encontrado no loc.gov, no Commons nem no Internet Archive (detalhes em Tarefas e logs). Anexe o anúncio para gerar o roteiro.'
+}
+
+/** Where the ad ran, for the script prompt. */
+function adSource(page: AdPage): string {
+  if (page.origin)
+    return `${page.newspaper} (${ORIGIN_LABELS[page.origin]}), ${page.date || 'undated'}`
+  const place = [page.city, page.state].filter(Boolean).join(', ')
+  return `${page.newspaper}${place ? ` (${place})` : ''}, ${page.date}, page ${page.page}`
+}
 
 export const reviewSchema = z.object({
   alerts: z
@@ -79,16 +95,16 @@ export const scriptStep: Step = {
     let ev: Evidence | null = null
     if (adsFormat) {
       try {
-        ev = await findVideoEvidence(video, settings, ctx.signal)
-        ctx.log(
-          ev
-            ? `Anúncio real: ${ev.page.newspaper}, ${ev.page.date}`
-            : 'Nenhum anúncio real encontrado (loc.gov e Commons)',
-          ev ? 'info' : 'warn'
-        )
+        ev = await findVideoEvidence(video, settings, ctx.signal, ctx.log)
       } catch (error) {
         if (ctx.signal.aborted) throw error
         ctx.log(`Busca do anúncio real falhou: ${(error as Error).message}`, 'warn')
+      }
+      // No real ad, no script: the video waits in review for an ad attached by hand.
+      if (!ev) {
+        ctx.log('Nenhum anúncio real encontrado: roteiro não gerado', 'warn')
+        updateVideo(videoId, { review_alerts: [NO_AD_ALERT] })
+        return
       }
     }
     const topic =
@@ -96,7 +112,7 @@ export const scriptStep: Step = {
       (ev
         ? `
 
-THE REAL AD this video investigates: ${ev.page.newspaper} (${[ev.page.city, ev.page.state].filter(Boolean).join(', ')}), ${ev.page.date}, page ${ev.page.page}. Its striking line: "${ev.phrase}". OCR text of the page around it (noisy; quote only words that are really there):
+THE REAL AD this video investigates: ${adSource(ev.page)}. Its striking line: "${ev.phrase}". OCR text of the page around it (noisy; quote only words that are really there):
 ${ev.excerpt}
 `
         : '')
@@ -178,12 +194,6 @@ ${ev.excerpt}
           })
       }
     }
-    if (adsFormat && !ev)
-      alerts.unshift({
-        kind: 'other',
-        message:
-          'Sem anúncio real anexado: nada encontrado no loc.gov nem no Commons. O vídeo não terá carimbos sobre scan.'
-      })
     script.verified = webCheck && !reviewFailed
     if (!script.verified) {
       alerts.unshift({

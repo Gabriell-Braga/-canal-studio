@@ -42,7 +42,7 @@ import { channelSummaries } from './channels'
 import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scenes'
 import { freeComfy } from '../services/comfy'
 import { sendExtras } from '../steps/upload'
-import { videoEvidence } from '../steps/evidence'
+import { videoEvidence, type ManualAd } from '../steps/evidence'
 import { periodLine } from '../steps/audio'
 import { periodVoice } from '../../shared/formats'
 import { usableProviders } from '../services/stock'
@@ -164,6 +164,19 @@ export function registerIpc(
         }
       }
     }
+  })
+  handle('videos:attachAd', (id: number, input: ManualAd) => pipeline.attachAd(id, input))
+  handle('videos:chooseAdImage', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    const options = {
+      title: 'Imagem do anúncio',
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: 'Imagens', extensions: ['jpg', 'jpeg', 'png', 'webp', 'tif', 'tiff'] }]
+    }
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options)
+    return result.canceled ? null : (result.filePaths[0] ?? null)
   })
   handle('videos:retryFrom', (id: number, step: JobType) => pipeline.retryFrom(id, step))
   handle('videos:approveFinal', (id: number) => pipeline.approveFinal(id))

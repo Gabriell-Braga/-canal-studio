@@ -295,9 +295,15 @@ function SourceCard({ card }: { card: NonNullable<AdOverlays['paperTrail']> }): 
       <div style={{ fontSize: 40, fontWeight: 700, lineHeight: 1.1 }}>{card.newspaper}</div>
       <div style={{ fontSize: 30 }}>
         {card.place}
-        {card.place ? ' · ' : ''}
-        {card.date} · page {card.page}
+        {card.place && (card.date || card.page) ? ' · ' : ''}
+        {card.date}
+        {card.page ? ` · page ${card.page}` : ''}
       </div>
+      {card.link && (
+        <div style={{ fontFamily: F.type, fontSize: 18, opacity: 0.7, marginTop: 6 }}>
+          {card.link}
+        </div>
+      )}
       <div style={{ fontFamily: F.type, fontSize: 20, opacity: 0.7, marginTop: 6 }}>
         Library of Congress · Chronicling America
       </div>

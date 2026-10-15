@@ -3,20 +3,9 @@ import { adSceneData, VERDICTS } from '../../shared/formats/vintage-ads'
 import type { AdOverlays, RenderScene } from '../../shared/render'
 import type { Scene, Script } from '../../shared/types'
 import { quoteBoxes, readScan, type ScanInfo } from '../services/adscan'
+import { longDate, ORIGIN_LABELS } from '../services/chroniclingamerica'
 
 const STAMP_DELAY = 1.6
-
-function longDate(iso: string): string {
-  const d = new Date(`${iso}T00:00:00Z`)
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-        timeZone: 'UTC'
-      })
-}
 
 /**
  * Overlays of the "Ads on Trial" format, all from real data: prices converted by the CPI
@@ -77,12 +66,18 @@ export function adOverlays(
         })
     }
     if (scan && !overlays.paperTrail) {
+      // A Commons or Internet Archive ad shows its publication, date and file link instead
+      // of a newspaper page.
+      const origin = scan.page.origin
       overlays.paperTrail = {
         at: t.start + 0.4,
         newspaper: scan.page.newspaper,
-        place: [scan.page.city, scan.page.state].filter(Boolean).join(', '),
+        place: origin
+          ? ORIGIN_LABELS[origin]
+          : [scan.page.city, scan.page.state].filter(Boolean).join(', '),
         date: longDate(scan.page.date),
-        page: String(scan.page.page)
+        page: origin ? '' : String(scan.page.page),
+        link: origin ? scan.page.mirrorPage?.replace(/^https?:\/\//, '') || undefined : undefined
       }
     }
   }

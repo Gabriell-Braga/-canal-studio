@@ -185,6 +185,8 @@ export interface ReviewAlert {
   /** Suggested fix (fact-checked with web search when Claude is the model) */
   correction?: string
   source?: string
+  /** A button the review shows with the alert */
+  action?: 'attachAd'
 }
 
 export type LlmProvider = 'ollama' | 'claude-code' | 'claude-api'
@@ -565,6 +567,12 @@ export interface Api {
     update: (id: number, patch: VideoPatch) => Promise<Video>
     remove: (id: number) => Promise<void>
     retryFrom: (id: number, step: JobType) => Promise<void>
+    /** Attach the real ad by hand (Commons/Archive link or local image) and write the script */
+    attachAd: (
+      id: number,
+      input: { url?: string; file?: string; source?: string; date?: string }
+    ) => Promise<void>
+    chooseAdImage: () => Promise<string | null>
     approveFinal: (id: number) => Promise<Video>
     rerender: (id: number) => Promise<void>
     generateShorts: (id: number, count: number) => Promise<void>

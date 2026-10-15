@@ -894,3 +894,46 @@ async function selects({ launch, api, shot, log, waitUntil }) {
 }
 
 scenarios.selects = selects
+
+/** Ads on Trial: a video whose ad search found nothing waits in review with "Anexar anúncio manualmente". */
+async function attachAd({ launch, api, shot, log, dataDir }) {
+  const { app, page } = await launch()
+  const [video] = await api(
+    page,
+    'videos.addTopics',
+    1,
+    ["Lydia E. Pinkham's Vegetable Compound"],
+    8
+  )
+  // The status and alert the script step leaves when no ad is found (set straight in the DB).
+  await app.evaluate(
+    ({}, [id, dir]) => {
+      const req = process.getBuiltinModule('module').createRequire(process.cwd() + '/package.json')
+      const Database = req('better-sqlite3')
+      const db = new Database(req('path').join(dir, 'canal.db'))
+      const alerts = [
+        { kind: 'other', action: 'attachAd', message: 'Sem anúncio real anexado: teste.' }
+      ]
+      db.prepare("UPDATE videos SET status = 'SCRIPT_REVIEW', review_json = ? WHERE id = ?").run(
+        JSON.stringify(alerts),
+        id
+      )
+      db.close()
+    },
+    [video.id, dataDir]
+  )
+  await page.reload()
+  await page.getByTestId('channel-card').first().click()
+  await page.getByTestId('nav-review').click()
+  await page.getByTestId('attach-ad').click()
+  await page
+    .getByPlaceholder('https://commons.wikimedia.org/wiki/File:…')
+    .fill('https://example.com/x')
+  await page.getByTestId('attach-ad-confirm').click()
+  await page.getByText('Cole o link de um arquivo do Commons').waitFor()
+  await shot(page, 'attach-ad-modal')
+  log('Link inválido recusado com mensagem')
+  await app.close()
+}
+
+scenarios.attachAd = attachAd

@@ -165,3 +165,16 @@ describe('final review checklist', () => {
     expect(() => pipeline.approveFinal(v.id)).toThrow(/checklist/)
   })
 })
+
+describe('script approval', () => {
+  beforeEach(() => {
+    freshDb()
+  })
+
+  it('never approves a video that stopped in review without a script', () => {
+    const v = createVideo({ topic: 'Pinkham', durationMin: 8, synthetic: false })
+    updateVideo(v.id, { status: 'SCRIPT_REVIEW' })
+    expect(new Pipeline(scheduler).approveScripts([v.id])).toBe(0)
+    expect(getVideo(v.id).status).toBe('SCRIPT_REVIEW')
+  })
+})

@@ -31,6 +31,34 @@ export interface AdPage {
   mirrorPage?: string
   /** License confirmed on the mirror page, e.g. "Public domain (PD-US-expired)" */
   license?: string
+  /**
+   * Where the ad comes from when it is not a Chronicling America newspaper page: a Commons
+   * file outside the LoC mirrors, an Internet Archive item or an image the user picked.
+   * `newspaper` then holds the publication (magazine, trade card) and `page` is empty.
+   */
+  origin?: 'commons' | 'archive' | 'local'
+  /** Local OCR mean confidence 0–100 and the image size, to rank equal candidates */
+  ocrConfidence?: number
+  pixels?: number
+}
+
+export const ORIGIN_LABELS: Record<NonNullable<AdPage['origin']>, string> = {
+  commons: 'Wikimedia Commons',
+  archive: 'Internet Archive',
+  local: 'Local file'
+}
+
+/** "June 13, 1909" from a YYYY-MM-DD date; a bare year or anything else stays as it is. */
+export function longDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) && !Number.isNaN(d.getTime())
+    ? d.toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC'
+      })
+    : iso
 }
 
 export interface Box {
@@ -162,7 +190,8 @@ export async function fetchOcrWords(
 
 const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 
-function similarity(a: string, b: string): number {
+/** Edit-distance similarity 0–1 of two strings. */
+export function similarity(a: string, b: string): number {
   if (a === b) return 1
   if (!a || !b) return 0
   let prev = Array.from({ length: b.length + 1 }, (_, j) => j)
@@ -264,12 +293,12 @@ export async function cropAd(
 }
 
 export function credit(page: AdPage): string {
-  const date = new Date(`${page.date}T00:00:00Z`).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC'
-  })
+  const date = longDate(page.date)
+  if (page.origin) {
+    const lic = page.license ? ` License: ${page.license}.` : ''
+    const link = page.mirrorPage ? `: ${page.mirrorPage}` : ''
+    return `${page.newspaper}${date ? `, ${date}` : ''}. ${ORIGIN_LABELS[page.origin]}${link}.${lic}`
+  }
   const place = [page.city, page.state].filter(Boolean).join(', ')
   const lic = page.license ? ` License: ${page.license}.` : ''
   const via = page.mirrorPage ? ` (via Wikimedia Commons: ${page.mirrorPage})` : ''

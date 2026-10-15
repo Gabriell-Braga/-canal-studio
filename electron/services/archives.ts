@@ -3,6 +3,8 @@
  * the ones that fit (space → NASA, art/history → The Met, vintage → Internet Archive).
  */
 import type { StockCandidate } from './pexels'
+import type { AdPage } from './chroniclingamerica'
+import { PUBLIC_DOMAIN_UNTIL } from '../../shared/formats/vintage-ads'
 import { WIKIMEDIA_USER_AGENT as USER_AGENT } from './wikimedia'
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -161,4 +163,147 @@ export async function searchArchive(
     })
   )
   return out.filter((c): c is StockCandidate => !!c)
+}
+
+// ---------------------------------------------------------------- Internet Archive (ads)
+
+interface ArchiveDoc {
+  identifier: string
+  title?: string
+  year?: string | number
+  date?: string
+  licenseurl?: string
+  rights?: string | string[]
+  'possible-copyright-status'?: string | string[]
+}
+
+/**
+ * The item's own rights say public domain: a PD/CC0 license URL, the NOT_IN_COPYRIGHT status,
+ * or a rights statement that starts with it. Free text that only mentions the public domain
+ * ("Copyright status unknown… works not in the public domain…") is refused.
+ */
+export function publicRights(
+  d: Pick<ArchiveDoc, 'licenseurl' | 'rights' | 'possible-copyright-status'>
+): string | null {
+  const all = (v: string | string[] | undefined): string[] => [v ?? []].flat()
+  const url = all(d.licenseurl).find((u) => /publicdomain|cc0/i.test(u))
+  if (url) return url.replace(/^https?:\/\//, '')
+  if (all(d['possible-copyright-status']).some((s) => /^NOT_IN_COPYRIGHT$/i.test(s.trim())))
+    return 'not in copyright'
+  const text = all(d.rights).find(
+    (r) =>
+      /^\s*(public domain|no known copyright restrictions)/i.test(r) &&
+      !/unknown|may be protected|permission/i.test(r)
+  )
+  return text ? text.trim().slice(0, 60) : null
+}
+
+/** An Internet Archive item as an ad page, or null (with the reason) when it cannot be used. */
+export function parseArchiveDoc(
+  d: ArchiveDoc,
+  reject: (title: string, reason: string) => void
+): AdPage | null {
+  const title = d.title ?? d.identifier
+  const year = Number(String(d.year ?? d.date ?? '').slice(0, 4))
+  if (!year) return (reject(title, 'sem data'), null)
+  if (year > PUBLIC_DOMAIN_UNTIL)
+    return (reject(title, `de ${year}, depois de ${PUBLIC_DOMAIN_UNTIL}`), null)
+  const free = publicRights(d)
+  if (!free) return (reject(title, 'direitos não são de domínio público'), null)
+  // "1909-01-01" is how the Archive stores a bare year.
+  const iso = /^\d{4}-\d{2}-\d{2}/.exec(d.date ?? '')?.[0]?.replace(/-01-01$/, '')
+  const details = `https://archive.org/details/${d.identifier}`
+  return {
+    id: `archive:${d.identifier}`,
+    newspaper: title.slice(0, 80),
+    city: '',
+    state: '',
+    date: iso?.length === 10 && Number(iso.slice(0, 4)) === year ? iso : String(year),
+    page: '',
+    locUrl: details,
+    imageUrl: '',
+    license: `Public domain (${free})`,
+    mirrorPage: details,
+    origin: 'archive'
+  }
+}
+
+/** The largest image of an item, with its pixel count when the metadata gives it. */
+export async function archiveImage(
+  identifier: string,
+  signal?: AbortSignal
+): Promise<{ url: string; pixels?: number } | null> {
+  const meta = await getJson<{ files: ArchiveFile[] }>(
+    `https://archive.org/metadata/${identifier}`,
+    signal
+  )
+  const img = meta.files
+    .filter((f) => /\.(jpe?g|png)$/i.test(f.name) && !/thumb/i.test(f.name))
+    .sort(
+      (a, b) =>
+        Number(b.width ?? 0) * Number(b.height ?? 0) - Number(a.width ?? 0) * Number(a.height ?? 0)
+    )[0]
+  if (!img) return null
+  return {
+    url: `https://archive.org/download/${identifier}/${encodeURIComponent(img.name)}`,
+    pixels: Number(img.width ?? 0) * Number(img.height ?? 0) || undefined
+  }
+}
+
+/** Ad images on the Internet Archive: items dated ≤ 1930 with public-domain rights only. */
+export async function searchArchiveAds(
+  term: string,
+  limit = 6,
+  signal?: AbortSignal,
+  reject: (title: string, reason: string) => void = () => undefined
+): Promise<AdPage[]> {
+  const q = encodeURIComponent(
+    `(${term.slice(0, 100)}) AND mediatype:image AND year:[1800 TO ${PUBLIC_DOMAIN_UNTIL}]`
+  )
+  const fl = [
+    'identifier',
+    'title',
+    'year',
+    'date',
+    'licenseurl',
+    'rights',
+    'possible-copyright-status'
+  ]
+    .map((f) => `fl[]=${f}`)
+    .join('&')
+  const { response } = await getJson<{ response: { docs: ArchiveDoc[] } }>(
+    `https://archive.org/advancedsearch.php?q=${q}&${fl}&rows=${limit * 2}&output=json`,
+    signal
+  )
+  const out: AdPage[] = []
+  for (const d of response.docs) {
+    if (out.length >= limit) break
+    const page = parseArchiveDoc(d, reject)
+    if (!page) continue
+    const img = await archiveImage(d.identifier, signal).catch(() => null)
+    if (!img) {
+      reject(page.newspaper, 'sem imagem no item')
+      continue
+    }
+    out.push({ ...page, imageUrl: img.url, mirror: img.url, pixels: img.pixels })
+  }
+  return out
+}
+
+/** One Internet Archive item as an ad page (same rules as the search), with its image. */
+export async function archiveItem(
+  identifier: string,
+  reject: (title: string, reason: string) => void,
+  signal?: AbortSignal
+): Promise<AdPage | null> {
+  const { metadata } = await getJson<{ metadata?: Omit<ArchiveDoc, 'identifier'> }>(
+    `https://archive.org/metadata/${identifier}`,
+    signal
+  )
+  if (!metadata) return (reject(identifier, 'item não encontrado'), null)
+  const page = parseArchiveDoc({ identifier, ...metadata }, reject)
+  if (!page) return null
+  const img = await archiveImage(identifier, signal)
+  if (!img) return (reject(page.newspaper, 'sem imagem no item'), null)
+  return { ...page, imageUrl: img.url, mirror: img.url, pixels: img.pixels }
 }

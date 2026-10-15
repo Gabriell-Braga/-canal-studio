@@ -19,7 +19,13 @@ import { perfPromptBlock } from './services/youtube'
 import { checklistMissing } from '../shared/checklist'
 import type { AdPage } from './services/chroniclingamerica'
 import { findAdPages, withOcr } from './services/commonsads'
-import { attachEvidence, rememberTopicEvidence } from './steps/evidence'
+import {
+  attachEvidence,
+  manualEvidence,
+  rememberTopicEvidence,
+  setVideoEvidence,
+  type ManualAd
+} from './steps/evidence'
 import { polishSettings } from './steps/polish'
 import { z } from 'zod'
 import { staleShorts } from './steps/shorts'
@@ -144,6 +150,18 @@ Return ONLY JSON: {"topics": [{"topic": "...", "page": 0, "phrase": "..."}]}`,
     return created
   }
 
+  /**
+   * The real ad the user attaches when the search found none (Ads on Trial): checked like a
+   * searched one, read with the OCR, then the script is written from it.
+   */
+  async attachAd(id: number, input: ManualAd): Promise<void> {
+    const v = getVideo(id)
+    if (!['TOPIC_QUEUED', 'SCRIPT_REVIEW', 'ERROR'].includes(v.status))
+      throw new Error('O vídeo já está em produção')
+    setVideoEvidence(id, await manualEvidence(input))
+    this.redoScript(id)
+  }
+
   /** Script generation is light; it runs right away, outside the night window. */
   generateScripts(channelId: number, ids?: number[]): number {
     const targets = (ids?.length ? ids.map(getVideo) : videosByStatus('TOPIC_QUEUED')).filter(
@@ -161,7 +179,7 @@ Return ONLY JSON: {"topics": [{"topic": "...", "page": 0, "phrase": "..."}]}`,
     let count = 0
     for (const id of ids) {
       const v = getVideo(id)
-      if (v.status !== 'SCRIPT_REVIEW') continue
+      if (v.status !== 'SCRIPT_REVIEW' || !v.script) continue
       updateVideo(id, {
         status: 'PRODUCTION_QUEUED',
         template: v.template ?? this.pickTemplate(v.channel_id)

@@ -35,6 +35,8 @@ const api: Api = {
     update: invoke('videos:update'),
     remove: invoke('videos:remove'),
     retryFrom: invoke('videos:retryFrom'),
+    attachAd: invoke('videos:attachAd'),
+    chooseAdImage: invoke('videos:chooseAdImage'),
     approveFinal: invoke('videos:approveFinal'),
     rerender: invoke('videos:rerender'),
     generateShorts: invoke('videos:generateShorts'),

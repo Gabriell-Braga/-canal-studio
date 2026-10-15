@@ -338,7 +338,15 @@ export interface AdOverlays {
     year: number
   }[]
   claims: { at: number; verdict: string; quote: string; source: string }[]
-  paperTrail: { at: number; newspaper: string; place: string; date: string; page: string } | null
+  paperTrail: {
+    at: number
+    newspaper: string
+    place: string
+    date: string
+    page: string
+    /** Archive file page, for ads outside Chronicling America */
+    link?: string
+  } | null
   ingredients: { at: number; until: number; items: string[]; source: string } | null
   verdict: { at: number; law: string; text: string } | null
 }

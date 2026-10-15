@@ -37,7 +37,8 @@ export function KenBurns({
   // Alternate zoom in/out and pan direction so consecutive images do not move the same way.
   const zoomIn = motion % 2 === 0
   const scale = zoomIn ? 1.04 + 0.12 * t : 1.16 - 0.12 * t
-  const pan = 3 * (t - 0.5)
+  // With a subject (face, product) the camera zooms on it; otherwise it pans across.
+  const pan = focus ? 0 : 3 * (t - 0.5)
   const [dx, dy] = [
     [pan, 0],
     [-pan, 0],
@@ -53,7 +54,9 @@ export function KenBurns({
         objectFit: 'cover',
         // Crop around the subject's head instead of the center.
         objectPosition: objectPosition(focus, width, height),
-        transform: `scale(${scale}) translate(${dx}%, ${dy}%)`
+        transform: `scale(${scale}) translate(${dx}%, ${dy}%)`,
+        // objectPosition puts the subject near 50% / 40% of the frame: zoom toward it.
+        transformOrigin: focus ? '50% 40%' : '50% 50%'
       }}
     />
   )
@@ -63,41 +66,41 @@ export function SceneLayer({
   scene,
   frames,
   fadeIn,
-  grade
+  grade,
+  vignette = 0
 }: {
   scene: RenderScene
   frames: number
   fadeIn: number
   grade: string
+  vignette?: number
 }): React.JSX.Element {
   const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
   const opacity = fadeIn
     ? interpolate(frame, [0, fadeIn], [0, 1], { extrapolateRight: 'clamp' })
     : 1
-  if (scene.scan)
-    return (
-      <AbsoluteFill style={{ opacity, backgroundColor: 'black' }}>
-        <PaperScan scene={scene} frames={frames} />
-      </AbsoluteFill>
-    )
   const shots = [scene, ...(scene.shots ?? [])]
-  // Equal parts for each shot; each one cross-fades in over a few frames.
-  const part = Math.max(1, Math.floor(frames / shots.length))
+  // Each shot stays up its own seconds (equal parts for older props); the scene's sequence
+  // starts `fadeIn` frames early, so later shots shift by that much.
+  const equal = Math.max(1, Math.floor(frames / shots.length))
+  const starts: number[] = []
+  let secs = 0
+  shots.forEach((shot, k) => {
+    starts.push(shot.sec === undefined ? k * equal : k ? fadeIn + Math.round(secs * fps) : 0)
+    secs += shot.sec ?? 0
+  })
   return (
-    <AbsoluteFill style={{ opacity, filter: grade, backgroundColor: 'black' }}>
-      {shots.map((shot, k) => (
-        <Sequence
-          key={k}
-          from={k * part}
-          durationInFrames={k === shots.length - 1 ? frames - k * part : part + SHOT_FADE}
-        >
-          <ShotLayer
-            shot={shot}
-            frames={k === shots.length - 1 ? frames - k * part : part}
-            fade={k > 0}
-          />
-        </Sequence>
-      ))}
+    <AbsoluteFill style={{ opacity, backgroundColor: 'black' }}>
+      {shots.map((shot, k) => {
+        const last = k === shots.length - 1
+        const len = Math.max(1, (last ? frames : starts[k + 1]) - starts[k])
+        return (
+          <Sequence key={k} from={starts[k]} durationInFrames={last ? len : len + SHOT_FADE}>
+            <ShotLayer shot={shot} frames={len} fade={k > 0} grade={grade} vignette={vignette} />
+          </Sequence>
+        )
+      })}
     </AbsoluteFill>
   )
 }
@@ -107,19 +110,30 @@ const SHOT_FADE = 6
 function ShotLayer({
   shot,
   frames,
-  fade
+  fade,
+  grade,
+  vignette
 }: {
-  shot: Pick<RenderScene, 'src' | 'type' | 'motion' | 'clipDuration' | 'focus'>
+  shot: Pick<RenderScene, 'src' | 'type' | 'motion' | 'clipDuration' | 'focus' | 'scan'>
   frames: number
   fade: boolean
+  grade: string
+  vignette: number
 }): React.JSX.Element {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const opacity = fade
     ? interpolate(frame, [0, SHOT_FADE], [0, 1], { extrapolateRight: 'clamp' })
     : 1
+  // A newspaper scan is drawn on paper, without the footage grade or the vignette.
+  if (shot.scan)
+    return (
+      <AbsoluteFill style={{ opacity }}>
+        <PaperScan shot={shot} frames={frames} />
+      </AbsoluteFill>
+    )
   return (
-    <AbsoluteFill style={{ opacity }}>
+    <AbsoluteFill style={{ opacity, filter: grade }}>
       {shot.type === 'image' ? (
         <KenBurns src={shot.src} motion={shot.motion} frames={frames} focus={shot.focus} />
       ) : (
@@ -132,6 +146,7 @@ function ShotLayer({
           />
         </Loop>
       )}
+      {vignette > 0 && <Vignette strength={vignette} />}
     </AbsoluteFill>
   )
 }
@@ -143,7 +158,7 @@ interface Phrase {
 }
 
 /** Group words into short on-screen phrases: max 5 words, break on punctuation or pauses. */
-export function toPhrases(words: RenderWord[]): Phrase[] {
+export function toPhrases(words: RenderWord[], hold = 0.6): Phrase[] {
   const phrases: Phrase[] = []
   let current: RenderWord[] = []
   const flush = (): void => {
@@ -165,10 +180,12 @@ export function toPhrases(words: RenderWord[]): Phrase[] {
   // Hold each phrase until the next one starts when the gap is short.
   phrases.forEach((p, i) => {
     const next = phrases[i + 1]
-    if (next && next.start - p.end < 0.6) p.end = next.start
+    if (next && next.start - p.end < hold) p.end = next.start
   })
   return phrases
 }
+
+const CAPTION_HOLD_SEC = 1.5
 
 function Captions({
   words,
@@ -185,7 +202,11 @@ function Captions({
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = frame / fps
-  const phrases = useMemo(() => toPhrases(words), [words])
+  // Opening captions hold through short pauses so they never blink on and off.
+  const phrases = useMemo(
+    () => toPhrases(words, until !== undefined ? CAPTION_HOLD_SEC : 0.6),
+    [words, until]
+  )
   const phrase = phrases.find((p) => t >= p.start && t < p.end)
   if (!phrase || (until !== undefined && phrase.start >= until)) return null
   const textShadow = style.stroke
@@ -275,6 +296,23 @@ function musicCurve(
   return edges * interpolate(f, [at - fps, at + 2 * fps], [1, 2.2], clamp)
 }
 
+const DUCK_RAMP_SEC = 0.25
+
+/** Music gain at second `t`: -6 dB (×0.5) while the period announcer speaks, short ramps. */
+export function duckGain(t: number, duck?: { start: number; end: number }[]): number {
+  let gain = 1
+  for (const d of duck ?? []) {
+    const g = interpolate(
+      t,
+      [d.start - DUCK_RAMP_SEC, d.start, d.end, d.end + DUCK_RAMP_SEC],
+      [1, 0.5, 0.5, 1],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+    )
+    gain = Math.min(gain, g)
+  }
+  return gain
+}
+
 export const Video: React.FC<VideoProps> = (props) => {
   const { fps, durationInFrames } = useVideoConfig()
   const style = template(props.template)
@@ -295,11 +333,16 @@ export const Video: React.FC<VideoProps> = (props) => {
         const frames = Math.max(1, to - from + (i < props.scenes.length - 1 ? fade : 0))
         return (
           <Sequence key={i} from={from} durationInFrames={frames}>
-            <SceneLayer scene={scene} frames={frames} fadeIn={i ? fade : 0} grade={style.grade} />
+            <SceneLayer
+              scene={scene}
+              frames={frames}
+              fadeIn={i ? fade : 0}
+              grade={style.grade}
+              vignette={style.vignette}
+            />
           </Sequence>
         )
       })}
-      <Vignette strength={style.vignette} />
       {props.captions ? (
         <Captions words={props.words} style={style} />
       ) : (
@@ -364,6 +407,7 @@ export const Video: React.FC<VideoProps> = (props) => {
                     1,
                     props.musicVolume *
                       local *
+                      duckGain(g / fps, props.duck) *
                       musicCurve(g, fps, durationInFrames, musicFade, props.endScreenAt)
                   )
                 }}

@@ -3,6 +3,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { spawn } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
+import { dirname, extname } from 'path'
 import { z } from 'zod'
 import type { Settings } from '../../shared/types'
 import { generateJson } from './ollama'
@@ -32,6 +33,8 @@ export interface LlmCall {
   effort?: 'low' | 'medium' | 'high'
   /** Ollama context window for long outputs */
   numCtx?: number
+  /** Local images the model looks at (Claude only), referenced by their paths in the prompt */
+  images?: string[]
 }
 
 const API_MODELS: Record<string, string> = {
@@ -82,7 +85,13 @@ interface CliResult {
  * only web search/fetch are allowed, and only for fact-checking.
  */
 async function claudeCode<T>(prompt: string, schema: z.ZodType<T>, call: LlmCall): Promise<T> {
-  const tools = call.webSearch ? 'WebSearch,WebFetch' : ''
+  // Images are read with the Read tool, limited to their own folders.
+  const images = call.images ?? []
+  const tools = [
+    ...(call.webSearch ? ['WebSearch', 'WebFetch'] : []),
+    ...(images.length ? ['Read'] : [])
+  ].join(',')
+  const dirs = [...new Set(images.map((f) => dirname(f)))]
   const args = [
     '-p',
     '--output-format',
@@ -99,6 +108,7 @@ async function claudeCode<T>(prompt: string, schema: z.ZodType<T>, call: LlmCall
     '--tools',
     tools,
     ...(tools ? ['--allowedTools', tools] : []),
+    ...dirs.flatMap((d) => ['--add-dir', d]),
     ...(call.effort ? ['--effort', call.effort] : []),
     '--system-prompt',
     skillText() || 'You write narration scripts for YouTube documentaries.'
@@ -167,6 +177,33 @@ function extractJson(text: string): unknown {
 
 // ---------------------------------------------------------------- Claude API (API key)
 
+const MEDIA: Record<string, 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif'
+}
+
+/** The prompt with each local image attached before it, labelled by its path. */
+function withImages(prompt: string, images?: string[]): string | Anthropic.ContentBlockParam[] {
+  if (!images?.length) return prompt
+  return [
+    ...images.flatMap((f): Anthropic.ContentBlockParam[] => [
+      { type: 'text', text: f },
+      {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: MEDIA[extname(f).toLowerCase()] ?? 'image/jpeg',
+          data: readFileSync(f).toString('base64')
+        }
+      }
+    ]),
+    { type: 'text', text: prompt }
+  ]
+}
+
 async function claudeApi<T>(prompt: string, schema: z.ZodType<T>, call: LlmCall): Promise<T> {
   const s = call.settings
   if (!s.anthropicApiKey)
@@ -183,7 +220,7 @@ async function claudeApi<T>(prompt: string, schema: z.ZodType<T>, call: LlmCall)
           max_tokens: 16000,
           system,
           output_config: { format: zodOutputFormat(schema), effort: call.effort ?? 'medium' },
-          messages: [{ role: 'user', content: prompt }]
+          messages: [{ role: 'user', content: withImages(prompt, call.images) }]
         },
         { signal: call.signal }
       )

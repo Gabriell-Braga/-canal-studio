@@ -12,7 +12,8 @@ import {
   productKeyword,
   rankAds,
   searchOrder,
-  videoEvidence
+  videoEvidence,
+  type Evidence
 } from '../electron/steps/evidence'
 import { parseCommonsFile, type CommonsFile } from '../electron/services/commonsads'
 import { parseArchiveDoc } from '../electron/services/archives'
@@ -275,5 +276,27 @@ describe('evidence for topics typed by hand', () => {
       page: '',
       link: 'commons.wikimedia.org/wiki/File:Pinkham.jpg'
     })
+  })
+})
+
+describe('pickVariedAds', () => {
+  const ev = (id: string, newspaper: string, date: string): Evidence => ({
+    page: { id, newspaper, date } as AdPage,
+    phrase: '',
+    excerpt: ''
+  })
+  it('keeps the investigated ad first and prefers other years and newspapers', async () => {
+    const { pickVariedAds } = await import('../electron/steps/evidence')
+    const main = ev('m', 'Prospector', '1903-12-31')
+    const found = [
+      ev('m', 'Prospector', '1903-12-31'),
+      ev('a', 'Prospector', '1903-06-01'),
+      ev('b', 'Sun', '1910-01-01'),
+      ev('c', 'Herald', '1903-02-02'),
+      ev('d', 'Times', '1921-05-05')
+    ]
+    const picked = pickVariedAds(main, found, 3).map((e) => e.page.id)
+    expect(picked).toEqual(['m', 'b', 'd'])
+    expect(pickVariedAds(main, found).map((e) => e.page.id)).toHaveLength(5)
   })
 })

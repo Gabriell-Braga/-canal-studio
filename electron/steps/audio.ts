@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { getVideo, listScenes, replaceScenes, updateVideo } from '../db/repo'
 import { concatAndNormalize, isValidFile, probeDuration, runTool } from '../services/ffmpeg'
-import type { Settings } from '../../shared/types'
+import type { Script, Settings } from '../../shared/types'
 import { pythonPost } from '../services/python'
 import {
   CHANNEL_INTRO_SEC,
@@ -14,7 +14,16 @@ import {
 } from '../../shared/render'
 import { polishScript } from './polish'
 import { periodVoice } from '../../shared/formats'
-import { adSceneData, speakableAd } from '../../shared/formats/vintage-ads'
+import {
+  estimatedStarts,
+  planAnnouncer,
+  speakableAd,
+  type AnnouncerPlan,
+  type AnnouncerSegment
+} from '../../shared/formats/vintage-ads'
+import { isEnglishWord } from '../services/words'
+import { videoEvidence } from './evidence'
+import { refreshAdFactAlert } from './script'
 import type { Step } from './types'
 
 export interface SceneTiming {
@@ -33,6 +42,15 @@ export interface AudioTimings {
   files?: string[]
   /** Channel intro after the hook: where it starts in the narration and how long it is */
   intro?: { start: number; duration: number }
+  /** Where the period announcer speaks (radio static included), seconds of narration.wav */
+  periods?: AnnouncerPeriod[]
+}
+
+export interface AnnouncerPeriod {
+  sceneId: number
+  start: number
+  end: number
+  quote: string
 }
 
 /**
@@ -73,48 +91,103 @@ function sceneFile(dir: string, index: number, text: string, voice: string, spee
   return join(dir, `scene_${String(index).padStart(3, '0')}_${hash}.wav`)
 }
 
+/** Radio static around each announcer line, seconds */
+const STATIC_SEC = 0.3
+/** Silence between the narrator's bridge line and the static */
+const BRIDGE_PAUSE_SEC = 0.25
+
+const STATIC_FX = `highpass=f=800,lowpass=f=5000,afade=t=in:d=0.04,afade=t=out:st=${STATIC_SEC - 0.06}:d=0.06`
+const MONO = 'aresample=24000,aformat=sample_fmts=fltp:channel_layouts=mono'
+
 /**
- * A scene that opens with a line of the ad: the period announcer reads it through an old
- * radio filter (band-pass, light saturation, low hiss), then the narrator goes on.
+ * A Claim Check scene with a line of the ad: the narrator's bridge ("Here's how the ad put
+ * it:"), radio static, the period announcer through the old radio filter, static again,
+ * then the scene's narration. Returns where the announcer (with its static) sits in the file.
  */
 async function periodScene(
-  quote: string,
+  seg: AnnouncerSegment,
   narration: string,
   period: PeriodVoice,
   narrator: { voice: string; speed: number },
   out: string,
   signal: AbortSignal
-): Promise<void> {
+): Promise<{ at: number; length: number }> {
+  const b = out.replace(/\.wav$/, '_bridge.wav')
   const q = out.replace(/\.wav$/, '_ad.wav')
-  const n = out.replace(/\.wav$/, '_nar.wav')
-  await periodLine(quote, period, q, signal)
-  await pythonPost(
-    '/tts',
-    { text: narration, voice: narrator.voice, speed: narrator.speed, out_path: n },
-    signal
-  )
-  await runTool(
-    'ffmpeg',
-    [
-      '-y',
-      '-i',
-      q,
-      '-i',
-      n,
-      '-filter_complex',
-      '[0]apad=pad_dur=0.4[a];[1]aresample=24000[b];[a][b]concat=n=2:v=0:a=1[o]',
-      '-map',
-      '[o]',
-      '-ar',
-      '24000',
-      '-ac',
-      '1',
-      '-c:a',
-      'pcm_s16le',
-      out
-    ],
-    signal
-  )
+  if (!isValidFile(b))
+    await pythonPost(
+      '/tts',
+      { text: seg.bridge, voice: narrator.voice, speed: narrator.speed, out_path: b },
+      signal
+    )
+  if (!isValidFile(q)) await periodLine(seg.quote, period, q, signal)
+  if (!isValidFile(out)) {
+    const noise = `anoisesrc=color=white:amplitude=0.15:sample_rate=24000:duration=${STATIC_SEC}`
+    await runTool(
+      'ffmpeg',
+      [
+        '-y',
+        '-i',
+        b,
+        '-i',
+        q,
+        '-i',
+        narration,
+        '-f',
+        'lavfi',
+        '-i',
+        noise,
+        '-f',
+        'lavfi',
+        '-i',
+        noise,
+        '-filter_complex',
+        `[0]${MONO},apad=pad_dur=${BRIDGE_PAUSE_SEC}[b];[3]${STATIC_FX},${MONO}[s1];[1]${MONO}[a];[4]${STATIC_FX},${MONO},apad=pad_dur=0.4[s2];[2]${MONO}[n];[b][s1][a][s2][n]concat=n=5:v=0:a=1[o]`,
+        '-map',
+        '[o]',
+        '-ar',
+        '24000',
+        '-ac',
+        '1',
+        '-c:a',
+        'pcm_s16le',
+        out
+      ],
+      signal
+    )
+  }
+  return {
+    at: (await probeDuration(b)) + BRIDGE_PAUSE_SEC,
+    length: 2 * STATIC_SEC + (await probeDuration(q))
+  }
+}
+
+/** Start second of each file once joined with `pauses[i]` of silence after file i. */
+export function fileStarts(durations: number[], pauses: number[]): number[] {
+  const starts: number[] = []
+  let t = 0
+  durations.forEach((d, i) => {
+    starts.push(t)
+    t += d + (pauses[i] ?? 0)
+  })
+  return starts
+}
+
+/** The real ad text (OCR) the announcer's lines are checked against. */
+function adOcr(videoId: number): string {
+  return videoEvidence(videoId)?.excerpt ?? ''
+}
+
+/** The announcer plan of a video before audio exists, with times estimated from word counts. */
+export function estimatedAnnouncer(videoId: number, script: Script, s: Settings): AnnouncerPlan {
+  const starts = estimatedStarts(script, {
+    speed: s.voiceSpeed,
+    pauseSec: s.scenePauseSec,
+    introSec: s.introEnabled ? CHANNEL_INTRO_SEC + s.scenePauseSec : 0
+  })
+  return periodVoice(s)
+    ? planAnnouncer(script, adOcr(videoId), starts, isEnglishWord)
+    : { segments: [], dropped: [] }
 }
 
 type PeriodVoice = NonNullable<ReturnType<typeof periodVoice>>
@@ -194,43 +267,34 @@ export const audioStep: Step = {
     }
     const scenes = listScenes(videoId)
     if (!scenes.length) throw new Error('Vídeo sem cenas; gere o roteiro primeiro')
+    const script = getVideo(videoId).script
+    if (script && videoEvidence(videoId)) refreshAdFactAlert(videoId)
 
     // The outro is the last scene: read slower and after a longer silence.
-    const outro = getVideo(videoId).script?.outro?.trim()
+    const outro = script?.outro?.trim()
     const outroIndex =
       outro && scenes.length > 2 && scenes.at(-1)?.narration.trim() === outro
         ? scenes.length - 1
         : -1
 
+    // 1. The narrator's voice for every scene.
     const timings: SceneTiming[] = []
     let generated = 0
-    // Formats with a second voice: literal ad lines in the period announcer's voice first.
-    const secondary = periodVoice(ctx.settings)
-    const script = getVideo(videoId).script
     for (const [i, scene] of scenes.entries()) {
       if (ctx.signal.aborted) throw new Error('Cancelado')
       const speed = i === outroIndex ? voiceSpeed * OUTRO_SPEED : voiceSpeed
-      const quote = secondary ? adSceneData(script, scene.index).adQuote.trim() : ''
-      const text = quote
-        ? `${secondary?.voice}@${secondary?.speed}:${quote}||${scene.narration}`
-        : scene.narration
-      const file = sceneFile(dir, scene.index, text, voice, speed)
+      const file = sceneFile(dir, scene.index, scene.narration, voice, speed)
       if (!isValidFile(file)) {
-        if (quote && secondary) {
-          await periodScene(quote, scene.narration, secondary, { voice, speed }, file, ctx.signal)
-        } else {
-          await pythonPost(
-            '/tts',
-            { text: scene.narration, voice, speed, out_path: file },
-            ctx.signal
-          )
-        }
+        await pythonPost(
+          '/tts',
+          { text: scene.narration, voice, speed, out_path: file },
+          ctx.signal
+        )
         generated++
       }
       timings.push({ sceneId: scene.id, file, duration: await probeDuration(file) })
-      ctx.progress(((i + 1) / scenes.length) * 0.85)
+      ctx.progress(((i + 1) / scenes.length) * 0.75)
     }
-    ctx.log(`Áudio: ${generated} cena(s) geradas, ${scenes.length - generated} reaproveitadas`)
 
     const changes = yearChanges(scenes.map((s) => s.year))
     const gaps = scenes.map((_, i) =>
@@ -243,16 +307,77 @@ export const audioStep: Step = {
     if (changes.size) ctx.log(`${changes.size} mudança(s) de ano com cartão de transição`)
 
     // The channel intro goes right after the hook: hook, pause, intro, then the story.
+    let introClipFile: { file: string; duration: number } | null = null
+    if (ctx.settings.introEnabled && scenes.length > 1) {
+      introClipFile = await introClip(dir, ctx.settings, ctx.signal)
+      gaps[0] = scenePauseSec + introClipFile.duration + gaps[0]
+    }
+    const sceneStarts = (): number[] =>
+      fileStarts(
+        timings.map((t) => t.duration),
+        gaps
+      )
+
+    // 2. The period announcer, planned on the real scene times: at most 3 lines, after the
+    // first minute, 90 s apart. Inserting them only pushes later scenes further.
+    const secondary = periodVoice(ctx.settings)
+    const periods: AnnouncerPeriod[] = []
+    if (secondary) {
+      const starts = sceneStarts()
+      const plan = planAnnouncer(
+        script,
+        adOcr(videoId),
+        (index) => {
+          const k = scenes.findIndex((s) => s.index === index)
+          return k < 0 ? null : starts[k]
+        },
+        isEnglishWord
+      )
+      for (const d of plan.dropped) ctx.log(`Locutor fora da cena ${d.scene}: ${d.reason}`)
+      const offsets = new Map<number, { at: number; length: number }>()
+      for (const seg of plan.segments) {
+        const k = scenes.findIndex((s) => s.index === seg.scene)
+        const speed = k === outroIndex ? voiceSpeed * OUTRO_SPEED : voiceSpeed
+        const file = sceneFile(
+          dir,
+          seg.scene,
+          `${secondary.voice}@${secondary.speed}:${seg.bridge}|${seg.quote}||${scenes[k].narration}`,
+          voice,
+          speed
+        )
+        const narration = timings[k].file
+        offsets.set(
+          k,
+          await periodScene(seg, narration, secondary, { voice, speed }, file, ctx.signal)
+        )
+        timings[k] = { ...timings[k], file, duration: await probeDuration(file) }
+      }
+      const final = sceneStarts()
+      for (const [k, o] of offsets) {
+        const seg = plan.segments.find((s) => s.scene === scenes[k].index)
+        periods.push({
+          sceneId: scenes[k].id,
+          start: final[k] + o.at,
+          end: final[k] + o.at + o.length,
+          quote: seg?.quote ?? ''
+        })
+      }
+      periods.sort((a, b) => a.start - b.start)
+      ctx.log(
+        `Locutor de época: ${periods.length} trecho(s)${periods.length ? ` em ${periods.map((p) => `${Math.round(p.start)}s`).join(', ')}` : ''}`
+      )
+    }
+    ctx.progress(0.85)
+    ctx.log(`Áudio: ${generated} cena(s) geradas, ${scenes.length - generated} reaproveitadas`)
+
     const files = timings.map((t) => t.file)
     const pauses = [...gaps]
     let intro: AudioTimings['intro']
-    if (ctx.settings.introEnabled && scenes.length > 1) {
-      const clip = await introClip(dir, ctx.settings, ctx.signal)
-      files.splice(1, 0, clip.file)
-      pauses.splice(0, 0, scenePauseSec)
-      intro = { start: timings[0].duration + scenePauseSec, duration: clip.duration }
-      gaps[0] = scenePauseSec + clip.duration + gaps[0]
-      ctx.log(`Intro do canal: ${clip.duration.toFixed(1)} s depois do gancho`)
+    if (introClipFile) {
+      files.splice(1, 0, introClipFile.file)
+      pauses.splice(0, 1, scenePauseSec, gaps[0] - scenePauseSec - introClipFile.duration)
+      intro = { start: timings[0].duration + scenePauseSec, duration: introClipFile.duration }
+      ctx.log(`Intro do canal: ${introClipFile.duration.toFixed(1)} s depois do gancho`)
     }
 
     const out = join(ctx.projectDir, 'narration.wav')
@@ -273,7 +398,8 @@ export const audioStep: Step = {
       scenes: timings,
       total,
       files,
-      intro
+      intro,
+      periods
     }
     writeFileSync(timingsFile, JSON.stringify(data, null, 2))
     updateVideo(videoId, { audio_path: out })

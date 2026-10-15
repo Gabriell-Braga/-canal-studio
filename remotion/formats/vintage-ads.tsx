@@ -11,10 +11,10 @@ import {
   useVideoConfig
 } from 'remotion'
 import { ADS_ON_TRIAL } from '../../shared/formats/vintage-ads'
-import type { AdOverlays, Box, RenderScene, ThumbnailProps, VideoProps } from '../../shared/render'
+import type { AdOverlays, Box, RenderScene, VideoProps } from '../../shared/render'
 
-const B = ADS_ON_TRIAL
-const F = {
+export const B = ADS_ON_TRIAL
+export const F = {
   title: `"${B.fonts.title}", Georgia, serif`,
   stamp: `"${B.fonts.stamp}", Impact, sans-serif`,
   type: `"${B.fonts.type}", "Courier New", monospace`,
@@ -31,7 +31,7 @@ const FONT_FILES: [string, string, string?][] = [
   [B.fonts.card, 'OldStandard-Bold.ttf', '700']
 ]
 let fontsLoading: Promise<void> | null = null
-function loadFonts(): void {
+export function loadFonts(): void {
   if (fontsLoading || typeof document === 'undefined') return
   const handle = delayRender('Ads on Trial fonts')
   fontsLoading = Promise.all(
@@ -47,8 +47,8 @@ function loadFonts(): void {
     .then(() => continueRender(handle))
 }
 
-/** Aged paper: base color plus a faint fibrous noise. */
-function Paper({ children }: { children?: React.ReactNode }): React.JSX.Element {
+/** Aged paper: base color plus a faint fibrous noise, edge to edge (no vignette). */
+export function Paper({ children }: { children?: React.ReactNode }): React.JSX.Element {
   return (
     <AbsoluteFill style={{ backgroundColor: B.paper }}>
       <svg width="100%" height="100%" style={{ position: 'absolute', opacity: 0.35 }}>
@@ -58,12 +58,6 @@ function Paper({ children }: { children?: React.ReactNode }): React.JSX.Element 
         </filter>
         <rect width="100%" height="100%" filter="url(#paper-grain)" />
       </svg>
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(80,55,20,0.35) 100%)'
-        }}
-      />
       {children}
     </AbsoluteFill>
   )
@@ -80,23 +74,76 @@ function contained(
   return { x: (w - fitW) / 2, y: (h - fitH) / 2, w: fitW, h: fitH }
 }
 
+/** Share of the frame height the scan fills when the whole ad is shown. */
+export const SCAN_HEIGHT = 0.92
+
 /**
- * The ad scan laid on paper, slightly tilted, with a slow push-in; phrases light up with an
- * animated highlighter at the seconds given, following the OCR word boxes.
+ * Camera over a scan, as scale and the point of the scan (px in the frame) kept at the
+ * center: it starts close on the quoted phrase and pans along it while the highlighter
+ * runs, then pulls back to the whole ad. Without a phrase: a slow push-in.
+ */
+export function scanCamera(
+  frame: number,
+  frames: number,
+  fps: number,
+  size: { width: number; height: number },
+  region: { x: number; y: number; w: number; h: number } | null
+): { scale: number; x: number; y: number } {
+  const cx = size.width / 2
+  const cy = size.height / 2
+  if (!region) return { scale: interpolate(frame, [0, frames], [1, 1.07], clamp), x: cx, y: cy }
+  // Close enough that the phrase spans ~75% of the frame width.
+  const close = Math.max(1.3, Math.min(3.2, (size.width * 0.75) / Math.max(1, region.w)))
+  const zoomEnd = Math.min(frames * 0.5, 3.2 * fps)
+  const backEnd = Math.min(frames * 0.85, zoomEnd + 2.2 * fps)
+  const pan = interpolate(frame, [0, zoomEnd], [0.35, 0.65], clamp)
+  const back = interpolate(frame, [zoomEnd, backEnd], [0, 1], {
+    ...clamp,
+    easing: (t) => t * t * (3 - 2 * t)
+  })
+  const px = region.x + region.w * pan
+  const py = region.y + region.h / 2
+  return {
+    scale: close + (1 - close) * back,
+    x: px + (cx - px) * back,
+    y: py + (cy - py) * back
+  }
+}
+
+/**
+ * The ad scan on full-frame paper, filling most of the height; the camera follows the
+ * quoted phrase and phrases light up with an animated highlighter at the seconds given.
  */
 export function PaperScan({
-  scene,
+  shot,
   frames
 }: {
-  scene: RenderScene
+  shot: Pick<RenderScene, 'src' | 'scan' | 'focus' | 'motion'>
   frames: number
 }): React.JSX.Element {
   loadFonts()
   const frame = useCurrentFrame()
   const { fps, width, height } = useVideoConfig()
-  const zoom = interpolate(frame, [0, frames], [1, 1.07], clamp)
-  const area = { w: width * 0.82, h: height * 0.88 }
-  const img = contained(scene.focus?.aspect ?? 0.75, area.w, area.h)
+  const aspect = shot.scan?.aspect ?? shot.focus?.aspect ?? 0.75
+  const box = contained(aspect, width * 0.96, height * SCAN_HEIGHT)
+  const img = { ...box, x: box.x + width * 0.02, y: box.y + (height * (1 - SCAN_HEIGHT)) / 2 }
+  const lights = shot.scan?.highlights ?? []
+  const first = lights.find((h) => h.boxes.length)?.boxes ?? []
+  const region = first.length
+    ? (() => {
+        const x = Math.min(...first.map((b) => b.x))
+        const y = Math.min(...first.map((b) => b.y))
+        const r = Math.max(...first.map((b) => b.x + b.w))
+        const bt = Math.max(...first.map((b) => b.y + b.h))
+        return {
+          x: img.x + x * img.w,
+          y: img.y + y * img.h,
+          w: (r - x) * img.w,
+          h: (bt - y) * img.h
+        }
+      })()
+    : null
+  const cam = scanCamera(frame, frames, fps, { width, height }, region)
   const highlight = (boxes: Box[], at: number, k: number): React.ReactNode =>
     boxes.map((b, i) => {
       // Words light up one after another, like a marker dragged along the line.
@@ -120,30 +167,26 @@ export function PaperScan({
     })
   return (
     <Paper>
-      <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
-        <div
+      <AbsoluteFill
+        style={{
+          transformOrigin: '0 0',
+          transform: `translate(${width / 2 - cam.scale * cam.x}px, ${height / 2 - cam.scale * cam.y}px) scale(${cam.scale})`
+        }}
+      >
+        <Img
+          src={shot.src}
           style={{
-            position: 'relative',
-            width: area.w,
-            height: area.h,
-            transform: `scale(${zoom}) rotate(-1.2deg)`
+            position: 'absolute',
+            left: img.x,
+            top: img.y,
+            width: img.w,
+            height: img.h,
+            filter: 'sepia(0.15) contrast(1.15)',
+            mixBlendMode: 'multiply',
+            boxShadow: '0 18px 40px rgba(40,25,5,0.35)'
           }}
-        >
-          <Img
-            src={scene.src}
-            style={{
-              position: 'absolute',
-              left: img.x,
-              top: img.y,
-              width: img.w,
-              height: img.h,
-              filter: 'sepia(0.15) contrast(1.15)',
-              mixBlendMode: 'multiply',
-              boxShadow: '0 18px 40px rgba(40,25,5,0.35)'
-            }}
-          />
-          {scene.scan?.highlights.map((h, k) => highlight(h.boxes, h.at, k))}
-        </div>
+        />
+        {lights.map((h, k) => highlight(h.boxes, h.at, k))}
       </AbsoluteFill>
     </Paper>
   )
@@ -268,7 +311,13 @@ function PriceTag({ tag }: { tag: AdOverlays['priceTags'][number] }): React.JSX.
 }
 
 /** Provenance card: newspaper, place, date and page, the channel's proof. */
-function SourceCard({ card }: { card: NonNullable<AdOverlays['paperTrail']> }): React.JSX.Element {
+function SourceCard({
+  card,
+  top
+}: {
+  card: NonNullable<AdOverlays['paperTrail']>
+  top: boolean
+}): React.JSX.Element {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const o = fadeWindow(frame, fps, card.at, card.at + 4.8)
@@ -277,7 +326,7 @@ function SourceCard({ card }: { card: NonNullable<AdOverlays['paperTrail']> }): 
       style={{
         position: 'absolute',
         left: 80,
-        bottom: 90,
+        ...(top ? { top: 70 } : { bottom: 90 }),
         opacity: o,
         transform: `translateY(${(1 - o) * 30}px) rotate(-1.5deg)`,
         background: '#F7F0DC',
@@ -304,24 +353,35 @@ function SourceCard({ card }: { card: NonNullable<AdOverlays['paperTrail']> }): 
           {card.link}
         </div>
       )}
-      <div style={{ fontFamily: F.type, fontSize: 20, opacity: 0.7, marginTop: 6 }}>
-        Library of Congress · Chronicling America
-      </div>
+      {!card.link && (
+        <div style={{ fontFamily: F.type, fontSize: 20, opacity: 0.7, marginTop: 6 }}>
+          Library of Congress · Chronicling America
+        </div>
+      )}
     </div>
   )
 }
 
 /** Old pharmacy label with what a lab of the time found inside. */
 function IngredientLabel({
-  label
+  label,
+  top
 }: {
   label: NonNullable<AdOverlays['ingredients']>
+  top: boolean
 }): React.JSX.Element {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const o = fadeWindow(frame, fps, label.at, label.until)
   return (
-    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'flex-end', paddingRight: 120 }}>
+    <AbsoluteFill
+      style={{
+        justifyContent: top ? 'flex-start' : 'center',
+        alignItems: 'flex-end',
+        paddingRight: 120,
+        paddingTop: top ? 60 : 0
+      }}
+    >
       <div
         style={{
           opacity: o,
@@ -409,6 +469,9 @@ function VerdictCard({ v }: { v: NonNullable<AdOverlays['verdict']> }): React.JS
   )
 }
 
+/** The last opening caption can run a little past the window (it is never cut mid-phrase). */
+const CAPTION_OVERRUN_SEC = 4
+
 /** Every Ads on Trial overlay of a video. */
 export function AdOverlaysView({ video }: { video: VideoProps }): React.JSX.Element | null {
   loadFonts()
@@ -417,10 +480,13 @@ export function AdOverlaysView({ video }: { video: VideoProps }): React.JSX.Elem
   const ads = (video.overlays as { ads?: AdOverlays } | undefined)?.ads
   if (!ads) return null
   const t = frame / fps
+  // Burned-in captions own the bottom of the frame: cards that would sit there move up.
+  const captioned = (at: number): boolean =>
+    video.captions || at < (video.openingCaptionsSec ?? 0) + CAPTION_OVERRUN_SEC
   return (
     <>
       {ads.paperTrail && t >= ads.paperTrail.at - 0.1 && t < ads.paperTrail.at + 5 && (
-        <SourceCard card={ads.paperTrail} />
+        <SourceCard card={ads.paperTrail} top={captioned(ads.paperTrail.at + 5)} />
       )}
       {ads.priceTags
         .filter((p) => t >= p.at - 0.1 && t < p.until)
@@ -435,7 +501,7 @@ export function AdOverlaysView({ video }: { video: VideoProps }): React.JSX.Elem
             <div
               style={{
                 position: 'absolute',
-                bottom: 70,
+                ...(captioned(c.at + 3.2) ? { top: 60 } : { bottom: 70 }),
                 fontFamily: F.type,
                 fontSize: 26,
                 color: B.paper,
@@ -449,223 +515,9 @@ export function AdOverlaysView({ video }: { video: VideoProps }): React.JSX.Elem
           </AbsoluteFill>
         ))}
       {ads.ingredients && t >= ads.ingredients.at - 0.1 && t < ads.ingredients.until && (
-        <IngredientLabel label={ads.ingredients} />
+        <IngredientLabel label={ads.ingredients} top={captioned(ads.ingredients.until)} />
       )}
       {ads.verdict && t >= ads.verdict.at && <VerdictCard v={ads.verdict} />}
     </>
-  )
-}
-
-// ---------------------------------------------------------------- thumbnails
-
-/** Torn newspaper strip along the bottom: the channel's fixed mark on every thumbnail. */
-function ClippingStrip(): React.JSX.Element {
-  const teeth = Array.from({ length: 64 }, (_, i) => `${(i / 63) * 100}% ${i % 2 ? 0 : 14}px`)
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        height: 46,
-        background: B.paper,
-        clipPath: `polygon(${teeth.join(', ')}, 100% 100%, 0 100%)`,
-        boxShadow: '0 -4px 12px rgba(0,0,0,0.3)'
-      }}
-    />
-  )
-}
-
-function Arrow({ style }: { style: React.CSSProperties }): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 200 120" style={{ position: 'absolute', ...style }}>
-      <path
-        d="M8 60 H130 M100 18 L172 60 L100 102"
-        fill="none"
-        stroke={B.ink}
-        strokeWidth={34}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M8 60 H130 M100 18 L172 60 L100 102"
-        fill="none"
-        stroke={B.stamp}
-        strokeWidth={22}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function BigWord({
-  text,
-  style
-}: {
-  text: string
-  style?: React.CSSProperties
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        fontFamily: F.title,
-        fontSize: 120,
-        lineHeight: 1,
-        color: B.paper,
-        textShadow: `0 0 0 ${B.ink}, 6px 6px 0 ${B.ink}`,
-        ...style
-      }}
-    >
-      {text}
-    </div>
-  )
-}
-
-/**
- * Ads on Trial thumbnails: A the real ad + a huge stamp, B the era's face with an arrow to
- * the product, C then vs today. Text 0–3 words, one red accent.
- */
-export const VintageThumbnail: React.FC<ThumbnailProps> = (props) => {
-  loadFonts()
-  const layout = props.layout ?? props.approach
-  if (layout === 'then-now') {
-    const [then, now] = props.text.split('→').map((t) => t.trim())
-    return (
-      <AbsoluteFill style={{ backgroundColor: B.ink, flexDirection: 'row' }}>
-        <div style={{ width: '50%', height: '100%', position: 'relative' }}>
-          <Paper>
-            <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', padding: 40 }}>
-              <Img
-                src={props.background2 ?? props.background}
-                style={{
-                  maxWidth: '88%',
-                  maxHeight: '70%',
-                  transform: 'rotate(-3deg)',
-                  mixBlendMode: 'multiply'
-                }}
-              />
-            </AbsoluteFill>
-            {then && (
-              <BigWord
-                text={then}
-                style={{ left: 40, top: 30, color: B.ink, textShadow: 'none' }}
-              />
-            )}
-          </Paper>
-        </div>
-        <div style={{ width: '50%', height: '100%', position: 'relative', overflow: 'hidden' }}>
-          <Img
-            src={props.background}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-          {now && (
-            <RubberStamp
-              text={now}
-              at={-5}
-              size={110}
-              rotate={-10}
-              style={{ right: 40, top: 40 }}
-            />
-          )}
-        </div>
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: 0,
-            bottom: 0,
-            width: 10,
-            marginLeft: -5,
-            background: B.ink
-          }}
-        />
-        <ClippingStrip />
-      </AbsoluteFill>
-    )
-  }
-  if (layout === 'era-face') {
-    return (
-      <AbsoluteFill style={{ backgroundColor: B.ink }}>
-        <Img
-          src={props.background}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.55 }}
-        />
-        {props.background2 && (
-          <Img
-            src={props.background2}
-            style={{
-              position: 'absolute',
-              right: 50,
-              top: 70,
-              height: 520,
-              maxWidth: 520,
-              objectFit: 'contain',
-              transform: 'rotate(3deg)',
-              boxShadow: '0 16px 40px rgba(0,0,0,0.6)'
-            }}
-          />
-        )}
-        {props.face && (
-          <>
-            <Img
-              src={props.face}
-              style={{
-                position: 'absolute',
-                left: -10,
-                bottom: 0,
-                height: '100%',
-                maxWidth: '55%',
-                objectFit: 'contain',
-                objectPosition: 'left bottom',
-                filter: 'drop-shadow(0 0 16px rgba(0,0,0,0.7))'
-              }}
-            />
-            <Arrow style={{ left: 520, top: 260, width: 220 }} />
-          </>
-        )}
-        {props.text && <BigWord text={props.text.toUpperCase()} style={{ left: 40, top: 30 }} />}
-        <ClippingStrip />
-      </AbsoluteFill>
-    )
-  }
-  // ad-stamp: the real scan, big and tilted on dark, with a huge red stamp.
-  const [stamp, ...rest] = props.text.split(/\s+/)
-  return (
-    <AbsoluteFill style={{ backgroundColor: '#15120E' }}>
-      <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'flex-start', paddingLeft: 70 }}>
-        <Img
-          src={props.background}
-          style={{
-            // A tall ad shows its top (headline and picture) big: about 60% of the frame.
-            height: '112%',
-            width: '62%',
-            objectFit: 'cover',
-            objectPosition: '50% 0%',
-            transform: 'rotate(-4deg)',
-            boxShadow: '0 20px 50px rgba(0,0,0,0.7)',
-            filter: 'contrast(1.2)'
-          }}
-        />
-      </AbsoluteFill>
-      {stamp && (
-        <RubberStamp
-          text={stamp}
-          at={-5}
-          size={stamp.length > 6 ? 150 : 190}
-          rotate={-14}
-          style={{ right: 40, top: 250 }}
-        />
-      )}
-      {rest.length > 0 && (
-        <BigWord
-          text={rest.join(' ').toUpperCase()}
-          style={{ right: 70, bottom: 80, fontSize: 90 }}
-        />
-      )}
-      <ClippingStrip />
-    </AbsoluteFill>
   )
 }

@@ -24,8 +24,12 @@ export interface RenderScene {
   clipDuration?: number
   /** Images: the point to keep in frame when cropping (top of the main subject) */
   focus?: Focus
-  /** A newspaper ad scan: drawn on paper, with phrases highlighted at given seconds of the scene */
-  scan?: { highlights: { at: number; boxes: Box[] }[] }
+  /** A newspaper ad scan: drawn on paper, with phrases highlighted at given seconds of the shot */
+  scan?: { highlights: { at: number; boxes: Box[] }[]; aspect?: number }
+  /** Seconds this image stays up (main shot or sub-shot); missing = equal parts of the scene */
+  sec?: number
+  /** Paper-texture filler (public-domain AI image): not real media */
+  filler?: boolean
   /** More shots after the main one, sharing the scene's time equally (fast cuts) */
   shots?: Omit<RenderScene, 'start' | 'end' | 'shots'>[]
 }
@@ -83,6 +87,8 @@ export interface VideoProps {
   overlays?: Record<string, unknown>
   /** Black end screen after the narration: starts at this second and runs to the end */
   endScreenAt?: number
+  /** Stretches (seconds) where the music drops 6 dB: the period announcer is speaking */
+  duck?: { start: number; end: number }[]
   [key: string]: unknown
 }
 
@@ -317,7 +323,7 @@ export function plausibleValue(year: number, usd: number): boolean {
 }
 
 /** Big burned-in captions over the opening, where most viewers decide to stay. */
-export const OPENING_CAPTIONS_SEC = 30
+export const OPENING_CAPTIONS_SEC = 60
 
 /** A box on an image, 0–1 of its width and height. */
 export interface Box {

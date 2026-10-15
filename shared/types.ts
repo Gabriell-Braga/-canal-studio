@@ -1,3 +1,5 @@
+import type { AnnouncerPlan } from './formats/vintage-ads'
+import type { ReviewReport } from './coverage'
 export type ServiceId =
   | 'node'
   | 'python'
@@ -587,6 +589,12 @@ export interface Api {
     setThumbWinner: (id: number, model: string | null) => Promise<void>
     /** The real ad (OCR text) a video is about; null for other formats */
     evidence: (id: number) => Promise<AdEvidence | null>
+    /** Period announcer lines of a (possibly edited) script, with estimated start times */
+    announcerPlan: (id: number, script: Script) => Promise<AnnouncerPlan>
+    /** One ad line in the period announcer's voice: path of a wav to play */
+    announcerPreview: (id: number, quote: string) => Promise<string>
+    /** Automatic review written after the last render (dados/revisao/<id>); null before one */
+    reviewReport: (id: number) => Promise<ReviewReport | null>
   }
   scenes: {
     update: (

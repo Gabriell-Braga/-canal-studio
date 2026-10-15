@@ -48,6 +48,24 @@ export async function probeDuration(file: string): Promise<number> {
   return d
 }
 
+/** Width and height of an image or video, in pixels. */
+export async function probeSize(file: string): Promise<{ width: number; height: number }> {
+  const { stdout } = await runTool('ffprobe', [
+    '-v',
+    'error',
+    '-select_streams',
+    'v:0',
+    '-show_entries',
+    'stream=width,height',
+    '-of',
+    'csv=p=0:s=x',
+    file
+  ])
+  const [width, height] = stdout.trim().split('x').map(Number)
+  if (!width || !height) throw new Error(`Tamanho inválido para ${file}`)
+  return { width, height }
+}
+
 export function isValidFile(file: string | null | undefined, minBytes = 1024): file is string {
   return !!file && existsSync(file) && statSync(file).size >= minBytes
 }

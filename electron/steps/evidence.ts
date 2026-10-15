@@ -125,7 +125,7 @@ export function rankAds(
   pages: AdPage[],
   product: string,
   keyword = productKeyword(product)
-): { best: Evidence | null; rejected: string[] } {
+): { best: Evidence | null; rejected: string[]; ranked: Evidence[] } {
   const rejected: string[] = []
   const ranked: { page: AdPage; mentions: number; at: number }[] = []
   for (const page of pages) {
@@ -145,18 +145,18 @@ export function rankAds(
       (b.page.pixels ?? 0) - (a.page.pixels ?? 0)
   )
   const top = ranked[0]
-  if (!top) return { best: null, rejected }
+  if (!top) return { best: null, rejected, ranked: [] }
   for (const r of ranked.slice(1))
     rejected.push(`${r.page.newspaper}, ${r.page.date}: perdeu para um anúncio melhor`)
-  const { words } = adTokens(top.page.ocrText ?? '')
-  return {
-    best: {
-      page: top.page,
-      phrase: words.slice(top.at, top.at + Math.max(product.split(/\s+/).length, 6)).join(' '),
-      excerpt: words.slice(Math.max(0, top.at - 100), top.at + 250).join(' ')
-    },
-    rejected
+  const toEvidence = (r: (typeof ranked)[number]): Evidence => {
+    const { words } = adTokens(r.page.ocrText ?? '')
+    return {
+      page: r.page,
+      phrase: words.slice(r.at, r.at + Math.max(product.split(/\s+/).length, 6)).join(' '),
+      excerpt: words.slice(Math.max(0, r.at - 100), r.at + 250).join(' ')
+    }
   }
+  return { best: toEvidence(top), rejected, ranked: ranked.map(toEvidence) }
 }
 
 /** The best ad among searched pages, or null when none names the product. */
@@ -288,6 +288,87 @@ export async function findVideoEvidence(
     }
   }
   return null
+}
+
+// ---------------------------------------------------------------- more ads of the same product
+
+const adsKey = (videoId: number): string => `evidence.ads.video.${videoId}`
+
+/** Most ads a video alternates between, the investigated one included. */
+export const MAX_ADS = 6
+
+/**
+ * Up to `want` ads, as different as possible (other newspapers and years first), from
+ * ranked search results. The first one is always `main`.
+ */
+export function pickVariedAds(main: Evidence, found: Evidence[], want = MAX_ADS): Evidence[] {
+  const year = (e: Evidence): string => e.page.date.slice(0, 4)
+  const seen = new Set([main.page.id])
+  const fresh = found.filter((e) => {
+    if (seen.has(e.page.id)) return false
+    seen.add(e.page.id)
+    return true
+  })
+  const out = [main]
+  const years = new Set([year(main)])
+  const papers = new Set([main.page.newspaper])
+  // New year and new paper, then new year or paper, then anything.
+  const passes = [
+    (e: Evidence) => !years.has(year(e)) && !papers.has(e.page.newspaper),
+    (e: Evidence) => !years.has(year(e)) || !papers.has(e.page.newspaper),
+    () => true
+  ]
+  for (const ok of passes)
+    for (const e of fresh) {
+      if (out.length >= want) return out
+      if (out.includes(e) || !ok(e)) continue
+      out.push(e)
+      years.add(year(e))
+      papers.add(e.page.newspaper)
+    }
+  return out
+}
+
+/**
+ * The investigated ad plus other real ads of the same product (3–6 in all, other years and
+ * newspapers), so the video alternates between them. Searched once and kept in state; the
+ * same public-domain and ≤ 1930 rules as the main search, loc.gov through its gate.
+ */
+export async function gatherAds(
+  video: Video,
+  settings: Settings,
+  signal?: AbortSignal,
+  log: Log = () => undefined
+): Promise<Evidence[]> {
+  const main = videoEvidence(video.id)
+  if (!main) return []
+  const known = getState<Evidence[] | null>(adsKey(video.id), null)
+  if (known) return known
+  const q = await productTerms(video.topic, settings, signal)
+  const keyword = clean(q.keyword) ? q.keyword : productKeyword(q.product)
+  const found: Evidence[] = []
+  for (const layer of layers(q.categories, signal)) {
+    for (const term of searchOrder(q.product, q.terms).slice(0, 2)) {
+      try {
+        const pages = await layer.search(term, () => undefined)
+        const read: AdPage[] = []
+        for (const p of pages) read.push(await withOcr(p, signal))
+        found.push(...rankAds(read, q.product, keyword).ranked)
+      } catch (error) {
+        if (signal?.aborted) throw error
+        log(`${layer.name}: ${(error as Error).message}`, 'warn')
+        if (error instanceof LocBlockedError) break
+      }
+      if (pickVariedAds(main, found).length >= MAX_ADS) break
+    }
+    if (pickVariedAds(main, found).length >= MAX_ADS) break
+  }
+  const ads = pickVariedAds(main, found)
+  log(
+    `Anúncios do produto: ${ads.length} (${ads.map((a) => `${a.page.newspaper} ${a.page.date.slice(0, 4)}`).join('; ')})`
+  )
+  setState(adsKey(video.id), ads)
+  return ads
 }
 
 // ---------------------------------------------------------------- attached by hand

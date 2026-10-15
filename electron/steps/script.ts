@@ -14,14 +14,54 @@ import { formatUsd } from '../../shared/render'
 import { generateStructured, llmLabel, type LlmCall } from '../services/llm'
 import { polishScript } from './polish'
 import type { Step } from './types'
-import { findVideoEvidence, type Evidence } from './evidence'
-import { adQuotes, quoteInText } from '../../shared/formats/vintage-ads'
+import { findVideoEvidence, videoEvidence, type Evidence } from './evidence'
+import { adQuotes, quoteInText, unsourcedFacts } from '../../shared/formats/vintage-ads'
+import { isEnglishWord } from '../services/words'
 
 export const NO_AD_ALERT: ReviewAlert = {
   kind: 'other',
   action: 'attachAd',
   message:
     'Sem anúncio real anexado: nada encontrado no loc.gov, no Commons nem no Internet Archive (detalhes em Tarefas e logs). Anexe o anúncio para gerar o roteiro.'
+}
+
+const FACT_ALERT = 'Nomes, lugares ou datas sem fonte'
+
+/**
+ * Places, years and people the ad scenes name that neither the ad's OCR nor the Claim Check
+ * sources hold, so the reviewer checks where they came from. Null when everything is sourced.
+ */
+export function adFactAlert(script: Script, ev: Evidence): ReviewAlert | null {
+  const facts = unsourcedFacts(script, ev.excerpt, ev.page, isEnglishWord)
+  if (!facts.length) return null
+  const meta = [ev.page.newspaper, ev.page.city, ev.page.state, ev.page.date]
+    .filter(Boolean)
+    .join(', ')
+  const own = facts.filter((f) => !f.fromMeta).map((f) => f.term)
+  const fromMeta = facts.filter((f) => f.fromMeta).map((f) => f.term)
+  return {
+    kind: 'dubious_fact',
+    message: [
+      `${FACT_ALERT} no Claim Check nem no OCR do anúncio.`,
+      own.length ? `Sem origem: ${own.join(', ')}.` : '',
+      fromMeta.length
+        ? `Vêm só dos metadados da página onde o anúncio foi achado (${meta}), não do anúncio: ${fromMeta.join(', ')}. O jornal vai no cartão de procedência, não na narração.`
+        : '',
+      'Confira de onde vieram antes de aprovar.'
+    ]
+      .filter(Boolean)
+      .join(' ')
+  }
+}
+
+/** Recompute the unsourced-facts alert of a video (scripts written before it existed). */
+export function refreshAdFactAlert(videoId: number): void {
+  const video = getVideo(videoId)
+  const ev = videoEvidence(videoId)
+  if (!video.script || !ev) return
+  const alert = adFactAlert(video.script, ev)
+  const others = video.review_alerts.filter((a) => !a.message.startsWith(FACT_ALERT))
+  updateVideo(videoId, { review_alerts: alert ? [alert, ...others] : others })
 }
 
 /** Where the ad ran, for the script prompt. */
@@ -193,6 +233,10 @@ ${ev.excerpt}
             quote
           })
       }
+    }
+    if (ev && hasOverlay(pack, 'adVoice')) {
+      const alert = adFactAlert(script, ev)
+      if (alert) alerts.unshift(alert)
     }
     script.verified = webCheck && !reviewFailed
     if (!script.verified) {

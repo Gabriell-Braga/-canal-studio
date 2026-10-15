@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
-import { existsSync, mkdirSync, writeFileSync } from 'fs'
-import { dirname, join } from 'path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { dirname, extname, join } from 'path'
 import type { Settings } from '../../shared/types'
 import { startDetached } from './exec'
 
@@ -134,15 +134,62 @@ export async function generateImage(
     ? `${prompt}. Cinematic documentary photograph, 35mm film, natural light, realistic detail. No text, no lettering, no logos, no watermarks.`
     : `${prompt}, cinematic documentary photograph, dramatic natural lighting, highly detailed, 35mm film`
   const seed = opts.seed ?? Math.floor(Math.random() * 2 ** 31)
+  const workflow = useZ
+    ? zImageWorkflow(fullPrompt, opts.width ?? 1344, opts.height ?? 768, seed)
+    : sdxlWorkflow(fullPrompt, s, opts.width ?? 1344, opts.height ?? 768, seed)
+  await runWorkflow(workflow, out, s, opts.signal)
+}
+
+/** Real-ESRGAN x4 (BSD-3) in ComfyUI/models/upscale_models. */
+export const UPSCALER = 'RealESRGAN_x4plus.pth'
+
+export function hasUpscaler(comfyPath: string): boolean {
+  return existsSync(join(comfyPath, 'ComfyUI', 'models', 'upscale_models', UPSCALER))
+}
+
+/** Upscale an image 4x with Real-ESRGAN through ComfyUI, saved to `out` (PNG). */
+export async function upscaleImage(
+  file: string,
+  out: string,
+  s: Settings,
+  signal?: AbortSignal
+): Promise<void> {
+  const form = new FormData()
+  form.append('image', new Blob([readFileSync(file)]), `canal_${randomUUID()}${extname(file)}`)
+  form.append('overwrite', 'true')
+  const up = await fetch(`${s.comfyUrl}/upload/image`, { method: 'POST', body: form })
+  if (!up.ok) throw new Error(`ComfyUI /upload/image HTTP ${up.status}`)
+  const { name } = (await up.json()) as { name: string }
+  await runWorkflow(
+    {
+      '1': { class_type: 'LoadImage', inputs: { image: name } },
+      '2': { class_type: 'UpscaleModelLoader', inputs: { model_name: UPSCALER } },
+      '3': {
+        class_type: 'ImageUpscaleWithModel',
+        inputs: { upscale_model: ['2', 0], image: ['1', 0] }
+      },
+      '4': {
+        class_type: 'SaveImage',
+        inputs: { filename_prefix: 'canal-upscale', images: ['3', 0] }
+      }
+    },
+    out,
+    s,
+    signal
+  )
+}
+
+/** Queue a workflow and save its first output image to `out`. */
+async function runWorkflow(
+  workflow: object,
+  out: string,
+  s: Settings,
+  signal?: AbortSignal
+): Promise<void> {
   const res = await fetch(`${s.comfyUrl}/prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      prompt: useZ
-        ? zImageWorkflow(fullPrompt, opts.width ?? 1344, opts.height ?? 768, seed)
-        : sdxlWorkflow(fullPrompt, s, opts.width ?? 1344, opts.height ?? 768, seed),
-      client_id: randomUUID()
-    })
+    body: JSON.stringify({ prompt: workflow, client_id: randomUUID() })
   })
   const queued = (await res.json()) as {
     prompt_id?: string
@@ -156,7 +203,7 @@ export async function generateImage(
   }
   const id = queued.prompt_id
   for (let i = 0; i < 600; i++) {
-    if (opts.signal?.aborted) {
+    if (signal?.aborted) {
       await fetch(`${s.comfyUrl}/interrupt`, { method: 'POST' }).catch(() => undefined)
       throw new Error('Cancelado')
     }

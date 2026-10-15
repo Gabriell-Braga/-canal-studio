@@ -10,12 +10,16 @@ import {
 } from '../../shared/render'
 import type { Scene, Video } from '../../shared/types'
 import { getVideo, listScenes, updateVideo } from '../db/repo'
-import { isValidFile, probeDuration } from '../services/ffmpeg'
+import { isValidFile, probeDuration, probeSize } from '../services/ffmpeg'
 import { remotionCodeHash, runRender } from '../services/remotion'
 import { readWords } from './transcribe'
 import { writeSrt } from '../services/captions'
 import { channelIntroProps, renderCompanies, yearCardsFor } from './overlays'
 import { readTimings } from './audio'
+import { readScan } from '../services/adscan'
+import { shotDurations } from '../../shared/shots'
+import { mediaGaps } from '../../shared/coverage'
+import { writeReviewReport } from './review-report'
 import { sceneFocus } from './focus'
 import { musicTurn, planMusic, prepareMusic } from './music'
 import { formatOf, hasOverlay } from '../../shared/formats'
@@ -66,6 +70,16 @@ async function musicFor(
   return prepareMusic(parts, folder, video.id, ctx)
 }
 
+/** Width / height of a scan, so its highlight boxes land on the right words. */
+async function aspectOf(file: string): Promise<number | undefined> {
+  try {
+    const { width, height } = await probeSize(file)
+    return width / height
+  } catch {
+    return undefined
+  }
+}
+
 export const renderStep: Step = {
   type: 'render',
   status: 'RENDERING',
@@ -78,36 +92,62 @@ export const renderStep: Step = {
     if (missing.length)
       throw new Error(`${missing.length} cena(s) sem mídia ou tempo; refaça as cenas`)
 
+    const pack = formatOf(ctx.settings.format)
+    // Public-domain formats turn AI images into paper texture: on screen that is no media.
+    const fillerAi = !!pack.maxMediaYear
+    const timings = readTimings(pd)
+    const periods =
+      (timings as { periods?: { sceneId: number; start: number; end: number; quote?: string }[] })
+        ?.periods ?? []
     const media = async (
       path: string,
       type: Scene['asset_type'],
-      motion: number
+      motion: number,
+      sec: number
     ): Promise<NonNullable<RenderScene['shots']>[number]> => {
       const isVideo = type === 'stock_video' || type === 'ai_video'
       return {
         src: url(pd, path),
         type: isVideo ? 'video' : 'image',
         motion,
+        sec,
         clipDuration: isVideo ? await probeDuration(path) : undefined,
-        focus: isVideo ? undefined : await sceneFocus(path, ctx)
+        focus: isVideo ? undefined : await sceneFocus(path, ctx),
+        ...(readScan(path) ? { scan: { highlights: [], aspect: await aspectOf(path) } } : {}),
+        ...(fillerAi && type === 'ai_image' ? { filler: true } : {})
       }
     }
     const renderScenes: RenderScene[] = await Promise.all(
-      scenes.map(async (s, i) => ({
-        ...(await media(s.asset_path as string, s.asset_type, (i * 7 + videoId) % 4)),
-        start: s.start_sec as number,
-        end: s.end_sec as number,
-        shots: await Promise.all(
-          s.extra_assets
-            .filter((x) => isValidFile(x.path))
-            .map((x, k) => media(x.path, x.type, (i * 7 + videoId + k + 1) % 4))
+      scenes.map(async (s, i) => {
+        const start = s.start_sec as number
+        const end = s.end_sec as number
+        const images = [
+          { path: s.asset_path as string, type: s.asset_type },
+          ...s.extra_assets.filter((x) => isValidFile(x.path))
+        ]
+        // The scan stays up while the period announcer reads it; the rest follows the cadence.
+        const period = periods.find((p) => p.sceneId === s.id)
+        const hold = period ? Math.max(0, period.end - start + 0.3) : 0
+        let secs = shotDurations(start, end, hold)
+        if (images.length < secs.length) {
+          const h = Math.min(hold, end - start)
+          secs =
+            h && images.length > 1
+              ? [h, ...images.slice(1).map(() => (end - start - h) / (images.length - 1))]
+              : images.map(() => (end - start) / images.length)
+        }
+        // A file shown again gets another motion, so the reuse reads as a new framing.
+        const [main, ...shots] = await Promise.all(
+          images
+            .slice(0, secs.length)
+            .map((x, k) => media(x.path, x.type, (i * 7 + videoId + k * 3) % 4, secs[k]))
         )
-      }))
+        return { ...main, start, end, shots }
+      })
     )
     const words = readWords(pd)
     // Long videos get real YouTube subtitles from this file; burned-in captions are optional.
     writeSrt(words, join(pd, 'captions.srt'))
-    const pack = formatOf(ctx.settings.format)
     // The render draws only the overlays the channel's format declares.
     const companies = await renderCompanies(video, ctx)
     const yearCards = hasOverlay(pack, 'yearCard') ? yearCardsFor(scenes, pd) : []
@@ -118,7 +158,8 @@ export const renderStep: Step = {
     if (ads) {
       scenes.forEach((sc, i) => {
         const scan = ads.scans.get(sc.index)
-        if (scan) renderScenes[i] = { ...renderScenes[i], scan, shots: [] }
+        if (scan && renderScenes[i].scan)
+          renderScenes[i] = { ...renderScenes[i], scan: { ...renderScenes[i].scan, ...scan } }
       })
       ctx.log(
         `Sobreposições: ${ads.overlays.priceTags.length} etiqueta(s) de preço, ${ads.overlays.claims.length} carimbo(s), ${ads.scans.size} scan(s)`
@@ -132,7 +173,6 @@ export const renderStep: Step = {
     const introSec = companies.length
       ? Math.min(3, Math.max(0, (firstScene.end_sec ?? 3) - (firstScene.start_sec ?? 0) - 0.5))
       : 0
-    const timings = readTimings(pd)
     const channelIntro = timings?.intro
       ? { ...channelIntroProps(video.channel_id, ctx.settings, pd), ...timings.intro }
       : undefined
@@ -145,7 +185,8 @@ export const renderStep: Step = {
       channelIntro.duration = Math.max(channelIntro.duration, until - channelIntro.start)
     }
     const hookEnd = firstScene.end_sec ?? 0
-    const teaserText = video.script?.teaser?.trim()
+    // Ads on Trial opens on the scan and its highlighted promise: no title card over it.
+    const teaserText = ads ? '' : video.script?.teaser?.trim()
     const narrationSec = await probeDuration(video.audio_path as string)
     const durationSec = narrationSec + 0.5 + END_SCREEN_SEC
     const music = await musicFor(video, scenes, durationSec, ctx)
@@ -178,7 +219,27 @@ export const renderStep: Step = {
       teaser: teaserText
         ? { text: teaserText, end: Math.max(0, (channelIntro?.start ?? hookEnd) - 0.2) }
         : undefined,
-      channelIntro
+      channelIntro,
+      duck: timings?.periods?.map(({ start, end }) => ({ start, end }))
+    }
+
+    // Never an empty screen: any stretch over 2 s without real media stops the render.
+    const gaps = mediaGaps(props.scenes, narrationSec)
+    if (gaps.length) {
+      const at = (t: number): string =>
+        `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+      throw new Error(
+        `Trechos sem mídia: ${gaps.map((g) => `${at(g.from)}–${at(g.to)}`).join(', ')}. Refaça as cenas.`
+      )
+    }
+    const report = async (): Promise<void> => {
+      try {
+        const r = await writeReviewReport(videoId, pd, props, periods, ctx.signal)
+        if (r.alerts.length) ctx.log(`Relatório de revisão: ${r.alerts.length} alerta(s)`, 'warn')
+      } catch (error) {
+        if (ctx.signal.aborted) throw error
+        ctx.log(`Relatório de revisão falhou: ${(error as Error).message}`, 'warn')
+      }
     }
 
     // Skip when the same inputs already produced a valid video.
@@ -196,6 +257,7 @@ export const renderStep: Step = {
     ) {
       ctx.log('Vídeo já renderizado com as mesmas entradas; pulando')
       updateVideo(videoId, { video_path: out })
+      await report()
       return
     }
 
@@ -214,6 +276,7 @@ export const renderStep: Step = {
     renameSync(tmp, out)
     writeFileSync(hashFile, hash)
     updateVideo(videoId, { video_path: out })
+    await report()
     ctx.log(`Render concluído em ${Math.round((Date.now() - started) / 60000)} min`)
   }
 }

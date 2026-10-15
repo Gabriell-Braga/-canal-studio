@@ -43,7 +43,8 @@ import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scen
 import { freeComfy } from '../services/comfy'
 import { sendExtras } from '../steps/upload'
 import { videoEvidence, type ManualAd } from '../steps/evidence'
-import { periodLine } from '../steps/audio'
+import { readReviewReport } from '../steps/review-report'
+import { estimatedAnnouncer, periodLine } from '../steps/audio'
 import { periodVoice } from '../../shared/formats'
 import { usableProviders } from '../services/stock'
 import { brandColorsFromImage } from '../services/brand'
@@ -58,7 +59,7 @@ import {
 } from '../services/youtube'
 import { pythonGet, pythonPost } from '../services/python'
 import { join } from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync } from 'fs'
 
 type Handler = (...args: never[]) => unknown
 
@@ -194,6 +195,18 @@ export function registerIpc(
           text: ev.excerpt
         }
       : null
+  })
+  handle('videos:reviewReport', (id: number) => readReviewReport(projectDir(id), id))
+  handle('videos:announcerPlan', (id: number, script: Script) =>
+    estimatedAnnouncer(id, script, getSettings(getVideo(id).channel_id))
+  )
+  handle('videos:announcerPreview', async (id: number, quote: string) => {
+    const period = periodVoice(getSettings(getVideo(id).channel_id))
+    if (!period) throw new Error('O formato deste canal não tem locutor de época')
+    const out = join(projectDir(id), 'audio', 'preview_locutor.wav')
+    mkdirSync(join(projectDir(id), 'audio'), { recursive: true })
+    await periodLine(quote, period, out)
+    return out
   })
   handle('videos:setThumbWinner', (id: number, model: string | null) =>
     pipeline.setThumbWinner(id, model)

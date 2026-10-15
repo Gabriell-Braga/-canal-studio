@@ -2,7 +2,8 @@ import type React from 'react'
 import type { ThumbnailProps, VideoProps } from '../../shared/render'
 import { Thumbnail as BusinessThumbnail } from '../Thumbnail'
 import { BusinessOverlays } from './business-history'
-import { AdOverlaysView, VintageThumbnail } from './vintage-ads'
+import { AdOverlaysView } from './vintage-ads'
+import { VintageThumbnail } from './vintage-thumbs'
 
 /** What a format draws itself: its signature overlays and its thumbnail layouts. */
 export interface FormatComponents {

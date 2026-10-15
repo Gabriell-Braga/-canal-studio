@@ -9,6 +9,7 @@ import {
   type VideoDetail as Detail
 } from '../../shared/types'
 import { THUMB } from '../../shared/thumb'
+import type { ReviewReport } from '../../shared/coverage'
 import { checklistFor, type ChecklistId } from '../../shared/checklist'
 import { THUMB_KIND_LABELS, thumbKindOf } from '../../shared/render'
 import ScriptEditor from '../components/ScriptEditor'
@@ -430,6 +431,76 @@ function toLocalInput(iso: string | null): string {
 }
 
 /** Mandatory before approval: each item is a promise the video keeps. */
+const mmss = (s: number): string =>
+  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+
+/** The automatic review of the last render: red alerts for what breaks the rules. */
+function ReviewReportPanel({ video }: { video: Video }): React.JSX.Element | null {
+  const [report, setReport] = useState<ReviewReport | null>(null)
+  useEffect(() => {
+    api.videos.reviewReport(video.id).then(setReport, () => undefined)
+  }, [video.id, video.video_path, video.updated_at])
+  if (!report) return null
+  return (
+    <div className="grid gap-2 rounded-md border border-ink-700 p-3">
+      <div className="text-sm font-medium text-ink-300">
+        Relatório automático do render · {formatDate(report.createdAt)}
+      </div>
+      {report.alerts.length ? (
+        <Banner kind="error">
+          <ul className="list-disc pl-4">
+            {report.alerts.map((a) => (
+              <li key={a}>{a}</li>
+            ))}
+          </ul>
+        </Banner>
+      ) : (
+        <div className="text-xs text-emerald-400">Tudo dentro das regras.</div>
+      )}
+      <div className="text-xs text-ink-400">
+        Sem mídia: {report.noMediaSec.toFixed(1)} s · Maior imagem parada:{' '}
+        {report.longestStill
+          ? `${report.longestStill.sec.toFixed(1)} s em ${mmss(report.longestStill.at)}`
+          : '—'}{' '}
+        · Repetidas:{' '}
+        {report.repeated.length
+          ? report.repeated.map((r) => `${r.file} ×${r.count}`).join(', ')
+          : 'nenhuma'}
+      </div>
+      <div className="text-xs text-ink-400">
+        Locutor de época:{' '}
+        {report.announcer.length
+          ? report.announcer.map((a) => `${mmss(a.start)}–${mmss(a.end)}`).join(', ')
+          : 'nenhum trecho'}
+      </div>
+      {report.rejected.length > 0 && (
+        <details className="text-xs text-ink-400">
+          <summary className="cursor-pointer">
+            {report.rejected.length} imagem(ns) reprovada(s) na checagem de relevância
+          </summary>
+          <ul className="mt-1 space-y-0.5">
+            {report.rejected.map((r, i) => (
+              <li key={i}>
+                {r.scene < 0 ? 'Fotos da história' : `Cena ${r.scene + 1}`}:{' '}
+                {r.file.split(/[\\/]/).pop()} — {r.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {report.contactSheet && (
+        <div className="max-h-[32rem] overflow-y-auto rounded">
+          <img
+            src={mediaUrl(report.contactSheet, report.createdAt)}
+            alt="Folha de contato: um quadro a cada 3 s"
+            className="w-full"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Checklist({ video }: { video: Video }): React.JSX.Element {
   const [checked, setChecked] = useState(video.checklist ?? {})
   const sources = video.script?.sources?.length ?? 0
@@ -712,6 +783,9 @@ function PublishTab({
             </p>
           )}
         </div>
+        {video.kind === 'long' && video.status === 'FINAL_REVIEW' && (
+          <ReviewReportPanel video={video} />
+        )}
         {video.kind === 'long' && video.status === 'FINAL_REVIEW' && <Checklist video={video} />}
         <div className="flex gap-2">
           <Button onClick={save}>Salvar</Button>

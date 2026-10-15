@@ -1,6 +1,9 @@
 import { pythonPost } from './python'
 import { download } from './pexels'
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs'
+import { copyFileSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
+import type { Settings } from '../../shared/types'
+import { hasUpscaler, upscaleImage } from './comfy'
+import { probeSize, runTool } from './ffmpeg'
 import {
   cropAd,
   fetchOcrWords,
@@ -25,6 +28,8 @@ export interface ScanInfo {
   /** Local OCR (Commons crops): mean word confidence 0–100 and the text read */
   ocrConfidence?: number
   ocrText?: string
+  /** Pixel height after enhanceScan (upscale + contrast); missing = not enhanced yet */
+  height?: number
 }
 
 /** Below this mean OCR confidence the highlighter is skipped: the stamp alone shows the claim. */
@@ -149,4 +154,56 @@ export function readScan(file: string | null): ScanInfo | null {
 /** Boxes (0–1 of the crop) of a quote inside a scan, for the highlighter; empty when not found. */
 export function quoteBoxes(scan: ScanInfo, quote: string): Box[] {
   return locatePhrase(scan.words ?? [], quote)?.words ?? []
+}
+
+/** Shorter scans never fill the frame: they are upscaled first. */
+export const SCAN_MIN_HEIGHT = 900
+
+/**
+ * Upscale a scan below SCAN_MIN_HEIGHT (Real-ESRGAN 4x in ComfyUI when installed and
+ * running, else Lanczos), then push the ink to black and the paper to light. Idempotent:
+ * the result's height is saved in the scan data. Returns the final height.
+ */
+export async function enhanceScan(
+  file: string,
+  s: Settings,
+  opts: { comfy?: boolean; signal?: AbortSignal } = {}
+): Promise<number> {
+  const info = readScan(file)
+  if (!info) return 0
+  if (info.height) return info.height
+  const { height } = await probeSize(file)
+  let src = file
+  const up = `${file}.up.png`
+  if (height < SCAN_MIN_HEIGHT && opts.comfy && hasUpscaler(s.comfyPath)) {
+    try {
+      await upscaleImage(file, up, s, opts.signal)
+      src = up
+    } catch (error) {
+      if (opts.signal?.aborted) throw error
+    }
+  }
+  // Whatever the upscaler gave, end at least SCAN_MIN_HEIGHT tall (never larger than 4x).
+  const target = Math.max(SCAN_MIN_HEIGHT, Math.min(height * 4, 2400))
+  const tmp = `${file}.enh.jpg`
+  await runTool(
+    'ffmpeg',
+    [
+      '-y',
+      '-i',
+      src,
+      '-vf',
+      `scale=-2:'max(ih,${target})':flags=lanczos,format=gray,curves=all='0/0 0.25/0.12 0.7/0.9 1/1',unsharp=5:5:0.6`,
+      '-q:v',
+      '2',
+      tmp
+    ],
+    opts.signal
+  )
+  rmSync(up, { force: true })
+  rmSync(file, { force: true })
+  renameSync(tmp, file)
+  const final = (await probeSize(file)).height
+  writeFileSync(`${file}.scan.json`, JSON.stringify({ ...info, height: final }, null, 2))
+  return final
 }

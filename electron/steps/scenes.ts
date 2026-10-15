@@ -20,7 +20,7 @@ import { fillRealSubjects, pickRelevant } from './relevance'
 import { pythonPost } from '../services/python'
 import type { Step, StepContext } from './types'
 import { videoEvidence } from './evidence'
-import { formatOf } from '../../shared/formats'
+import { formatOf, hasOverlay } from '../../shared/formats'
 import { scanAd } from '../services/adscan'
 import { credit } from '../services/chroniclingamerica'
 
@@ -75,7 +75,7 @@ function sceneQuery(scene: Scene): string {
 }
 
 /** Real photos of the named person or event first, then the stock banks. */
-async function sceneCandidates(
+export async function sceneCandidates(
   scene: Scene,
   s: Settings,
   exclude: Set<string>,
@@ -111,7 +111,7 @@ async function downloadCandidate(
 }
 
 /** Download a pick into the scenes folder (cached by source), trimming long clips. */
-async function downloadTo(
+export async function downloadTo(
   pick: StockCandidate,
   scene: Scene,
   dir: string,
@@ -318,6 +318,9 @@ export async function assignAi(
   signal?: AbortSignal,
   realistic?: boolean
 ): Promise<void> {
+  // Public-domain formats could only get paper texture here, which reads as an empty screen.
+  if (formatOf(s.format).maxMediaYear)
+    throw new Error('Este formato usa só mídia real: escolha outro resultado ou um arquivo do PC')
   const prompt = aiPrompt(s, scene.image_prompt || scene.visual_keywords || scene.narration)
   const out = join(dir, `scene_${String(scene.index).padStart(3, '0')}_ai_${Date.now()}.png`)
   await generateImage(prompt, out, s, { signal })
@@ -337,6 +340,11 @@ export const scenesStep: Step = {
   status: 'SCENES',
   async run(videoId, ctx) {
     const s = ctx.settings
+    // Ads on Trial: real ads and period photos only, checked by eye, planned shot by shot.
+    if (hasOverlay(formatOf(s.format), 'claimCheck')) {
+      const { vintageScenes } = await import('./admedia')
+      return vintageScenes(videoId, ctx)
+    }
     const dir = join(ctx.projectDir, 'scenes')
     mkdirSync(dir, { recursive: true })
     let scenes = listScenes(videoId)

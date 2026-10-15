@@ -114,7 +114,7 @@ describe('period announcer', () => {
   it('reads old abbreviations as words', async () => {
     const { speakableAd } = await import('../shared/formats/vintage-ads')
     expect(speakableAd('Warranted. Price 50 cts.')).toBe('Warranted. Price 50 cents')
-    expect(speakableAd('$1 per doz. & free')).toBe('$1 per dozen and free')
+    expect(speakableAd('$1 per doz. & free')).toBe('one dollar per dozen and free')
   })
 })
 

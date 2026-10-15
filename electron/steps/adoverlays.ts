@@ -1,11 +1,29 @@
 import { priceTag } from '../../shared/cpi'
 import { adSceneData, VERDICTS } from '../../shared/formats/vintage-ads'
-import type { AdOverlays, RenderScene } from '../../shared/render'
+import type { AdOverlays, Box, RenderScene } from '../../shared/render'
 import type { Scene, Script } from '../../shared/types'
 import { quoteBoxes, readScan, type ScanInfo } from '../services/adscan'
 import { longDate, ORIGIN_LABELS } from '../services/chroniclingamerica'
 
 const STAMP_DELAY = 1.6
+/** Seconds of the opening with only the scan and its highlighted promise on screen. */
+const OPENING_CLEAR_SEC = 5
+
+const words = (s: string): number => s.split(/\s+/).filter(Boolean).length
+
+/** Boxes of the opening promise: a hook quote of 6+ words found on the scan, else the first claim. */
+export function hookBoxes(scan: ScanInfo, hookQuote: string, script: Script | null): Box[] {
+  if (words(hookQuote) >= 6) {
+    const boxes = quoteBoxes(scan, hookQuote)
+    if (boxes.length) return boxes
+  }
+  const claims = Array.isArray(script?.claims) ? (script?.claims as { quote?: string }[]) : []
+  for (const c of claims) {
+    const boxes = quoteBoxes(scan, String(c.quote ?? ''))
+    if (boxes.length) return boxes
+  }
+  return scan.highlights
+}
 
 /**
  * Overlays of the "Ads on Trial" format, all from real data: prices converted by the CPI
@@ -46,12 +64,12 @@ export function adOverlays(
     if (!t) continue
     const data = adSceneData(script, sc.index)
     const scan = scanOf.get(sc.index)
-    // The ad line read in the period voice lights up on the scan as it is read.
-    if (scan && data.adQuote) {
-      const boxes = quoteBoxes(scan, data.adQuote)
-      const fallback = sc.index === 0 ? scan.highlights : []
-      if (boxes.length || fallback.length)
-        scans.get(sc.index)?.highlights.push({ at: 0.3, boxes: boxes.length ? boxes : fallback })
+    // The ad line read in the period voice lights up on the scan as it is read. The opening
+    // lights up the main promise: the hook quote, else the first Claim Check quote.
+    if (scan && (data.adQuote || sc.index === 0)) {
+      const boxes =
+        sc.index === 0 ? hookBoxes(scan, data.adQuote, script) : quoteBoxes(scan, data.adQuote)
+      if (boxes.length) scans.get(sc.index)?.highlights.push({ at: 0.3, boxes })
     }
     if (data.price) {
       const tag = priceTag(data.price.usd, data.price.year)
@@ -70,7 +88,8 @@ export function adOverlays(
       // of a newspaper page.
       const origin = scan.page.origin
       overlays.paperTrail = {
-        at: t.start + 0.4,
+        // Never over the opening promise: the first 5 s belong to the scan.
+        at: Math.max(t.start + 0.4, OPENING_CLEAR_SEC),
         newspaper: scan.page.newspaper,
         place: origin
           ? ORIGIN_LABELS[origin]

@@ -98,3 +98,52 @@ Return ONLY JSON: {"picks": [{"scene": 0, "choice": 2}, ...]} with one entry per
   }
   return result
 }
+
+/** What an image shows, by the format's media priority (vintage-ads). */
+export const MEDIA_KINDS = ['ad', 'product', 'portrait', 'place', 'event', 'other'] as const
+export type MediaKind = (typeof MEDIA_KINDS)[number]
+
+export interface VisualVerdict {
+  ok: boolean
+  what: string
+  kind: MediaKind
+}
+
+const visionSchema = z.object({
+  images: z.array(
+    z.object({
+      image: z.number().int(),
+      shows: z.boolean(),
+      what: z.string(),
+      kind: z.enum(MEDIA_KINDS)
+    })
+  )
+})
+
+/**
+ * The model looks at each image and says whether it shows something the narration line
+ * mentions (yes/no and what), and what kind of picture it is. Only a "yes" may be used.
+ * `files` are small local previews; the answer is keyed by their index.
+ */
+export async function visualCheck(
+  narration: string,
+  files: string[],
+  topic: string,
+  settings: Settings,
+  signal?: AbortSignal
+): Promise<VisualVerdict[]> {
+  if (!files.length) return []
+  const { images } = await generateStructured(
+    `You check pictures for a YouTube documentary about "${topic}". Narration line: "${narration}"
+Look at each image below (read each file). For each one answer: does this image show something mentioned in this narration line, or the story's own product, its real ads, or the real people and places of this story? Answer shows=true/false and "what" it shows in a few words. A generic museum object, a random period photo or an unrelated person is false.
+kind: "ad" (a printed advertisement of the product), "product" (the real bottle, label, package), "portrait" (a real person of the story), "place" (factory, town, building of the story), "event" (a period engraving or photo of an event mentioned), "other".
+${files.map((f, i) => `Image ${i}: ${f}`).join('\n')}
+Return ONLY JSON: {"images": [{"image": 0, "shows": true, "what": "...", "kind": "product"}, ...]} with one entry per image.`,
+    visionSchema,
+    { settings, signal, temperature: 0, effort: 'low', images: files }
+  )
+  return files.map((_, i) => {
+    const a = images.find((x) => x.image === i)
+    return a ? { ok: a.shows, what: a.what, kind: a.kind } : { ok: false, what: '', kind: 'other' }
+  })
+}

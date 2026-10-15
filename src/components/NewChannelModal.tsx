@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { Channel, ChannelSummary } from '../../shared/types'
 import { CHANNEL_COLORS } from '../lib/colors'
 import { api, errorText } from '../lib/api'
-import { Banner, Button, ChannelAvatar, Field, Modal, inputClass } from './ui'
+import { Banner, Button, ChannelAvatar, Field, Modal, Select, inputClass } from './ui'
 
 interface Props {
   channels: ChannelSummary[]
@@ -94,18 +94,14 @@ export default function NewChannelModal({
           label="Começar com as configurações de"
           hint="Prompts, voz, templates e horários. Depois você ajusta o que quiser; o canal de origem não muda."
         >
-          <select
-            className={inputClass}
-            value={copyFrom ?? ''}
-            onChange={(e) => setCopyFrom(e.target.value ? Number(e.target.value) : null)}
-          >
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-            <option value="">Padrão do app</option>
-          </select>
+          <Select
+            value={copyFrom ?? 0}
+            onChange={(id) => setCopyFrom(id || null)}
+            options={[
+              ...channels.map((c) => ({ value: c.id, label: c.name })),
+              { value: 0, label: 'Padrão do app' }
+            ]}
+          />
         </Field>
       </div>
     </Modal>

@@ -865,3 +865,32 @@ async function published({ launch, api, shot }) {
 }
 
 scenarios.published = published
+
+/** The app's own dropdown: opens in the app look, picks with the keyboard; redo offers only reached steps. */
+async function selects({ launch, api, shot, log, waitUntil }) {
+  const { app, page } = await launch()
+  await page.getByTestId('nav-channelSettings').click()
+  const format = page.getByRole('combobox').first()
+  await format.click()
+  await page.getByRole('listbox').waitFor()
+  await shot(page, 'select-open')
+  await page.keyboard.press('Escape')
+  assert((await page.getByRole('listbox').count()) === 0, 'Esc closes the list')
+  await api(page, 'videos.addTopics', 1, ['Redo test'], 1)
+  await api(page, 'videos.generateScripts', 1)
+  const [video] = await waitUntil(
+    async () => {
+      const vs = await api(page, 'videos.list')
+      return vs[0]?.status === 'SCRIPT_REVIEW' && vs
+    },
+    { label: 'fake script', timeoutMs: 60_000, everyMs: 1000 }
+  )
+  await page.getByTestId('nav-production').click()
+  await page.getByTestId('video-card').filter({ hasText: video.topic }).first().click()
+  await page.getByTestId('tab-script').waitFor()
+  await shot(page, 'detail-script-review')
+  log(`Combos na tela de detalhe: ${await page.getByRole('combobox').count()}`)
+  await app.close()
+}
+
+scenarios.selects = selects

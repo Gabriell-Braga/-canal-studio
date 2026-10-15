@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   JOB_LABELS,
+  redoSteps,
   STATUS_LABELS,
   type JobType,
   type Scene,
@@ -18,7 +19,8 @@ import {
   Field,
   inlineCheckClass,
   inputClass,
-  PageHeader
+  PageHeader,
+  Select
 } from '../components/ui'
 import { api, errorText, formatDate, mediaUrl, useLive } from '../lib/api'
 import { Smartphone, Sparkles, Trash2 } from 'lucide-react'
@@ -36,8 +38,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'publish', label: 'Publicação' },
   { id: 'log', label: 'Tarefas e logs' }
 ]
-
-const REDO_STEPS: JobType[] = ['script', 'audio', 'scenes', 'render', 'thumbnail', 'metadata']
 
 const ASSET_LABEL: Record<string, string> = {
   stock_video: 'Vídeo de banco',
@@ -59,7 +59,7 @@ export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.El
   const { data } = useLive(() => api.videos.get(id), ['videos', 'jobs', 'logs'], [id])
   const [tab, setTab] = useState<Tab | null>(null)
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
-  const [redoStep, setRedoStep] = useState<JobType>('render')
+  const [redoStep, setRedoStep] = useState<JobType | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   if (data === undefined) return <p className="text-ink-500">Carregando…</p>
@@ -78,6 +78,9 @@ export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.El
     video.status === 'FINAL_REVIEW' ? 'publish' : video.video_path || isShort ? 'video' : 'script'
   const activeTab: Tab = tab && tabs.some((t) => t.id === tab) ? tab : fallbackTab
   const running = data.jobs.find((j) => j.status === 'running')
+  const redoable = redoSteps(video)
+  // The last step reached is the usual one to redo.
+  const redo = redoStep && redoable.includes(redoStep) ? redoStep : (redoable.at(-1) ?? 'script')
 
   async function act(fn: () => Promise<unknown>, ok: string): Promise<void> {
     try {
@@ -181,29 +184,26 @@ export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.El
             {t.label}
           </button>
         ))}
-        <div className={`ml-auto flex items-center gap-2 pb-1 ${isShort ? 'hidden' : ''}`}>
-          <select
-            className={`${inputClass} h-9 max-w-44 py-0`}
-            value={redoStep}
-            onChange={(e) => setRedoStep(e.target.value as JobType)}
-          >
-            {REDO_STEPS.map((s) => (
-              <option key={s} value={s}>
-                {JOB_LABELS[s]}
-              </option>
-            ))}
-          </select>
+        <div className={`ml-auto flex items-center gap-2 pb-1 ${redoable.length ? '' : 'hidden'}`}>
+          {redoable.length > 1 && (
+            <Select
+              className="h-9 w-40 py-0"
+              value={redo}
+              onChange={setRedoStep}
+              options={redoable.map((s) => ({ value: s, label: JOB_LABELS[s] }))}
+            />
+          )}
           <Button
             variant="secondary"
             onClick={() =>
               act(
-                () => api.videos.retryFrom(id, redoStep),
-                `Refazendo a partir de ${JOB_LABELS[redoStep]}.`
+                () => api.videos.retryFrom(id, redo),
+                `Refazendo a partir de ${JOB_LABELS[redo]}.`
               )
             }
             disabled={!!running}
           >
-            Refazer a partir desta etapa
+            {redoable.length > 1 ? 'Refazer a partir desta etapa' : 'Refazer roteiro'}
           </Button>
         </div>
       </div>
@@ -768,17 +768,15 @@ function ShortsTab({
             meia hora. Eles são aprovados junto com o vídeo, sem revisão separada.
           </p>
         </div>
-        <select
-          className={`${inputClass} h-9 max-w-28 py-0`}
+        <Select
+          className="h-9 w-28 py-0"
           value={count}
-          onChange={(e) => setCount(Number(e.target.value))}
-        >
-          {[1, 2, 3, 4, 5].map((n) => (
-            <option key={n} value={n}>
-              {n} short{n > 1 ? 's' : ''}
-            </option>
-          ))}
-        </select>
+          onChange={setCount}
+          options={[1, 2, 3, 4, 5].map((n) => ({
+            value: n,
+            label: `${n} short${n > 1 ? 's' : ''}`
+          }))}
+        />
         <Button
           variant="primary"
           data-testid="generate-shorts"

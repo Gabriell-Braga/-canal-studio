@@ -1,5 +1,14 @@
-import { useEffect, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type CSSProperties,
+  type HTMLAttributes,
+  type ReactNode
+} from 'react'
+import { createPortal } from 'react-dom'
+import { Check, ChevronDown, X } from 'lucide-react'
 import { mediaUrl } from '../lib/api'
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline'
@@ -93,6 +102,188 @@ export function Banner({
 
 export const inputClass =
   'w-full rounded-lg border border-ink-700 bg-ink-950/60 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-500 transition-colors hover:border-ink-600 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/20'
+
+export interface SelectOption<T> {
+  value: T
+  label: ReactNode
+  /** Smaller second line, e.g. what the option does */
+  hint?: ReactNode
+  style?: CSSProperties
+}
+
+/**
+ * The app's dropdown: a button with a floating list in the app's own look (the native one
+ * opens a gray Windows menu). The list is portaled to the body so no card clips it, opens
+ * upward near the bottom of the window and works with the keyboard (arrows, Enter, Esc).
+ */
+export function Select<T extends string | number>({
+  value,
+  options,
+  onChange,
+  className = '',
+  disabled,
+  placeholder = 'Escolha…',
+  'data-testid': testId
+}: {
+  value: T
+  options: SelectOption<T>[]
+  onChange: (value: T) => void
+  className?: string
+  disabled?: boolean
+  placeholder?: string
+  'data-testid'?: string
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const [pos, setPos] = useState<CSSProperties>({})
+  const button = useRef<HTMLButtonElement>(null)
+  const list = useRef<HTMLUListElement>(null)
+  const selected = options.find((o) => o.value === value)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e: Event): void => {
+      const t = e.target as Node
+      if (!button.current?.contains(t) && !list.current?.contains(t)) setOpen(false)
+    }
+    // The page scrolled or resized: the list follows its button.
+    const follow = (e: Event): void => {
+      if (!list.current?.contains(e.target as Node)) place()
+    }
+    document.addEventListener('mousedown', close)
+    window.addEventListener('scroll', follow, true)
+    window.addEventListener('resize', follow)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      window.removeEventListener('scroll', follow, true)
+      window.removeEventListener('resize', follow)
+    }
+  }, [open])
+
+  useEffect(() => {
+    // Scroll only the list, never the page behind it.
+    const ul = list.current
+    const li = ul?.children[active] as HTMLElement | undefined
+    if (!open || !ul || !li) return
+    if (li.offsetTop < ul.scrollTop) ul.scrollTop = li.offsetTop
+    else if (li.offsetTop + li.offsetHeight > ul.scrollTop + ul.clientHeight)
+      ul.scrollTop = li.offsetTop + li.offsetHeight - ul.clientHeight
+  }, [open, active])
+
+  function place(): void {
+    const r = button.current!.getBoundingClientRect()
+    const below = window.innerHeight - r.bottom
+    const up = below < 240 && r.top > below
+    setPos({
+      left: r.left,
+      minWidth: r.width,
+      maxHeight: Math.min(280, (up ? r.top : below) - 12),
+      ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 })
+    })
+  }
+
+  function show(): void {
+    place()
+    setActive(Math.max(0, options.indexOf(selected!)))
+    setOpen(true)
+  }
+
+  function pick(o: SelectOption<T>): void {
+    setOpen(false)
+    button.current?.focus()
+    if (o.value !== value) onChange(o.value)
+  }
+
+  function onKey(e: React.KeyboardEvent): void {
+    if (!open) {
+      if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) {
+        e.preventDefault()
+        show()
+      }
+      return
+    }
+    const last = options.length - 1
+    const moves: Record<string, number> = {
+      ArrowDown: Math.min(last, active + 1),
+      ArrowUp: Math.max(0, active - 1),
+      Home: 0,
+      End: last
+    }
+    if (e.key === 'Tab') return setOpen(false)
+    if (e.key in moves) setActive(moves[e.key])
+    else if ((e.key === 'Enter' || e.key === ' ') && options[active]) pick(options[active])
+    else if (e.key === 'Escape') setOpen(false)
+    else return
+    // Esc closes only the list, not the modal around it.
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        role="combobox"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        data-testid={testId}
+        disabled={disabled}
+        onClick={() => (open ? setOpen(false) : show())}
+        onKeyDown={onKey}
+        className={`${inputClass} flex cursor-pointer items-center justify-between gap-2 text-left disabled:cursor-default disabled:opacity-50 ${
+          open ? 'border-brand-400 ring-2 ring-brand-400/20' : ''
+        } ${className}`}
+      >
+        <span className={`truncate ${selected ? '' : 'text-ink-500'}`} style={selected?.style}>
+          {selected?.label ?? placeholder}
+        </span>
+        <ChevronDown
+          size={15}
+          className={`shrink-0 text-ink-400 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {open &&
+        createPortal(
+          <ul
+            ref={list}
+            role="listbox"
+            style={pos}
+            className="fixed z-[100] overflow-y-auto rounded-lg border border-ink-700 bg-ink-900 p-1 shadow-[0_12px_32px_-8px_rgba(0,0,0,0.6)]"
+          >
+            {options.map((o, i) => {
+              const on = o.value === value
+              return (
+                <li
+                  key={String(o.value)}
+                  role="option"
+                  aria-selected={on}
+                  onMouseEnter={() => setActive(i)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(o)}
+                  className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-sm ${
+                    i === active ? 'bg-ink-800 text-white' : 'text-ink-200'
+                  }`}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate" style={o.style}>
+                      {o.label}
+                    </span>
+                    {o.hint && <span className="block text-xs text-ink-500">{o.hint}</span>}
+                  </span>
+                  <Check
+                    size={14}
+                    className={`shrink-0 text-brand-300 ${on ? 'opacity-100' : 'opacity-0'}`}
+                  />
+                </li>
+              )
+            })}
+          </ul>,
+          document.body
+        )}
+    </>
+  )
+}
 
 /**
  * Checkbox beside a Field in a two-column grid: skips the Field's label and matches the

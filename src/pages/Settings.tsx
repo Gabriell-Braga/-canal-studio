@@ -15,7 +15,8 @@ import {
   Field,
   inlineCheckClass,
   inputClass,
-  PageHeader
+  PageHeader,
+  Select
 } from '../components/ui'
 import { CHANNEL_COLORS } from '../lib/colors'
 import { api, errorText, mediaUrl } from '../lib/api'
@@ -475,14 +476,14 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
                 label="Modelo do Claude"
                 hint="Opus escreve melhor; Sonnet é mais rápido e gasta menos do limite."
               >
-                <select
-                  className={inputClass}
+                <Select
                   value={s.claudeModel}
-                  onChange={(e) => set('claudeModel', e.target.value)}
-                >
-                  <option value="opus">Claude Opus 5.5</option>
-                  <option value="sonnet">Claude Sonnet 5.5</option>
-                </select>
+                  onChange={(v) => set('claudeModel', v)}
+                  options={[
+                    { value: 'opus', label: 'Claude Opus 5.5' },
+                    { value: 'sonnet', label: 'Claude Sonnet 5.5' }
+                  ]}
+                />
               </Field>
               <label className={`${inlineCheckClass} text-ink-200`}>
                 <input
@@ -541,22 +542,16 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               label="Formato do canal"
               hint={`${formatOf(s.format).description} Ao trocar, a ordem dos bancos de imagem volta ao padrão do formato; a voz escolhida fica (canal sem vídeos recebe a voz padrão do formato).`}
             >
-              <select
-                className={inputClass}
+              <Select
                 value={formatOf(s.format).id}
-                onChange={(e) => {
-                  const pack = formatOf(e.target.value)
+                onChange={(id) => {
+                  const pack = formatOf(id)
                   set('format', pack.id)
                   set('voice', voiceAfterFormatChange(s.voice, pack, voices, !channel.videos))
                   set('stockProviders', pack.mediaProviders)
                 }}
-              >
-                {FORMATS.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
+                options={FORMATS.map((f) => ({ value: f.id, label: f.name }))}
+              />
             </Field>
           </div>
           <Field label="Duração padrão (minutos)">
@@ -636,15 +631,11 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
             hint="Prefixo am_/af_ = inglês americano, bm_/bf_ = britânico."
           >
             {voices.length ? (
-              <select
-                className={inputClass}
+              <Select
                 value={s.voice}
-                onChange={(e) => set('voice', e.target.value)}
-              >
-                {voices.map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
+                onChange={(v) => set('voice', v)}
+                options={voices.map((v) => ({ value: v, label: v }))}
+              />
             ) : (
               <input
                 className={inputClass}
@@ -687,15 +678,11 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
                 hint={`Padrão do formato: ${formatOf(s.format).voices.secondary?.voice}.`}
               >
                 {voices.length ? (
-                  <select
-                    className={inputClass}
-                    value={s.secondaryVoice || formatOf(s.format).voices.secondary?.voice}
-                    onChange={(e) => set('secondaryVoice', e.target.value)}
-                  >
-                    {voices.map((v) => (
-                      <option key={v}>{v}</option>
-                    ))}
-                  </select>
+                  <Select
+                    value={s.secondaryVoice || formatOf(s.format).voices.secondary?.voice || ''}
+                    onChange={(v) => set('secondaryVoice', v)}
+                    options={voices.map((v) => ({ value: v, label: v }))}
+                  />
                 ) : (
                   <input
                     className={inputClass}
@@ -727,29 +714,28 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
 
         <Section title="Legendas (faster-whisper)" scope="global">
           <Field label="Modelo do Whisper" hint="small.en é rápido e bom para narração limpa.">
-            <select
-              className={inputClass}
+            <Select
               value={s.whisperModel}
-              onChange={(e) => set('whisperModel', e.target.value)}
-            >
-              {['tiny.en', 'base.en', 'small.en', 'medium.en', 'large-v3'].map((m) => (
-                <option key={m}>{m}</option>
-              ))}
-            </select>
+              onChange={(v) => set('whisperModel', v)}
+              options={['tiny.en', 'base.en', 'small.en', 'medium.en', 'large-v3'].map((v) => ({
+                value: v,
+                label: v
+              }))}
+            />
           </Field>
           <Field
             label="Dispositivo"
             hint="Automático tenta CUDA e cai para CPU (int8) se faltar DLL."
           >
-            <select
-              className={inputClass}
+            <Select
               value={s.whisperDevice}
-              onChange={(e) => set('whisperDevice', e.target.value as SettingsT['whisperDevice'])}
-            >
-              <option value="auto">Automático</option>
-              <option value="cuda">GPU (CUDA)</option>
-              <option value="cpu">CPU</option>
-            </select>
+              onChange={(v) => set('whisperDevice', v)}
+              options={[
+                { value: 'auto', label: 'Automático' },
+                { value: 'cuda', label: 'GPU (CUDA)' },
+                { value: 'cpu', label: 'CPU' }
+              ]}
+            />
           </Field>
         </Section>
 
@@ -832,14 +818,14 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
             label="Modelo de imagem IA"
             hint="Z-Image Turbo: fotográfico, ~13 s por imagem. SDXL: reserva, visual mais antigo."
           >
-            <select
-              className={inputClass}
+            <Select
               value={s.imageModel}
-              onChange={(e) => set('imageModel', e.target.value as SettingsT['imageModel'])}
-            >
-              <option value="z-image">Z-Image Turbo (recomendado)</option>
-              <option value="sdxl">SDXL (checkpoint abaixo)</option>
-            </select>
+              onChange={(v) => set('imageModel', v)}
+              options={[
+                { value: 'z-image', label: 'Z-Image Turbo (recomendado)' },
+                { value: 'sdxl', label: 'SDXL (checkpoint abaixo)' }
+              ]}
+            />
           </Field>
           <Field label="Pasta do ComfyUI">
             <input
@@ -928,17 +914,12 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
             <div className="space-y-2">
               {s.publishSlots.map((slot, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <select
-                    className={`${inputClass} max-w-28`}
+                  <Select
+                    className="max-w-28"
                     value={slot.weekday}
-                    onChange={(e) => setSlot(i, { weekday: Number(e.target.value) })}
-                  >
-                    {WEEKDAYS.map((d, n) => (
-                      <option key={d} value={n}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(weekday) => setSlot(i, { weekday })}
+                    options={WEEKDAYS.map((d, n) => ({ value: n, label: d }))}
+                  />
                   <input
                     className={`${inputClass} max-w-32`}
                     type="time"
@@ -1029,24 +1010,19 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               />
             </Field>
             <Field label="Fonte">
-              <select
-                className={`${inputClass} min-w-52`}
+              <Select
+                className="min-w-52"
                 value={s.brandFont}
-                onChange={(e) => set('brandFont', e.target.value)}
-              >
-                {[
+                onChange={(v) => set('brandFont', v)}
+                options={[
                   'Impact',
                   'Arial Black',
                   'Bahnschrift',
                   'Segoe UI Black',
                   'Georgia',
                   'Trebuchet MS'
-                ].map((f) => (
-                  <option key={f} value={f} style={{ fontFamily: f }}>
-                    {f}
-                  </option>
-                ))}
-              </select>
+                ].map((f) => ({ value: f, label: f, style: { fontFamily: f } }))}
+              />
             </Field>
             <Button onClick={fromAvatar}>Usar cores da foto do canal</Button>
           </div>

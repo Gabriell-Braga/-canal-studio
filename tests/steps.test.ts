@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Scene } from '../shared/types'
+import { redoSteps, type Scene, type Video } from '../shared/types'
 import { buildChapters, timestamp } from '../electron/steps/metadata'
 import { aiIndexes } from '../electron/steps/scenes'
 import { clampWords, cleanTitles } from '../electron/steps/thumbnail'
@@ -89,5 +89,28 @@ describe('fast cuts', () => {
     expect(shotCount(60, 74)).toBe(2)
     expect(shotCount(60, 65)).toBe(1)
     expect(shotCount(0, 40)).toBe(4)
+  })
+})
+
+describe('redo from a step', () => {
+  const base = { kind: 'long' as const, script: {} as Video['script'], error_step: null }
+
+  it('offers nothing before the script exists', () => {
+    expect(redoSteps({ ...base, script: null, status: 'TOPIC_QUEUED' })).toEqual([])
+    expect(redoSteps({ ...base, script: null, status: 'ERROR', error_step: 'script' })).toEqual([])
+  })
+
+  it('offers only the script in script review', () => {
+    expect(redoSteps({ ...base, status: 'SCRIPT_REVIEW' })).toEqual(['script'])
+  })
+
+  it('offers steps up to the one reached or the one that failed', () => {
+    expect(redoSteps({ ...base, status: 'SCENES' })).toEqual(['script', 'audio', 'scenes'])
+    expect(redoSteps({ ...base, status: 'ERROR', error_step: 'transcribe' })).toEqual([
+      'script',
+      'audio'
+    ])
+    expect(redoSteps({ ...base, status: 'FINAL_REVIEW' })).toHaveLength(6)
+    expect(redoSteps({ ...base, kind: 'short', status: 'FINAL_REVIEW' })).toEqual([])
   })
 })

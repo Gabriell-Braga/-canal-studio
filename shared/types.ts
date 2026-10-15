@@ -89,6 +89,35 @@ export const JOB_LABELS: Record<JobType, string> = {
   short: 'Shorts'
 }
 
+const REDO_STEPS = ['script', 'audio', 'scenes', 'render', 'thumbnail', 'metadata'] as const
+
+/** The step each status has reached; redo is offered up to it, never past it. */
+const REACHED: Partial<Record<VideoStatus, JobType>> = {
+  PRODUCTION_QUEUED: 'script',
+  AUDIO: 'audio',
+  SCENES: 'scenes',
+  RENDERING: 'render',
+  THUMBNAIL: 'thumbnail',
+  FINAL_REVIEW: 'metadata',
+  SCHEDULED: 'metadata',
+  PUBLISHED: 'metadata'
+}
+
+/**
+ * Steps "Refazer a partir desta etapa" may offer: only steps the video has already reached.
+ * Without a script there is nothing to redo; in script review only the script (redoing a
+ * later step there would skip the mandatory approval). A failed video goes up to the step
+ * that failed. Shorts are cut again from their full video instead.
+ */
+export function redoSteps(v: Pick<Video, 'kind' | 'status' | 'script' | 'error_step'>): JobType[] {
+  if (v.kind === 'short' || !v.script) return []
+  if (v.status === 'SCRIPT_REVIEW') return ['script']
+  const reached = v.status === 'ERROR' ? (v.error_step ?? 'metadata') : REACHED[v.status]
+  if (!reached) return []
+  const upTo = JOB_TYPES.indexOf(reached)
+  return REDO_STEPS.filter((s) => JOB_TYPES.indexOf(s) <= upTo)
+}
+
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
 export type RunMode = 'now' | 'night'
 export type AssetType = 'stock_video' | 'stock_photo' | 'ai_image' | 'ai_video'

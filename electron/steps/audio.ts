@@ -14,7 +14,7 @@ import {
 } from '../../shared/render'
 import { polishScript } from './polish'
 import { formatOf } from '../../shared/formats'
-import { adSceneData } from '../../shared/formats/vintage-ads'
+import { adSceneData, speakableAd } from '../../shared/formats/vintage-ads'
 import type { Step } from './types'
 
 export interface SceneTiming {
@@ -89,7 +89,7 @@ async function periodScene(
   const n = out.replace(/\.wav$/, '_nar.wav')
   await pythonPost(
     '/tts',
-    { text: quote, voice: secondary.voice, speed: 0.95, out_path: q },
+    { text: speakableAd(quote), voice: secondary.voice, speed: 0.95, out_path: q },
     signal
   )
   await pythonPost(

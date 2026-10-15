@@ -155,7 +155,7 @@ function StampInk({ id }: { id: string }): React.JSX.Element {
     <svg width="0" height="0" style={{ position: 'absolute' }}>
       <filter id={id}>
         <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves={2} seed={11} />
-        <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.5" />
+        <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.3 1.75" />
         <feComposite in="SourceGraphic" operator="in" />
         <feDisplacementMap in2="SourceGraphic" scale={2} />
       </filter>
@@ -189,7 +189,7 @@ export function RubberStamp({
       style={{
         position: 'absolute',
         transform: `translate(${shake}px, ${shake / 2}px) rotate(${rotate}deg) scale(${scale})`,
-        opacity: interpolate(drop, [0, 0.3], [0, 0.92], clamp),
+        opacity: interpolate(drop, [0, 0.3], [0, 1], clamp),
         ...style
       }}
     >
@@ -633,9 +633,11 @@ export const VintageThumbnail: React.FC<ThumbnailProps> = (props) => {
         <Img
           src={props.background}
           style={{
-            height: '86%',
-            maxWidth: '62%',
-            objectFit: 'contain',
+            // A tall ad shows its top (headline and picture) big: about 60% of the frame.
+            height: '112%',
+            width: '62%',
+            objectFit: 'cover',
+            objectPosition: '50% 0%',
             transform: 'rotate(-4deg)',
             boxShadow: '0 20px 50px rgba(0,0,0,0.7)',
             filter: 'contrast(1.2)'
@@ -646,9 +648,9 @@ export const VintageThumbnail: React.FC<ThumbnailProps> = (props) => {
         <RubberStamp
           text={stamp}
           at={-5}
-          size={stamp.length > 6 ? 130 : 170}
+          size={stamp.length > 6 ? 150 : 190}
           rotate={-14}
-          style={{ right: 50, top: 230 }}
+          style={{ right: 40, top: 250 }}
         />
       )}
       {rest.length > 0 && (

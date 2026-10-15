@@ -262,3 +262,12 @@ export function adSceneData(script: Script | null, index: number): AdSceneData {
     scan: !!sc.scan || !!sc.ad_quote
   }
 }
+
+/** Old ad abbreviations read out loud as words ("50 cts." → "50 cents"). */
+export function speakableAd(text: string): string {
+  return text
+    .replace(/\b(\d+)\s*cts?\b\.?/gi, '$1 cents')
+    .replace(/\bdoz\.?(?=\s|$)/gi, 'dozen')
+    .replace(/\bbot\.?(?=\s|$)/gi, 'bottle')
+    .replace(/&/g, 'and')
+}

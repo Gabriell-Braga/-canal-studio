@@ -14,6 +14,7 @@ import { generateStructured, llmLabel, type LlmCall } from '../services/llm'
 import { polishScript } from './polish'
 import type { Step } from './types'
 import { videoEvidence } from './evidence'
+import { adQuotes, quoteInText } from '../../shared/formats/vintage-ads'
 
 export const reviewSchema = z.object({
   alerts: z
@@ -148,6 +149,18 @@ ${ev.excerpt}
         message:
           'O roteiro precisa de pelo menos 2 fatos fora do óbvio com fonte nomeada (vão na descrição). Use "Corrigir com IA" ou adicione à mão.'
       })
+    }
+    // Ad lines must be the ad's real words (its OCR), checked by the user in the review.
+    if (ev?.excerpt && hasOverlay(pack, 'adVoice')) {
+      for (const quote of adQuotes(script)) {
+        if (!quoteInText(quote, ev.excerpt))
+          alerts.unshift({
+            kind: 'dubious_fact',
+            message:
+              'Citação do anúncio que não confere com o OCR do scan. Confira no texto do anúncio (aba Roteiro) e corrija.',
+            quote
+          })
+      }
     }
     script.verified = webCheck && !reviewFailed
     if (!script.verified) {

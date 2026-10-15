@@ -424,3 +424,59 @@ def thumb_check(req: ThumbCheckRequest):
         "contrast": float(lum.std()),
         "subject_contrast": abs(inside - outside),
     }
+
+
+_ocr: dict[str, object] = {"engine": None}
+
+
+class OcrRequest(BaseModel):
+    image_path: str
+
+
+def _ocr_engine():
+    if _ocr["engine"] is None:
+        try:
+            from rapidocr import RapidOCR  # PaddleOCR (PP-OCR) models on onnxruntime
+        except ImportError:
+            raise HTTPException(501, "rapidocr não instalado: pip install rapidocr")
+        _ocr["engine"] = RapidOCR()
+    return _ocr["engine"]
+
+
+@app.post("/ocr")
+def ocr(req: OcrRequest):
+    """Words of a scanned ad with their boxes, like ALTO: x, y, w, h as 0-1 of the image.
+
+    Small scans are upscaled first (OCR needs ~30 px letters). confidence is the mean word
+    score, 0-100.
+    """
+    from PIL import Image
+
+    if not Path(req.image_path).exists():
+        raise HTTPException(404, f"image not found: {req.image_path}")
+    img = Image.open(req.image_path).convert("RGB")
+    width, height = img.size
+    scale = 1.0
+    if min(width, height) < 1400:
+        scale = 1400 / min(width, height)
+        img = img.resize((round(width * scale), round(height * scale)), Image.LANCZOS)
+    with _lock:
+        result = _ocr_engine()(np.asarray(img), return_word_box=True)
+    words = []
+    for line in result.word_results or ():
+        for text, score, quad in line:
+            xs = [p[0] for p in quad]
+            ys = [p[1] for p in quad]
+            sw, sh = img.size
+            words.append(
+                {
+                    "text": text,
+                    "conf": round(float(score) * 100, 1),
+                    "x": min(xs) / sw,
+                    "y": min(ys) / sh,
+                    "w": (max(xs) - min(xs)) / sw,
+                    "h": (max(ys) - min(ys)) / sh,
+                }
+            )
+    confidence = round(sum(w["conf"] for w in words) / len(words), 1) if words else 0.0
+    return {"width": width, "height": height, "confidence": confidence, "words": words}

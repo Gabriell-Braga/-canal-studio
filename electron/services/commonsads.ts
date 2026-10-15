@@ -1,3 +1,9 @@
+import { createHash } from 'crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { localOcr, OCR_MIN_CONFIDENCE } from './adscan'
+import { download } from './pexels'
 import { PUBLIC_DOMAIN_UNTIL } from '../../shared/formats/vintage-ads'
 import { searchAdPages, type AdPage } from './chroniclingamerica'
 import { WIKIMEDIA_USER_AGENT } from './wikimedia'
@@ -52,6 +58,10 @@ export interface CommonsFile {
   url: string
   descriptionurl: string
   license: string
+  /** Machine-readable license id on the file page (e.g. 'pd') and its categories */
+  licenseCode?: string
+  copyrighted?: string
+  categories?: string
   credit: string
   description: string
 }
@@ -63,7 +73,8 @@ export function parseCommonsAd(f: CommonsFile): AdPage | null {
   if (!m) return null
   const [, lccn, date, ed, seq] = m
   if (Number(date.slice(0, 4)) > PUBLIC_DOMAIN_UNTIL) return null
-  if (!/public domain|^pd|cc0|no restrictions/i.test(f.license)) return null
+  const license = confirmedPublicDomain(f)
+  if (!license) return null
   const { city, state } = placeOf(text)
   return {
     id: `${lccn}/${date}/ed-${ed}/seq-${seq}`,
@@ -75,6 +86,7 @@ export function parseCommonsAd(f: CommonsFile): AdPage | null {
     locUrl: `https://chroniclingamerica.loc.gov/lccn/${lccn}/${date}/ed-${ed}/seq-${seq}/`,
     imageUrl: f.url,
     ocrText: `${f.title.replace(/^File:/, '').replace(/\.\w+$/, '')}. ${f.description}`,
+    license,
     mirror: f.url,
     mirrorPage: f.descriptionurl
   }
@@ -96,7 +108,7 @@ export async function searchCommonsAds(
     prop: 'imageinfo',
     iiprop: 'url|extmetadata',
     iiurlwidth: '1600',
-    iiextmetadatafilter: 'LicenseShortName|Credit|ImageDescription'
+    iiextmetadatafilter: 'LicenseShortName|License|Copyrighted|Categories|Credit|ImageDescription'
   })
   const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
     headers: { 'User-Agent': WIKIMEDIA_USER_AGENT },
@@ -132,6 +144,9 @@ export async function searchCommonsAds(
         url: info.thumburl ?? info.url,
         descriptionurl: info.descriptionurl,
         license: strip(info.extmetadata?.LicenseShortName?.value),
+        licenseCode: strip(info.extmetadata?.License?.value),
+        copyrighted: strip(info.extmetadata?.Copyrighted?.value),
+        categories: strip(info.extmetadata?.Categories?.value),
         credit: info.extmetadata?.Credit?.value ?? '',
         description: strip(info.extmetadata?.ImageDescription?.value)
       })
@@ -156,4 +171,42 @@ export async function findAdPages(
     if (signal?.aborted) throw error
   }
   return searchCommonsAds(query, limit, signal)
+}
+
+/**
+ * Read a Commons mirror with the local OCR so the topic and script work from the ad's real
+ * words (the Commons description is only a caption). Cached next to the downloaded copy.
+ */
+export async function withOcr(page: AdPage, signal?: AbortSignal): Promise<AdPage> {
+  if (!page.mirror) return page
+  const dir = join(tmpdir(), 'canal-commons-ads')
+  const file = join(dir, `${createHash('sha1').update(page.mirror).digest('hex')}.jpg`)
+  const cache = `${file}.ocr.json`
+  try {
+    if (existsSync(cache)) return { ...page, ocrText: readFileSync(cache, 'utf8') }
+    mkdirSync(dir, { recursive: true })
+    if (!existsSync(file)) await download(page.mirror, file, signal)
+    const ocr = await localOcr(file, signal)
+    if (ocr.confidence < OCR_MIN_CONFIDENCE || !ocr.text) return page
+    writeFileSync(cache, ocr.text)
+    return { ...page, ocrText: ocr.text }
+  } catch (error) {
+    if (signal?.aborted) throw error
+    return page
+  }
+}
+
+/**
+ * The file page itself must confirm public domain: its license template is a PD one and it
+ * is marked not copyrighted; the PD template found (e.g. PD-US-expired) is returned for the
+ * credit line. Anything else (CC licenses, unknown, fair use) is refused.
+ */
+export function confirmedPublicDomain(f: CommonsFile): string | null {
+  if (!/^(pd|cc0)/i.test(f.licenseCode ?? '')) return null
+  if ((f.copyrighted ?? '').toLowerCase() !== 'false') return null
+  const template =
+    /PD[- ]US[- ]expired|PD[- ]US[- ]no[- ]notice|PD[- ]US[- ]not[- ]renewed|PD[- ]US|PD[- ]old[\w-]*|CC0/i.exec(
+      f.categories ?? ''
+    )?.[0]
+  return template ? `${f.license || 'Public domain'} (${template.replace(/ /g, '-')})` : null
 }

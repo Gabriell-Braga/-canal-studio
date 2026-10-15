@@ -1,3 +1,4 @@
+import { pythonPost } from './python'
 import { download } from './pexels'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import {
@@ -21,6 +22,41 @@ export interface ScanInfo {
   highlights: Box[]
   /** Every OCR word inside the crop, 0–1 of the crop: any quote can be highlighted later */
   words: OcrWord[]
+  /** Local OCR (Commons crops): mean word confidence 0–100 and the text read */
+  ocrConfidence?: number
+  ocrText?: string
+}
+
+/** Below this mean OCR confidence the highlighter is skipped: the stamp alone shows the claim. */
+export const OCR_MIN_CONFIDENCE = 60
+
+export interface OcrResult {
+  words: OcrWord[]
+  confidence: number
+  text: string
+}
+
+/** Sidecar OCR words (0–1 boxes, like ALTO) in reading order, joined into the ad's text. */
+export function ocrToWords(r: {
+  confidence: number
+  words: { text: string; conf: number; x: number; y: number; w: number; h: number }[]
+}): OcrResult {
+  const words = r.words
+    .filter((w) => w.text.trim())
+    .map(({ text, x, y, w, h }) => ({ text: text.trim(), x, y, w, h }))
+  return { words, confidence: r.confidence, text: words.map((w) => w.text).join(' ') }
+}
+
+/** OCR of a local scan through the Python sidecar (PaddleOCR models). */
+export async function localOcr(file: string, signal?: AbortSignal): Promise<OcrResult> {
+  try {
+    return ocrToWords(
+      await pythonPost<Parameters<typeof ocrToWords>[0]>('/ocr', { image_path: file }, signal)
+    )
+  } catch (error) {
+    if (signal?.aborted) throw error
+    return { words: [], confidence: 0, text: '' }
+  }
 }
 
 /**
@@ -53,15 +89,20 @@ export async function scanAd(
   out: string,
   signal?: AbortSignal
 ): Promise<ScanInfo> {
-  // A Commons mirror is already the cropped ad; there is no OCR, so nothing to highlight.
+  // A Commons mirror is already the cropped ad, without OCR: read it locally.
   if (page.mirror) {
     await download(page.mirror, out, signal)
+    const ocr = await localOcr(out, signal)
+    const words = ocr.confidence >= OCR_MIN_CONFIDENCE ? ocr.words : []
+    const hit = locatePhrase(words, phrase)
     const info: ScanInfo = {
       page,
       phrase,
       crop: { x: 0, y: 0, w: 1, h: 1 },
-      highlights: [],
-      words: []
+      highlights: hit?.words ?? [],
+      words,
+      ocrConfidence: ocr.confidence,
+      ocrText: ocr.text
     }
     writeFileSync(`${out}.scan.json`, JSON.stringify(info, null, 2))
     return info

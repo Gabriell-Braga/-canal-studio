@@ -4,6 +4,7 @@ import type { ServiceStatus, StartResult } from '../../shared/types'
 import { config } from './config'
 import { fetchJson, refreshPath, run, startDetached } from './exec'
 import { addLog } from '../db/repo'
+import { locBlock } from './locgate'
 import { ensurePython, hasVenv, installPython, pythonLastError, venvPython } from './python'
 
 let installing: string | null = null
@@ -251,7 +252,8 @@ export async function checkAll(): Promise<ServiceStatus[]> {
     checkPythonServer(),
     checkEspeak(),
     checkLivePortrait(),
-    checkInsightface()
+    checkInsightface(),
+    Promise.resolve(checkLoc())
   ])
   return results.flat()
 }
@@ -305,4 +307,23 @@ export async function installService(id: string): Promise<StartResult> {
     }
   }
   return { ok: false, message: `Instalação automática de "${id}" não disponível.` }
+}
+
+/** Library of Congress access, from the block state only: checking never sends a request. */
+function checkLoc(): ServiceStatus {
+  const base = { id: 'loc', name: 'Library of Congress (Chronicling America)' } as const
+  const block = locBlock()
+  if (!block)
+    return {
+      ...base,
+      state: 'ok',
+      detail: 'Sem bloqueio registrado. Pedidos limitados a 1 a cada 4 s (API) e 0,5 s (arquivos).'
+    }
+  const time = (iso: string): string =>
+    new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  return {
+    ...base,
+    state: 'warning',
+    detail: `Bloqueado às ${time(block.at)} (${block.reason}). Volta às ${time(block.until)}; até lá os anúncios vêm do Wikimedia Commons.`
+  }
 }

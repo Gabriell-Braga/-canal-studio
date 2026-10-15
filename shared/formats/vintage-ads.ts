@@ -271,3 +271,57 @@ export function speakableAd(text: string): string {
     .replace(/\bbot\.?(?=\s|$)/gi, 'bottle')
     .replace(/&/g, 'and')
 }
+
+const norm = (s: string): string[] =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9$¢ ]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 1)
+
+/**
+ * Whether a quote really is in the ad's OCR text: at least 75% of its words appear there
+ * (OCR drops or garbles a few letters). Quotes that fail go to the review as alerts.
+ */
+export function quoteInText(quote: string, text: string): boolean {
+  const words = norm(quote)
+  if (!words.length) return true
+  const have = new Set(norm(text))
+  // OCR misreads a letter here and there ("CHILL" → "CHILI"): one edit is still a match.
+  const near = (w: string): boolean =>
+    have.has(w) || (w.length >= 4 && [...have].some((h) => oneEdit(w, h)))
+  return words.filter(near).length / words.length >= 0.75
+}
+
+/** Every literal ad line a script reads or stamps. */
+export function adQuotes(script: Script): string[] {
+  const claims = Array.isArray(script.claims) ? (script.claims as { quote?: string }[]) : []
+  return [
+    String(script.hook_ad_quote ?? ''),
+    ...script.scenes.map((s) => String(s.ad_quote ?? '')),
+    ...claims.map((c) => String(c.quote ?? ''))
+  ].filter((q) => q.trim())
+}
+
+/** At most one substitution, insertion or deletion between two words. */
+function oneEdit(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 1) return false
+  let i = 0
+  let j = 0
+  let edits = 0
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++
+      j++
+      continue
+    }
+    if (++edits > 1) return false
+    if (a.length > b.length) i++
+    else if (b.length > a.length) j++
+    else {
+      i++
+      j++
+    }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1
+}

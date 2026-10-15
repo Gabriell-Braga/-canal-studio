@@ -117,3 +117,14 @@ describe('period announcer', () => {
     expect(speakableAd('$1 per doz. & free')).toBe('$1 per dozen and free')
   })
 })
+
+describe('ad quotes against the OCR', () => {
+  it('accepts literal lines despite OCR noise and flags invented ones', async () => {
+    const { quoteInText } = await import('../shared/formats/vintage-ads')
+    const ocr =
+      'GROVES MAKES CHILDREN AS FAT AS PIGS TASTELESS CHILI TONIC WARRANTED. PRICE 50 cts.'
+    expect(quoteInText('Makes children as fat as pigs', ocr)).toBe(true)
+    expect(quoteInText('Tasteless Chill Tonic', ocr)).toBe(true)
+    expect(quoteInText('Cures every disease known to man', ocr)).toBe(false)
+  })
+})

@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import { runTool } from './ffmpeg'
 import type { StockCandidate } from './pexels'
+import { locFetch } from './locgate'
 
 /**
  * Library of Congress "Chronicling America" newspaper pages (public domain, up to 1963; we stop
@@ -11,7 +12,6 @@ import type { StockCandidate } from './pexels'
  * API is gone: search is https://www.loc.gov/collections/chronicling-america/?fo=json, images
  * come from the IIIF server and OCR (ALTO XML) from tile.loc.gov storage-services.
  */
-const USER_AGENT = 'CanalStudio/1.0 (local desktop app; vintage newspaper research)'
 const CUTOFF_YEAR = 1930
 
 export interface AdPage {
@@ -29,6 +29,8 @@ export interface AdPage {
   mirror?: string
   /** Commons file page of the mirror, for the credit line */
   mirrorPage?: string
+  /** License confirmed on the mirror page, e.g. "Public domain (PD-US-expired)" */
+  license?: string
 }
 
 export interface Box {
@@ -39,34 +41,6 @@ export interface Box {
 }
 export interface OcrWord extends Box {
   text: string
-}
-
-// LoC rate-limits hard (429, then a temporary block): one request at a time, spaced out.
-let chain: Promise<unknown> = Promise.resolve()
-let last = 0
-const GAP_MS = 1500
-
-async function locFetch(url: string, signal?: AbortSignal): Promise<Response> {
-  const run = async (): Promise<Response> => {
-    for (let attempt = 0; ; attempt++) {
-      const wait = last + GAP_MS - Date.now()
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait))
-      last = Date.now()
-      const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal })
-      if (res.status === 429 && attempt < 3) {
-        const retry = Number(res.headers.get('retry-after')) || 10 * 2 ** attempt
-        await new Promise((r) => setTimeout(r, retry * 1000))
-        continue
-      }
-      if (res.status === 403 && (res.headers.get('content-type') ?? '').includes('html'))
-        throw new Error('Library of Congress bloqueou o acesso (403/Cloudflare). Tente mais tarde.')
-      if (!res.ok) throw new Error(`Library of Congress HTTP ${res.status}`)
-      return res
-    }
-  }
-  const p = chain.then(run, run)
-  chain = p.catch(() => undefined)
-  return p
 }
 
 const first = (v: unknown): string =>
@@ -297,8 +271,9 @@ export function credit(page: AdPage): string {
     timeZone: 'UTC'
   })
   const place = [page.city, page.state].filter(Boolean).join(', ')
+  const lic = page.license ? ` License: ${page.license}.` : ''
   const via = page.mirrorPage ? ` (via Wikimedia Commons: ${page.mirrorPage})` : ''
-  return `${page.newspaper}${place ? ` (${place})` : ''}, ${date}, page ${page.page}. Library of Congress, Chronicling America: ${page.locUrl}${via}`
+  return `${page.newspaper}${place ? ` (${place})` : ''}, ${date}, page ${page.page}. Library of Congress, Chronicling America: ${page.locUrl}${via}${lic ? `.${lic}` : ''}`
 }
 
 export function toCandidate(page: AdPage, file?: string): StockCandidate {

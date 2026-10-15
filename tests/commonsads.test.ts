@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { newspaperOf, parseCommonsAd } from '../electron/services/commonsads'
+import { confirmedPublicDomain, newspaperOf, parseCommonsAd } from '../electron/services/commonsads'
 
 const file = {
   pageid: 1,
@@ -7,6 +7,9 @@ const file = {
   url: 'https://upload.wikimedia.org/x.jpg',
   descriptionurl: 'https://commons.wikimedia.org/wiki/File:x.jpg',
   license: 'Public domain',
+  licenseCode: 'pd',
+  copyrighted: 'False',
+  categories: 'PD US expired|1905 advertisements in the United States',
   credit:
     '<a href="http://chroniclingamerica.loc.gov/lccn/sn85042462/1905-01-01/ed-1/seq-6/">http://chroniclingamerica.loc.gov/lccn/sn85042462/1905-01-01/ed-1/seq-6/</a>   (Los Angeles Herald)',
   description: 'in 1905, this advertisement appeared in the Los Angeles Herald.'
@@ -25,7 +28,7 @@ describe('Chronicling America ads mirrored on Commons', () => {
   it('refuses files after 1930, without a LoC source or not public domain', () => {
     expect(parseCommonsAd({ ...file, credit: file.credit.split('1905').join('1941') })).toBeNull()
     expect(parseCommonsAd({ ...file, credit: 'scanned by me' })).toBeNull()
-    expect(parseCommonsAd({ ...file, license: 'CC BY-SA 4.0' })).toBeNull()
+    expect(parseCommonsAd({ ...file, licenseCode: 'cc-by-sa-4.0' })).toBeNull()
   })
 
   it('finds the newspaper in the usual Commons wordings', () => {
@@ -45,5 +48,15 @@ describe('LoC citation style', () => {
     expect(p?.newspaper).toBe('El Paso Herald')
     expect(p?.city).toBe('El Paso')
     expect(p?.state).toBe('Tex.')
+  })
+})
+
+describe('Commons license filter', () => {
+  it('needs public domain confirmed on the file page and keeps it for the credit', () => {
+    expect(confirmedPublicDomain(file)).toBe('Public domain (PD-US-expired)')
+    expect(parseCommonsAd(file)?.license).toBe('Public domain (PD-US-expired)')
+    expect(confirmedPublicDomain({ ...file, copyrighted: 'True' })).toBeNull()
+    expect(confirmedPublicDomain({ ...file, categories: 'Advertisements' })).toBeNull()
+    expect(confirmedPublicDomain({ ...file, licenseCode: '' })).toBeNull()
   })
 })

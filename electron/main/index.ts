@@ -36,6 +36,8 @@ import { configurePython, ensurePython, hasVenv, stopPython } from '../services/
 import { configureRemotion } from '../services/remotion'
 import { configureMusic } from '../steps/render'
 import { configureStockCache } from '../services/stock'
+import { configureLocGate } from '../services/locgate'
+import { addLog } from '../db/repo'
 import { configureLlm } from '../services/llm'
 import {
   configureYoutube,
@@ -269,6 +271,10 @@ app.whenReady().then(async () => {
   configureRemotion(appRoot())
   configureMusic(channelMusicDir)
   configureStockCache(join(dataDir(), 'cache', 'stock'))
+  configureLocGate({
+    stateFile: join(dataDir(), 'cache', 'loc-block.json'),
+    log: (m) => addLog(null, 'warn', m)
+  })
   configureYoutube({ channelDir })
   configureLlm({
     skillFile: join(appRoot(), '.claude', 'skills', 'documentary-scriptwriter', 'SKILL.md')

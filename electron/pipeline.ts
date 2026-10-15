@@ -18,7 +18,7 @@ import { formatOf, scriptSchemaFor } from '../shared/formats'
 import { perfPromptBlock } from './services/youtube'
 import { checklistMissing } from '../shared/checklist'
 import type { AdPage } from './services/chroniclingamerica'
-import { findAdPages } from './services/commonsads'
+import { findAdPages, withOcr } from './services/commonsads'
 import { attachEvidence, rememberTopicEvidence } from './steps/evidence'
 import { polishSettings } from './steps/polish'
 import { z } from 'zod'
@@ -74,7 +74,8 @@ Return ONLY JSON: {"topics": ["...", ...]}`,
       .slice(0, 3)
     const pages: AdPage[] = []
     for (const q of queries) {
-      const found = await findAdPages(q, 6)
+      const found: AdPage[] = []
+      for (const p of await findAdPages(q, 6)) found.push(await withOcr(p))
       pages.push(...found.filter((p) => p.ocrText).map((p) => ({ ...p, query: q })))
     }
     if (!pages.length) return []

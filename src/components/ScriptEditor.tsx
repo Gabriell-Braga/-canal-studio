@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import type { Script, Video } from '../../shared/types'
+import { useEffect, useState } from 'react'
+import type { AdEvidence, Script, Video } from '../../shared/types'
+import { quoteInText } from '../../shared/formats/vintage-ads'
 import { api, errorText } from '../lib/api'
 import { Banner, Button, Field, inputClass } from './ui'
 
@@ -17,6 +18,11 @@ export default function ScriptEditor({ video, onDone, onCancel }: Props): React.
   )
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [evidence, setEvidence] = useState<AdEvidence | null>(null)
+
+  useEffect(() => {
+    api.videos.evidence(video.id).then(setEvidence, () => undefined)
+  }, [video.id])
 
   const words = [script.hook, ...script.scenes.map((s) => s.narration), script.outro]
     .join(' ')
@@ -82,6 +88,50 @@ export default function ScriptEditor({ video, onDone, onCancel }: Props): React.
               {t}
             </button>
           ))}
+        </div>
+      )}
+      {evidence && (
+        <div className="space-y-2 rounded-md border border-ink-700 p-3">
+          <div className="text-sm font-medium text-ink-300">
+            Texto do anúncio (OCR) · {evidence.newspaper}, {evidence.date}
+          </div>
+          <p className="max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-xs text-ink-400">
+            {evidence.text || 'OCR sem texto confiável: confira as citações no scan.'}
+          </p>
+          <div className="text-xs text-ink-500">
+            Citações lidas pelo locutor de época: precisam ser literais. ✓ confere com o OCR, ✗ não
+            encontrada.
+          </div>
+          {[
+            {
+              label: 'Abertura',
+              value: String(script.hook_ad_quote ?? ''),
+              set: (v: string) => setScript((s) => ({ ...s, hook_ad_quote: v }))
+            },
+            ...script.scenes.map((sc, i) => ({
+              label: `Cena ${i + 1}`,
+              value: String(sc.ad_quote ?? ''),
+              set: (v: string) => setScene(i, 'ad_quote', v)
+            }))
+          ]
+            .filter((q) => q.value || q.label === 'Abertura')
+            .map((q) => (
+              <label key={q.label} className="flex items-center gap-2 text-xs">
+                <span className="w-16 shrink-0 text-ink-500">{q.label}</span>
+                <span
+                  className={
+                    quoteInText(q.value, evidence.text) ? 'text-emerald-400' : 'text-red-400'
+                  }
+                >
+                  {q.value ? (quoteInText(q.value, evidence.text) ? '✓' : '✗') : '·'}
+                </span>
+                <input
+                  className={inputClass}
+                  value={q.value}
+                  onChange={(e) => q.set(e.target.value)}
+                />
+              </label>
+            ))}
         </div>
       )}
       <Field label="Gancho (primeiros 15 segundos)">

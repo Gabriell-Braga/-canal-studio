@@ -42,6 +42,7 @@ import { channelSummaries } from './channels'
 import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scenes'
 import { freeComfy } from '../services/comfy'
 import { sendExtras } from '../steps/upload'
+import { videoEvidence } from '../steps/evidence'
 import { usableProviders } from '../services/stock'
 import { brandColorsFromImage } from '../services/brand'
 import { generateStructured, llmLabel } from '../services/llm'
@@ -168,6 +169,17 @@ export function registerIpc(
   handle('videos:suggestedSlot', (id: number) => pipeline.suggestedSlot(id))
   handle('videos:suggestTopics', (channelId: number) => pipeline.suggestTopics(channelId))
   handle('videos:thumbWinner', (id: number) => pipeline.thumbWinner(id))
+  handle('videos:evidence', (id: number) => {
+    const ev = videoEvidence(id)
+    return ev
+      ? {
+          newspaper: ev.page.newspaper,
+          date: ev.page.date,
+          locUrl: ev.page.locUrl,
+          text: ev.excerpt
+        }
+      : null
+  })
   handle('videos:setThumbWinner', (id: number, model: string | null) =>
     pipeline.setThumbWinner(id, model)
   )

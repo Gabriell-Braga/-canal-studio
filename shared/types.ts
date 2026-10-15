@@ -11,6 +11,7 @@ export type ServiceId =
   | 'espeak'
   | 'livePortrait'
   | 'insightface'
+  | 'loc'
 
 export type ServiceState = 'ok' | 'warning' | 'missing'
 
@@ -249,6 +250,15 @@ export interface SubShot {
   path: string
   source: string
   credit: string | null
+}
+
+/** The real ad a video investigates, as the review shows it */
+export interface AdEvidence {
+  newspaper: string
+  date: string
+  locUrl: string
+  /** OCR text of the ad */
+  text: string
 }
 
 export interface FaceCheck {
@@ -533,6 +543,8 @@ export interface Api {
     /** Thumbnail model that won "Testar e comparar" for this video */
     thumbWinner: (id: number) => Promise<string | null>
     setThumbWinner: (id: number, model: string | null) => Promise<void>
+    /** The real ad (OCR text) a video is about; null for other formats */
+    evidence: (id: number) => Promise<AdEvidence | null>
   }
   scenes: {
     update: (

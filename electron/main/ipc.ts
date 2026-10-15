@@ -43,6 +43,8 @@ import { assignAi, assignStock, prepareComfy, useLocalFile } from '../steps/scen
 import { freeComfy } from '../services/comfy'
 import { sendExtras } from '../steps/upload'
 import { videoEvidence } from '../steps/evidence'
+import { periodLine } from '../steps/audio'
+import { periodVoice } from '../../shared/formats'
 import { usableProviders } from '../services/stock'
 import { brandColorsFromImage } from '../services/brand'
 import { generateStructured, llmLabel } from '../services/llm'
@@ -362,6 +364,17 @@ export function registerIpc(
       speed: s.voiceSpeed,
       out_path: out
     })
+    return out
+  })
+  handle('settings:periodSample', async (channelId: number, voice: string, speed: number) => {
+    const period = periodVoice({
+      ...getSettings(channelId),
+      secondaryVoice: voice,
+      secondaryVoiceSpeed: speed
+    })
+    if (!period) throw new Error('O formato deste canal não tem locutor de época')
+    const out = join(dataDir(), 'amostra-locutor.wav')
+    await periodLine('Write to Mrs. Pinkham today!', period, out)
     return out
   })
   handle('settings:chooseDataDir', async () => {

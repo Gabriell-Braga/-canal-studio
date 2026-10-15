@@ -13,7 +13,7 @@ import {
   yearChanges
 } from '../../shared/render'
 import { polishScript } from './polish'
-import { formatOf } from '../../shared/formats'
+import { periodVoice } from '../../shared/formats'
 import { adSceneData, speakableAd } from '../../shared/formats/vintage-ads'
 import type { Step } from './types'
 
@@ -80,24 +80,19 @@ function sceneFile(dir: string, index: number, text: string, voice: string, spee
 async function periodScene(
   quote: string,
   narration: string,
-  secondary: { voice: string; filter?: string },
+  period: PeriodVoice,
   narrator: { voice: string; speed: number },
   out: string,
   signal: AbortSignal
 ): Promise<void> {
   const q = out.replace(/\.wav$/, '_ad.wav')
   const n = out.replace(/\.wav$/, '_nar.wav')
-  await pythonPost(
-    '/tts',
-    { text: speakableAd(quote), voice: secondary.voice, speed: 0.95, out_path: q },
-    signal
-  )
+  await periodLine(quote, period, q, signal)
   await pythonPost(
     '/tts',
     { text: narration, voice: narrator.voice, speed: narrator.speed, out_path: n },
     signal
   )
-  const filter = secondary.filter ?? 'highpass=f=300,lowpass=f=3400'
   await runTool(
     'ffmpeg',
     [
@@ -106,12 +101,50 @@ async function periodScene(
       q,
       '-i',
       n,
+      '-filter_complex',
+      '[0]apad=pad_dur=0.4[a];[1]aresample=24000[b];[a][b]concat=n=2:v=0:a=1[o]',
+      '-map',
+      '[o]',
+      '-ar',
+      '24000',
+      '-ac',
+      '1',
+      '-c:a',
+      'pcm_s16le',
+      out
+    ],
+    signal
+  )
+}
+
+type PeriodVoice = NonNullable<ReturnType<typeof periodVoice>>
+
+/** One ad line in the period announcer's voice, through the old radio filter, into `out`. */
+export async function periodLine(
+  quote: string,
+  period: PeriodVoice,
+  out: string,
+  signal?: AbortSignal
+): Promise<void> {
+  const raw = out.replace(/\.wav$/, '_raw.wav')
+  await pythonPost(
+    '/tts',
+    { text: speakableAd(quote), voice: period.voice, speed: period.speed, out_path: raw },
+    signal
+  )
+  const filter = period.filter ?? 'highpass=f=300,lowpass=f=3400'
+  await runTool(
+    'ffmpeg',
+    [
+      '-y',
+      '-i',
+      raw,
       '-f',
       'lavfi',
       '-i',
       'anoisesrc=color=pink:amplitude=0.012:sample_rate=24000',
       '-filter_complex',
-      `[0]aresample=24000,${filter},asoftclip[ad];[2]highpass=f=300,lowpass=f=3400[hiss];[ad][hiss]amix=inputs=2:duration=first:normalize=0,apad=pad_dur=0.4[a];[1]aresample=24000[b];[a][b]concat=n=2:v=0:a=1[o]`,
+      `[0]aresample=24000,${filter},asoftclip[ad];[1]highpass=f=300,lowpass=f=3400[hiss];[ad][hiss]amix=inputs=2:duration=first:normalize=0[o]`,
       '-map',
       '[o]',
       '-ar',
@@ -172,13 +205,15 @@ export const audioStep: Step = {
     const timings: SceneTiming[] = []
     let generated = 0
     // Formats with a second voice: literal ad lines in the period announcer's voice first.
-    const secondary = formatOf(ctx.settings.format).voices.secondary
+    const secondary = periodVoice(ctx.settings)
     const script = getVideo(videoId).script
     for (const [i, scene] of scenes.entries()) {
       if (ctx.signal.aborted) throw new Error('Cancelado')
       const speed = i === outroIndex ? voiceSpeed * OUTRO_SPEED : voiceSpeed
       const quote = secondary ? adSceneData(script, scene.index).adQuote.trim() : ''
-      const text = quote ? `${secondary?.voice}:${quote}||${scene.narration}` : scene.narration
+      const text = quote
+        ? `${secondary?.voice}@${secondary?.speed}:${quote}||${scene.narration}`
+        : scene.narration
       const file = sceneFile(dir, scene.index, text, voice, speed)
       if (!isValidFile(file)) {
         if (quote && secondary) {

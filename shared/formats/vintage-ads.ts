@@ -215,7 +215,7 @@ Target 8–12 minutes only when the evidence fills them; never pad.`,
   maxMediaYear: PUBLIC_DOMAIN_UNTIL,
   wikimediaCategories: ['Patent medicines', 'Advertisements in the United States', 'Quackery'],
   voices: {
-    narrator: 'bm_lewis',
+    narrator: 'af_heart',
     secondary: {
       voice: 'bm_george',
       role: 'reads only the literal text of the ad',

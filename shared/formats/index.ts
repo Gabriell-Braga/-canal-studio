@@ -15,6 +15,32 @@ export function formatOf(id: string | undefined | null): FormatPack {
   return FORMATS.find((f) => f.id === id) ?? businessHistory
 }
 
+/** The period announcer of a format with a second voice, with the channel's voice and speed. */
+export function periodVoice(s: {
+  format: string
+  secondaryVoice: string
+  secondaryVoiceSpeed: number
+}): { voice: string; speed: number; filter?: string } | null {
+  const sec = formatOf(s.format).voices.secondary
+  return sec
+    ? { voice: s.secondaryVoice || sec.voice, speed: s.secondaryVoiceSpeed, filter: sec.filter }
+    : null
+}
+
+/**
+ * Narrator after switching format: a new channel (no videos yet) takes the format's default;
+ * otherwise the voice the user chose stays while Kokoro still has it.
+ */
+export function voiceAfterFormatChange(
+  current: string,
+  pack: FormatPack,
+  available: string[],
+  newChannel: boolean
+): string {
+  const exists = !!current && (!available.length || available.includes(current))
+  return exists && !newChannel ? current : pack.voices.narrator
+}
+
 export function hasOverlay(pack: FormatPack, id: string): boolean {
   return pack.overlays.some((o) => o.id === id)
 }

@@ -334,6 +334,9 @@ export interface Settings {
   maxVideosPerNight: number
   voice: string
   voiceSpeed: number
+  /** Period announcer (formats with a second voice); empty = the format's voice */
+  secondaryVoice: string
+  secondaryVoiceSpeed: number
   scenePauseSec: number
   whisperModel: string
   whisperDevice: 'auto' | 'cuda' | 'cpu'
@@ -396,6 +399,8 @@ export const CHANNEL_SETTING_KEYS = [
   'defaultNiche',
   'voice',
   'voiceSpeed',
+  'secondaryVoice',
+  'secondaryVoiceSpeed',
   'scenePauseSec',
   'aiImageRatio',
   'stockProviders',
@@ -571,6 +576,8 @@ export interface Api {
     get: (channelId?: number) => Promise<Settings>
     set: (patch: Partial<Settings>, channelId?: number) => Promise<Settings>
     voiceSample: (channelId: number) => Promise<string>
+    /** The period announcer reading a sample ad line through the radio filter */
+    periodSample: (channelId: number, voice: string, speed: number) => Promise<string>
     voices: () => Promise<string[]>
     dataDir: () => Promise<string>
     /** Quick call to the chosen model with unsaved settings; returns a status line */

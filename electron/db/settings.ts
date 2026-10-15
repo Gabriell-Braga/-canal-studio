@@ -35,6 +35,8 @@ export const DEFAULT_SETTINGS: Settings = {
   maxVideosPerNight: 3,
   voice: 'am_michael',
   voiceSpeed: 1,
+  secondaryVoice: '',
+  secondaryVoiceSpeed: 1.05,
   scenePauseSec: 0.35,
   whisperModel: 'small.en',
   whisperDevice: 'auto',

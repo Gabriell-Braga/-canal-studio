@@ -6,7 +6,7 @@ import {
   type StockProvider,
   type Settings as SettingsT
 } from '../../shared/types'
-import { FORMATS, formatOf } from '../../shared/formats'
+import { FORMATS, formatOf, voiceAfterFormatChange } from '../../shared/formats'
 import {
   Banner,
   Button,
@@ -357,6 +357,23 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
     }
   }
 
+  async function playPeriodSample(): Promise<void> {
+    setSampling(true)
+    try {
+      const voice = s!.secondaryVoice || formatOf(s!.format).voices.secondary?.voice || ''
+      setSample(
+        mediaUrl(
+          await api.settings.periodSample(channel.id, voice, s!.secondaryVoiceSpeed),
+          Date.now()
+        )
+      )
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) })
+    } finally {
+      setSampling(false)
+    }
+  }
+
   async function chooseDir(): Promise<void> {
     const dir = await api.settings.chooseDataDir()
     if (dir) {
@@ -522,7 +539,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
           <div className="md:col-span-2">
             <Field
               label="Formato do canal"
-              hint={`${formatOf(s.format).description} Ao trocar, a voz e a ordem dos bancos de imagem voltam ao padrão do formato.`}
+              hint={`${formatOf(s.format).description} Ao trocar, a ordem dos bancos de imagem volta ao padrão do formato; a voz escolhida fica (canal sem vídeos recebe a voz padrão do formato).`}
             >
               <select
                 className={inputClass}
@@ -530,7 +547,7 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
                 onChange={(e) => {
                   const pack = formatOf(e.target.value)
                   set('format', pack.id)
-                  set('voice', pack.voices.narrator)
+                  set('voice', voiceAfterFormatChange(s.voice, pack, voices, !channel.videos))
                   set('stockProviders', pack.mediaProviders)
                 }}
               >
@@ -663,6 +680,49 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
             </Button>
             {sample && <audio src={sample} controls autoPlay className="h-9" />}
           </div>
+          {formatOf(s.format).voices.secondary && (
+            <>
+              <Field
+                label="Voz do locutor de época (trechos do anúncio)"
+                hint={`Padrão do formato: ${formatOf(s.format).voices.secondary?.voice}.`}
+              >
+                {voices.length ? (
+                  <select
+                    className={inputClass}
+                    value={s.secondaryVoice || formatOf(s.format).voices.secondary?.voice}
+                    onChange={(e) => set('secondaryVoice', e.target.value)}
+                  >
+                    {voices.map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className={inputClass}
+                    value={s.secondaryVoice}
+                    placeholder={formatOf(s.format).voices.secondary?.voice}
+                    onChange={(e) => set('secondaryVoice', e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label={`Velocidade do locutor: ${s.secondaryVoiceSpeed.toFixed(2)}x`}>
+                <input
+                  type="range"
+                  min={0.7}
+                  max={1.3}
+                  step={0.05}
+                  className="w-full"
+                  value={s.secondaryVoiceSpeed}
+                  onChange={(e) => set('secondaryVoiceSpeed', Number(e.target.value))}
+                />
+              </Field>
+              <div className="flex items-end gap-3">
+                <Button onClick={playPeriodSample} disabled={sampling}>
+                  {sampling ? 'Gerando…' : 'Ouvir amostra do locutor'}
+                </Button>
+              </div>
+            </>
+          )}
         </Section>
 
         <Section title="Legendas (faster-whisper)" scope="global">

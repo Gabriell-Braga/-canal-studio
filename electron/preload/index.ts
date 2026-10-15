@@ -66,6 +66,7 @@ const api: Api = {
     get: invoke('settings:get'),
     set: invoke('settings:set'),
     voiceSample: invoke('settings:voiceSample'),
+    periodSample: invoke('settings:periodSample'),
     voices: invoke('settings:voices'),
     dataDir: invoke('settings:dataDir'),
     testLlm: invoke('settings:testLlm'),

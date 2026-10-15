@@ -2,10 +2,14 @@ import { createHash } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type { Settings, StockProvider } from '../../shared/types'
-import { searchStock as searchPexels, type StockCandidate } from './pexels'
+import { download, searchStock as searchPexels, type StockCandidate } from './pexels'
 import { searchPixabay } from './pixabay'
 import { searchWikimedia, type WikimediaOptions } from './wikimedia'
 import { searchArchive, searchMet, searchNasa } from './archives'
+import { searchAdPages, toCandidate } from './chroniclingamerica'
+import { scanAd } from './adscan'
+import { PUBLIC_DOMAIN_UNTIL } from '../../shared/formats/vintage-ads'
+import { formatOf } from '../../shared/formats'
 
 let cacheDir = ''
 
@@ -36,10 +40,13 @@ async function cached(
 }
 
 function wikimediaOptions(s: Settings, relaxed = false): WikimediaOptions {
+  const pack = formatOf(s.format)
   return {
     allowCcBy: s.wikimediaAllowCcBy,
     allowCcBySa: s.wikimediaAllowCcBySa,
-    relaxed
+    relaxed,
+    maxYear: pack.maxMediaYear,
+    categories: relaxed ? undefined : pack.wikimediaCategories
   }
 }
 
@@ -58,7 +65,7 @@ export async function searchReal(
   if (!subject.trim()) return []
   try {
     const all = await cached(
-      `real|${s.wikimediaAllowCcBy}|${s.wikimediaAllowCcBySa}|${subject}`,
+      `real|${s.format}|${s.wikimediaAllowCcBy}|${s.wikimediaAllowCcBySa}|${subject}`,
       () => searchWikimedia(subject, wikimediaOptions(s, true), new Set(), signal)
     )
     return all.filter((c) => !exclude.has(c.source)).map((c) => ({ ...c, real: true }))
@@ -68,7 +75,7 @@ export async function searchReal(
   }
 }
 
-const KEYLESS = new Set<StockProvider>(['wikimedia', 'nasa', 'met', 'archive'])
+const KEYLESS = new Set<StockProvider>(['wikimedia', 'nasa', 'met', 'archive', 'loc'])
 
 /** Providers the channel wants, in its order, that can run with the current keys. */
 export function usableProviders(s: Settings): StockProvider[] {
@@ -105,8 +112,15 @@ export async function searchAll(
         )
       } else if (provider === 'wikimedia') {
         all = await cached(
-          `wikimedia|${s.wikimediaAllowCcBy}|${s.wikimediaAllowCcBySa}|${query}`,
+          `wikimedia|${s.format}|${s.wikimediaAllowCcBy}|${s.wikimediaAllowCcBySa}|${query}`,
           () => searchWikimedia(query, wikimediaOptions(s), new Set(), signal)
+        )
+      } else if (provider === 'loc') {
+        // Newspaper ads up to PUBLIC_DOMAIN_UNTIL; the scene file is the ad cropped around the query.
+        all = await cached(`loc|${query}`, async () =>
+          (
+            await searchAdPages(query, { from: 1880, to: PUBLIC_DOMAIN_UNTIL, limit: 8 }, signal)
+          ).map((page) => ({ ...toCandidate(page), loc: { page, phrase: query } }))
         )
       } else {
         const search = { nasa: searchNasa, met: searchMet, archive: searchArchive }[provider]
@@ -155,5 +169,16 @@ export const PROVIDER_LABELS: Record<StockProvider, string> = {
   wikimedia: 'Wikimedia Commons',
   nasa: 'NASA',
   met: 'The Met',
-  archive: 'Internet Archive (Prelinger)'
+  archive: 'Internet Archive (Prelinger)',
+  loc: 'Library of Congress (jornais até 1930)'
+}
+
+/** Save a candidate to `out`: a newspaper ad is cropped from its page, anything else downloaded. */
+export async function fetchCandidate(
+  pick: StockCandidate,
+  out: string,
+  signal?: AbortSignal
+): Promise<void> {
+  if (pick.loc) await scanAd(pick.loc.page, pick.loc.phrase, out, signal)
+  else await download(pick.url, out, signal)
 }

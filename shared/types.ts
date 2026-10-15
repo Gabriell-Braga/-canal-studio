@@ -299,7 +299,7 @@ export interface PublishSlot {
   time: string
 }
 
-export type StockProvider = 'pixabay' | 'pexels' | 'wikimedia' | 'nasa' | 'met' | 'archive'
+export type StockProvider = 'pixabay' | 'pexels' | 'wikimedia' | 'nasa' | 'met' | 'archive' | 'loc'
 
 export interface Settings {
   /** Channel format (shared/formats): script rules, thumbnails, overlays, topics */

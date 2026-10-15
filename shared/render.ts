@@ -24,6 +24,8 @@ export interface RenderScene {
   clipDuration?: number
   /** Images: the point to keep in frame when cropping (top of the main subject) */
   focus?: Focus
+  /** A newspaper ad scan: drawn on paper, with phrases highlighted at given seconds of the scene */
+  scan?: { highlights: { at: number; boxes: Box[] }[] }
   /** More shots after the main one, sharing the scene's time equally (fast cuts) */
   shots?: Omit<RenderScene, 'start' | 'end' | 'shots'>[]
 }
@@ -316,3 +318,27 @@ export function plausibleValue(year: number, usd: number): boolean {
 
 /** Big burned-in captions over the opening, where most viewers decide to stay. */
 export const OPENING_CAPTIONS_SEC = 30
+
+/** A box on an image, 0–1 of its width and height. */
+export interface Box {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** Data of the Ads on Trial overlays (VideoProps.overlays of the vintage-ads format). */
+export interface AdOverlays {
+  priceTags: {
+    at: number
+    until: number
+    then: string
+    today: string
+    estimate: boolean
+    year: number
+  }[]
+  claims: { at: number; verdict: string; quote: string; source: string }[]
+  paperTrail: { at: number; newspaper: string; place: string; date: string; page: string } | null
+  ingredients: { at: number; until: number; items: string[]; source: string } | null
+  verdict: { at: number; law: string; text: string } | null
+}

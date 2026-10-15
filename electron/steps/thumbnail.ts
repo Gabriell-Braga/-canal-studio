@@ -1,7 +1,8 @@
 import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { extname, join, relative } from 'path'
 import { z } from 'zod'
-import { formatOf, type FormatPack } from '../../shared/formats'
+import { formatOf, type FormatPack, type ThumbModel } from '../../shared/formats'
+import { readScan } from '../services/adscan'
 import { THUMB, THUMB_CHECK, thumbProblems, thumbText, type ThumbReading } from '../../shared/thumb'
 import { pythonPost } from '../services/python'
 import { getState } from '../db/settings'
@@ -402,9 +403,15 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
 
   // AI images: one per thumbnail, two for the before/after split.
   const images = new Map<string, string>()
+  // The real ad scan (formats that show it) replaces the AI image where the model says so.
+  const scanFile = listScenes(video.id)
+    .map((sc) => sc.asset_path)
+    .find((f) => !!readScan(f))
+  const scanSlot = (id: string): ThumbModel['scan'] =>
+    scanFile ? format.thumbModels.find((m) => m.id === id)?.scan : undefined
   const wanted = concepts.flatMap((c) => [
-    { key: c.approach, prompt: c.image },
-    ...(TWO_IMAGES.has(layoutOf(c.approach))
+    ...(scanSlot(c.approach) === 'background' ? [] : [{ key: c.approach, prompt: c.image }]),
+    ...(TWO_IMAGES.has(layoutOf(c.approach)) && !scanSlot(c.approach)
       ? [{ key: `${c.approach}_2`, prompt: c.image2 || `${c.image}, abandoned, ruined, grey` }]
       : [])
   ])
@@ -463,10 +470,16 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
       approach: c.approach,
       layout: layoutOf(c.approach),
       format: format.id,
-      background: url(ctx.projectDir, imageFor(c.approach)),
-      background2: TWO_IMAGES.has(layoutOf(c.approach))
-        ? url(ctx.projectDir, imageFor(`${c.approach}_2`))
-        : null,
+      background: url(
+        ctx.projectDir,
+        scanSlot(c.approach) === 'background' ? (scanFile as string) : imageFor(c.approach)
+      ),
+      background2:
+        scanSlot(c.approach) === 'background2'
+          ? url(ctx.projectDir, scanFile as string)
+          : TWO_IMAGES.has(layoutOf(c.approach))
+            ? url(ctx.projectDir, imageFor(`${c.approach}_2`))
+            : null,
       text: thumbText(c.text, headTitle),
       // No white logo plate: it shrinks the subject and reads as an ad.
       logo: null,

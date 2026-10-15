@@ -10,7 +10,7 @@ import { ensureBrowser, renderMedia, renderStill, selectComposition } from '@rem
 import { createReadStream, existsSync, readFileSync, statSync } from 'fs'
 import { createServer, type Server } from 'http'
 import { cpus, tmpdir } from 'os'
-import { extname, join, normalize, resolve, sep } from 'path'
+import { dirname, extname, join, normalize, resolve, sep } from 'path'
 import type { RenderJob } from '../shared/render'
 
 const TYPES: Record<string, string> = {
@@ -84,6 +84,8 @@ async function main(): Promise<void> {
     const serveUrl = await bundle({
       entryPoint: job.entry,
       outDir: join(tmpdir(), `canal-remotion-${process.pid}`),
+      // Fonts and textures shipped with the compositions (remotion/public).
+      publicDir: join(dirname(job.entry), 'public'),
       onProgress: () => undefined
     })
     const concurrency = job.concurrency ?? Math.max(1, Math.floor(cpus().length / 2))

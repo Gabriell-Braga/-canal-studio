@@ -23,6 +23,10 @@ export interface FormatPack {
   saturatedTopics: string[]
   shortsRules: ShortsRules
   metadataRules: MetadataRules
+  /** Media made after this year is refused (public-domain formats) */
+  maxMediaYear?: number
+  /** Wikimedia Commons categories searched for this format */
+  wikimediaCategories?: string[]
 }
 
 export interface ScriptRules {
@@ -59,6 +63,8 @@ export interface ThumbModel {
   layout: string
   /** Wants a real face with an edited expression when one is available */
   face?: boolean
+  /** Uses the real ad scan of the video as this image instead of an AI image */
+  scan?: 'background' | 'background2'
 }
 
 /**

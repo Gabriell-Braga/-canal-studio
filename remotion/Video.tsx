@@ -14,6 +14,7 @@ import { objectPosition } from '../shared/framing'
 import type { Focus, RenderScene, RenderWord, VideoProps } from '../shared/render'
 import { ChannelIntroCard, Teaser } from './ChannelIntro'
 import { formatComponents } from './formats'
+import { PaperScan } from './formats/vintage-ads'
 import { template, type TemplateStyle } from './templates'
 
 const FADE_SEC = 0.5
@@ -73,6 +74,12 @@ export function SceneLayer({
   const opacity = fadeIn
     ? interpolate(frame, [0, fadeIn], [0, 1], { extrapolateRight: 'clamp' })
     : 1
+  if (scene.scan)
+    return (
+      <AbsoluteFill style={{ opacity, backgroundColor: 'black' }}>
+        <PaperScan scene={scene} frames={frames} />
+      </AbsoluteFill>
+    )
   const shots = [scene, ...(scene.shots ?? [])]
   // Equal parts for each shot; each one cross-fades in over a few frames.
   const part = Math.max(1, Math.floor(frames / shots.length))

@@ -17,6 +17,9 @@ import { generateStructured } from './services/llm'
 import { formatOf, scriptSchemaFor } from '../shared/formats'
 import { perfPromptBlock } from './services/youtube'
 import { checklistMissing } from '../shared/checklist'
+import { searchAdPages, type AdPage } from './services/chroniclingamerica'
+import { PUBLIC_DOMAIN_UNTIL } from '../shared/formats/vintage-ads'
+import { attachEvidence, rememberTopicEvidence } from './steps/evidence'
 import { polishSettings } from './steps/polish'
 import { z } from 'zod'
 import { staleShorts } from './steps/shorts'
@@ -38,6 +41,13 @@ export class Pipeline {
       .map((v) => v.title ?? v.topic)
     const pack = formatOf(s.format)
     const src = pack.topicSource
+    if (src.kind !== 'llm' && src.queries?.length) {
+      const found = await this.topicsFromAds(channelId, done).catch((error: Error) => {
+        console.warn(`Busca de anúncios reais falhou: ${error.message}`)
+        return []
+      })
+      if (found.length) return found
+    }
     const { topics } = await generateStructured(
       `You pick topics for a faceless YouTube channel. Format: ${src.brief}${s.defaultNiche ? `\nNiche: ${s.defaultNiche}` : ''}
 Already on the channel (do not repeat these stories): ${done.join(' | ') || 'none'}
@@ -50,6 +60,69 @@ Return ONLY JSON: {"topics": ["...", ...]}`,
       { settings: { ...polishSettings(s), claudeModel: 'opus' }, temperature: 1, effort: 'medium' }
     )
     return topics.map((t) => t.replace(/^["']|["']$/g, '').trim()).filter(Boolean)
+  }
+
+  /**
+   * Topics born from real ads: search the newspaper archive with the format's terms, show the
+   * model what was found (OCR text) and keep each topic's page as its evidence.
+   */
+  private async topicsFromAds(channelId: number, done: string[]): Promise<string[]> {
+    const s = getSettings(channelId)
+    const pack = formatOf(s.format)
+    const queries = [...(pack.topicSource.queries ?? [])]
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3)
+    const pages: AdPage[] = []
+    for (const q of queries) {
+      const found = await searchAdPages(q, { from: 1880, to: PUBLIC_DOMAIN_UNTIL, limit: 6 })
+      pages.push(...found.filter((p) => p.ocrText).map((p) => ({ ...p, query: q })))
+    }
+    if (!pages.length) return []
+    const listing = pages
+      .map((p, i) => {
+        const text = p.ocrText ?? ''
+        const at = Math.max(
+          0,
+          text.toLowerCase().indexOf(((p as { query?: string }).query ?? '').toLowerCase()) - 400
+        )
+        return `[${i}] ${p.newspaper}, ${p.date}: ${text.slice(at, at + 900).replace(/\s+/g, ' ')}`
+      })
+      .join('\n')
+    const { topics } = await generateStructured(
+      `You pick topics for "${pack.name}": ${pack.topicSource.brief}
+Already on the channel: ${done.join(' | ') || 'none'}
+Mention only, never the main topic: ${pack.saturatedTopics.join(', ')}
+Newspaper pages found in the archive (OCR, noisy):
+${listing}
+
+Pick up to 8 real ads from these pages that make a strong investigation. For each: topic (English working title with the hook, max 80 characters), page (the [number]) and phrase (3–8 words copied exactly from the ad's OCR text, its most striking line, to locate it on the page).
+Return ONLY JSON: {"topics": [{"topic": "...", "page": 0, "phrase": "..."}]}`,
+      z.object({
+        topics: z.array(
+          z.object({ topic: z.string().min(1), page: z.number().int(), phrase: z.string() })
+        )
+      }),
+      {
+        settings: { ...polishSettings(s), claudeModel: 'opus' },
+        temperature: 0.8,
+        effort: 'medium'
+      }
+    )
+    const out: string[] = []
+    for (const t of topics) {
+      const page = pages[t.page]
+      if (!page) continue
+      const topic = t.topic.replace(/^["']|["']$/g, '').trim()
+      const text = page.ocrText ?? ''
+      const at = Math.max(0, text.indexOf(t.phrase) - 600)
+      rememberTopicEvidence(channelId, topic, {
+        page,
+        phrase: t.phrase,
+        excerpt: text.slice(at, at + 1500)
+      })
+      out.push(topic)
+    }
+    return out
   }
 
   addTopics(channelId: number, topics: string[], durationMin?: number): Video[] {
@@ -66,6 +139,7 @@ Return ONLY JSON: {"topics": ["...", ...]}`,
           synthetic: s.syntheticDefault
         })
       )
+    for (const v of created) attachEvidence(channelId, v.topic, v.id)
     return created
   }
 

@@ -13,6 +13,7 @@ import { formatUsd } from '../../shared/render'
 import { generateStructured, llmLabel, type LlmCall } from '../services/llm'
 import { polishScript } from './polish'
 import type { Step } from './types'
+import { videoEvidence } from './evidence'
 
 export const reviewSchema = z.object({
   alerts: z
@@ -71,7 +72,16 @@ export const scriptStep: Step = {
     const { settings } = ctx
     const minutes = video.duration_target_min
     const words = Math.round(minutes * 150)
-    const topic = video.niche ? `${video.topic} (channel niche: ${video.niche})` : video.topic
+    const ev = videoEvidence(videoId)
+    const topic =
+      (video.niche ? `${video.topic} (channel niche: ${video.niche})` : video.topic) +
+      (ev
+        ? `
+
+THE REAL AD this video investigates: ${ev.page.newspaper} (${[ev.page.city, ev.page.state].filter(Boolean).join(', ')}), ${ev.page.date}, page ${ev.page.page}. Its striking line: "${ev.phrase}". OCR text of the page around it (noisy; quote only words that are really there):
+${ev.excerpt}
+`
+        : '')
     const call: LlmCall = {
       settings,
       signal: ctx.signal,

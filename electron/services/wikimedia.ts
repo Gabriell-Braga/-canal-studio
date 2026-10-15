@@ -31,6 +31,12 @@ export interface WikimediaOptions {
   relaxed?: boolean
   /** Portraits of a person: tall photos are fine, only the face size matters */
   portrait?: boolean
+  /** Skip files made after this year (public-domain formats) */
+  maxYear?: number
+  /** Search inside these Commons categories first (incategory:) */
+  categories?: string[]
+  /** Internal: restrict this search to these categories */
+  categoryFilter?: string[]
 }
 
 function strip(html: string | undefined): string {
@@ -53,17 +59,31 @@ export async function searchWikimedia(
   exclude: Set<string>,
   signal?: AbortSignal
 ): Promise<StockCandidate[]> {
+  // The format's categories first; a plain search when they hold nothing for this query.
+  if (options.categories?.length) {
+    const inside = await searchWikimedia(
+      query,
+      { ...options, categories: undefined, categoryFilter: options.categories },
+      exclude,
+      signal
+    )
+    if (inside.length) return inside
+  }
   const params = new URLSearchParams({
     action: 'query',
     format: 'json',
     generator: 'search',
     gsrnamespace: '6',
-    gsrsearch: `${query.slice(0, 100)} filetype:bitmap`,
+    gsrsearch: `${query.slice(0, 100)} filetype:bitmap${
+      options.categoryFilter?.length
+        ? ` incategory:${options.categoryFilter.map((c) => c.replace(/ /g, '_')).join('|')}`
+        : ''
+    }`,
     gsrlimit: '30',
     prop: 'imageinfo',
     iiprop: 'url|size|extmetadata',
     iiurlwidth: '1920',
-    iiextmetadatafilter: 'LicenseShortName|Artist|Credit|ImageDescription'
+    iiextmetadatafilter: 'LicenseShortName|Artist|Credit|ImageDescription|DateTimeOriginal'
   })
   const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
     headers: { 'User-Agent': USER_AGENT },
@@ -96,6 +116,10 @@ export async function searchWikimedia(
       (options.allowCcBy && ATTRIBUTION.test(license)) ||
       (!!options.allowCcBySa && SHARE_ALIKE.test(license))
     if (!free && !credited) continue
+    if (options.maxYear) {
+      const year = yearOf(strip(info.extmetadata?.DateTimeOriginal?.value))
+      if (year !== null && year > options.maxYear) continue
+    }
     const artist = strip(info.extmetadata?.Artist?.value) || 'Unknown author'
     candidates.push({
       source,
@@ -110,6 +134,12 @@ export async function searchWikimedia(
     })
   }
   return candidates
+}
+
+/** First 4-digit year (1500–2099) in a Commons date field, or null. */
+export function yearOf(text: string): number | null {
+  const m = /\b(1[5-9]\d\d|20\d\d)\b/.exec(text)
+  return m ? Number(m[1]) : null
 }
 
 export { USER_AGENT as WIKIMEDIA_USER_AGENT }

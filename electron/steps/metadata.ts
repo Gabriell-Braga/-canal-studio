@@ -102,6 +102,14 @@ ${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter 
       )
       description += `\n\nChapters\n${lines.join('\n')}`
     }
+    const claims = (Array.isArray(video.script?.claims) ? video.script.claims : []) as {
+      quote: string
+      verdict: string
+      source: string
+    }[]
+    const checked = claims.filter((c) => c.source?.trim())
+    if (checked.length)
+      description += `\n\nClaim Check\n${checked.map((c) => `- "${c.quote}": ${c.verdict} (${c.source})`).join('\n')}`
     const sources = video.script?.sources ?? []
     if (sources.length)
       description += `\n\nSources\n${sources.map((x) => `- ${x.claim}: ${x.source}`).join('\n')}`

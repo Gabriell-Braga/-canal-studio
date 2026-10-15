@@ -10,7 +10,8 @@ files:
   - out/**
   - package.json
   - remotion/**/*.{ts,tsx}
-  - shared/render.ts
+  - remotion/public/**
+  - shared/**/*.ts
   - python/server.py
   - python/warmup.py
   - python/requirements.txt

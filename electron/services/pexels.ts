@@ -41,6 +41,8 @@ export interface StockCandidate {
   label?: string
   /** A real photo of the person or event the scene names (Wikimedia search by real_subject) */
   real?: boolean
+  /** Library of Congress page: the scene file is the ad cropped around this phrase */
+  loc?: { page: import('./chroniclingamerica').AdPage; phrase: string }
 }
 
 async function pexelsGet<T>(path: string, key: string, signal?: AbortSignal): Promise<T> {

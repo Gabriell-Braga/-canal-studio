@@ -2,6 +2,7 @@ import type React from 'react'
 import type { ThumbnailProps, VideoProps } from '../../shared/render'
 import { Thumbnail as BusinessThumbnail } from '../Thumbnail'
 import { BusinessOverlays } from './business-history'
+import { AdOverlaysView, VintageThumbnail } from './vintage-ads'
 
 /** What a format draws itself: its signature overlays and its thumbnail layouts. */
 export interface FormatComponents {
@@ -10,7 +11,8 @@ export interface FormatComponents {
 }
 
 const MODULES: Record<string, FormatComponents> = {
-  'business-history': { Overlays: BusinessOverlays, Thumbnail: BusinessThumbnail }
+  'business-history': { Overlays: BusinessOverlays, Thumbnail: BusinessThumbnail },
+  'vintage-ads': { Overlays: AdOverlaysView, Thumbnail: VintageThumbnail }
 }
 
 export function formatComponents(id?: string): FormatComponents {

@@ -1,11 +1,12 @@
 import { z } from 'zod'
 import { businessHistory } from './business-history'
+import { vintageAds } from './vintage-ads'
 import type { Script } from '../types'
 import type { FormatPack } from './types'
 
 export type { FormatPack, OverlayDef, ThumbModel } from './types'
 
-export const FORMATS: FormatPack[] = [businessHistory]
+export const FORMATS: FormatPack[] = [businessHistory, vintageAds]
 
 export const DEFAULT_FORMAT = businessHistory.id
 

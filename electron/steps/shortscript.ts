@@ -8,10 +8,9 @@ import { createShort, listScenes, updateVideo } from '../db/repo'
 import { freeComfy, generateImage } from '../services/comfy'
 import { concatAndNormalize, isValidFile, probeDuration } from '../services/ffmpeg'
 import { generateStructured } from '../services/llm'
-import { download } from '../services/pexels'
 import { pythonPost } from '../services/python'
 import { runRender } from '../services/remotion'
-import { gatherCandidates, searchReal } from '../services/stock'
+import { fetchCandidate, gatherCandidates, searchReal } from '../services/stock'
 import { sceneFocus } from './focus'
 import { prepareComfy } from './scenes'
 import type { StepContext } from './types'
@@ -101,7 +100,7 @@ async function lineMedia(
     const pick = [...real, ...stock].find((c) => !used.has(c.source))
     if (pick) {
       const file = `${out}${pick.kind === 'stock_video' ? '.mp4' : '.jpg'}`
-      if (!isValidFile(file)) await download(pick.url, file, ctx.signal)
+      if (!isValidFile(file)) await fetchCandidate(pick, file, ctx.signal)
       used.add(pick.source)
       return { file, type: pick.kind === 'stock_video' ? 'video' : 'image', source: pick.source }
     }

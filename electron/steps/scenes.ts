@@ -8,12 +8,21 @@ import { polishSettings } from './polish'
 import { ensureComfy, freeComfy, generateImage } from '../services/comfy'
 import { isValidFile, probeDuration, runTool } from '../services/ffmpeg'
 import { unloadAll } from '../services/ollama'
-import { download } from '../services/pexels'
-import { gatherCandidates, PROVIDER_LABELS, searchReal, usableProviders } from '../services/stock'
+import {
+  fetchCandidate,
+  gatherCandidates,
+  PROVIDER_LABELS,
+  searchReal,
+  usableProviders
+} from '../services/stock'
 import type { StockCandidate } from '../services/pexels'
 import { fillRealSubjects, pickRelevant } from './relevance'
 import { pythonPost } from '../services/python'
 import type { Step, StepContext } from './types'
+import { videoEvidence } from './evidence'
+import { formatOf } from '../../shared/formats'
+import { scanAd } from '../services/adscan'
+import { credit } from '../services/chroniclingamerica'
 
 /** Hook and first scene: real photos or footage, never AI images, when a bank has anything. */
 const REAL_OPENING = 2
@@ -115,7 +124,7 @@ async function downloadTo(
     `scene_${String(scene.index).padStart(3, '0')}_${pick.source.replace(/\W+/g, '_')}${ext}`
   )
   if (!isValidFile(out)) {
-    await download(pick.url, out, signal)
+    await fetchCandidate(pick, out, signal)
     if (pick.kind === 'stock_video') await trimLongClip(out, sec, signal)
   }
   return out
@@ -166,7 +175,10 @@ async function fillSubShots(videoId: number, dir: string, ctx: StepContext): Pro
     for (let k = 0; k < missing; k++) {
       ai.push({
         scene,
-        prompt: `${scene.image_prompt || scene.visual_keywords || scene.narration}, ${variations[k % 3]}`
+        prompt: aiPrompt(
+          s,
+          `${scene.image_prompt || scene.visual_keywords || scene.narration}, ${variations[k % 3]}`
+        )
       })
     }
     if (extra.length > scene.extra_assets.length) {
@@ -306,7 +318,7 @@ export async function assignAi(
   signal?: AbortSignal,
   realistic?: boolean
 ): Promise<void> {
-  const prompt = scene.image_prompt || scene.visual_keywords || scene.narration
+  const prompt = aiPrompt(s, scene.image_prompt || scene.visual_keywords || scene.narration)
   const out = join(dir, `scene_${String(scene.index).padStart(3, '0')}_ai_${Date.now()}.png`)
   await generateImage(prompt, out, s, { signal })
   updateScene(scene.id, {
@@ -314,7 +326,8 @@ export async function assignAi(
     asset_path: out,
     asset_source: 'comfyui',
     asset_credit: null,
-    realistic: realistic ?? !!scene.real_subject
+    // Abstract textures of public-domain formats never look like a real person or event.
+    realistic: formatOf(s.format).maxMediaYear ? false : (realistic ?? !!scene.real_subject)
   })
   updateSyntheticLabel(scene.video_id)
 }
@@ -336,6 +349,25 @@ export const scenesStep: Step = {
         scenes = listScenes(videoId)
       } catch (error) {
         ctx.log(`Não deu para marcar as cenas reais: ${(error as Error).message}`, 'warn')
+      }
+    }
+    // A topic born from a real ad opens on that ad's scan, cropped from its newspaper page.
+    const ev = videoEvidence(videoId)
+    const hook = scenes[0]
+    if (ev && hook && !hook.locked && !isValidFile(hook.asset_path)) {
+      try {
+        const out = join(dir, `scene_000_loc_${ev.page.id.replace(/\W+/g, '_')}.jpg`)
+        if (!isValidFile(out)) await scanAd(ev.page, ev.phrase, out, ctx.signal)
+        updateScene(hook.id, {
+          asset_type: 'stock_photo',
+          asset_path: out,
+          asset_source: `loc:${ev.page.id}`,
+          asset_credit: credit(ev.page)
+        })
+        scenes = listScenes(videoId)
+      } catch (error) {
+        if (ctx.signal.aborted) throw error
+        ctx.log(`Scan do anúncio indisponível: ${(error as Error).message}`, 'warn')
       }
     }
     const wantAi = aiIndexes(scenes.length, s.aiImageRatio)
@@ -460,4 +492,13 @@ export function useLocalFile(sceneId: number, file: string, projectDir: string):
     asset_source: `local:${file}`,
     locked: true
   })
+}
+
+/**
+ * Public-domain formats never let AI imitate an ad, a person or an event: their AI images
+ * are abstract transitions (paper, ink, texture) only.
+ */
+export function aiPrompt(s: Settings, prompt: string): string {
+  if (!formatOf(s.format).maxMediaYear) return prompt
+  return 'aged newspaper paper texture, ink smudges, halftone dots, abstract vintage background, warm sepia light, no text, no letters, no people, no faces'
 }

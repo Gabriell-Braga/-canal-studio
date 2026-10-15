@@ -34,6 +34,11 @@ const PROVIDERS: { id: StockProvider; name: string; note: string }[] = [
     id: 'archive',
     name: 'Internet Archive (Prelinger)',
     note: 'filmes antigos em domínio público, baixa resolução · sem chave'
+  },
+  {
+    id: 'loc',
+    name: 'Library of Congress (Chronicling America)',
+    note: 'anúncios de jornais até 1930, recortados da página · sem chave'
   }
 ]
 

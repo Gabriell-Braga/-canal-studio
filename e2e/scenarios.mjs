@@ -937,3 +937,32 @@ async function attachAd({ launch, api, shot, log, dataDir }) {
 }
 
 scenarios.attachAd = attachAd
+
+/** One topic's script at a time: the card button queues only that topic. */
+async function oneScript({ launch, api, shot, log, waitUntil }) {
+  const { app, page } = await launch()
+  const [a, b] = await api(page, 'videos.addTopics', 1, ['One script A', 'One script B'], 1)
+  await page.getByTestId('nav-production').click()
+  await shot(page, 'topics-with-button')
+  await page
+    .getByTestId('video-card')
+    .filter({ hasText: 'One script A' })
+    .locator('xpath=..')
+    .getByTestId('generate-one-script')
+    .click()
+  await waitUntil(
+    async () => (await api(page, 'videos.get', a.id)).video.status === 'SCRIPT_REVIEW',
+    {
+      label: 'script A',
+      timeoutMs: 60_000,
+      everyMs: 1000
+    }
+  )
+  const other = (await api(page, 'videos.get', b.id)).video.status
+  assert(other === 'TOPIC_QUEUED', `topic B untouched (${other})`)
+  log('Só o tema A foi para roteiro; B continua em Temas')
+  await shot(page, 'after-one-script')
+  await app.close()
+}
+
+scenarios.oneScript = oneScript

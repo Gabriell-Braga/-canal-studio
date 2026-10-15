@@ -4,6 +4,7 @@ import {
   CalendarClock,
   Clapperboard,
   FileCheck2,
+  FileText,
   Plus,
   Sparkles,
   Trash2
@@ -122,9 +123,9 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
     }
   }
 
-  async function generate(): Promise<void> {
+  async function generate(ids?: number[]): Promise<void> {
     try {
-      const n = await api.videos.generateScripts(channel.id)
+      const n = await api.videos.generateScripts(channel.id, ids)
       setMessage({ kind: 'info', text: `${n} roteiro(s) na fila de geração.` })
     } catch (e) {
       setMessage({ kind: 'error', text: errorText(e) })
@@ -143,7 +144,7 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
             </Button>
             <Button
               variant="primary"
-              onClick={generate}
+              onClick={() => generate()}
               disabled={!topicsQueued}
               data-testid="generate-scripts"
             >
@@ -247,6 +248,7 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
                     video={v}
                     attention={col.attention}
                     onOpen={() => onOpen(v.id)}
+                    onGenerate={() => generate([v.id])}
                   />
                 ))}
                 {!items.length && (
@@ -266,11 +268,14 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
 function VideoCard({
   video,
   attention,
-  onOpen
+  onOpen,
+  onGenerate
 }: {
   video: Video
   attention?: boolean
   onOpen: () => void
+  /** Write this topic's script alone (topics waiting only) */
+  onGenerate?: () => void
 }): React.JSX.Element {
   const isError = video.status === 'ERROR'
   const thumb = video.thumbnail_paths[video.chosen_thumbnail ?? 0]
@@ -280,7 +285,7 @@ function VideoCard({
       <button
         data-testid="video-card"
         onClick={onOpen}
-        className={`group overflow-hidden rounded-lg border text-left text-sm transition-all duration-150 hover:-translate-y-px hover:shadow-lg ${
+        className={`group w-full overflow-hidden rounded-lg border text-left text-sm transition-all duration-150 hover:-translate-y-px hover:shadow-lg ${
           isError
             ? 'border-red-500/30 bg-red-500/[0.06] hover:border-red-400/50'
             : attention
@@ -319,6 +324,17 @@ function VideoCard({
           )}
         </div>
       </button>
+      {onGenerate && video.status === 'TOPIC_QUEUED' && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-1.5 w-full"
+          data-testid="generate-one-script"
+          onClick={onGenerate}
+        >
+          <FileText size={13} /> Gerar roteiro
+        </Button>
+      )}
       <button
         aria-label="Excluir vídeo"
         title="Excluir"

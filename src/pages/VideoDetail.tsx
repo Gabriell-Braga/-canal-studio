@@ -225,7 +225,26 @@ export default function VideoDetail({ id, onBack, onOpen }: Props): React.JSX.El
 }
 
 function ScriptTab({ video, onSaved }: { video: Video; onSaved: () => void }): React.JSX.Element {
-  if (!video.script) return <p className="text-ink-500">O roteiro ainda não foi gerado.</p>
+  if (!video.script)
+    return (
+      <div className="flex items-center gap-3">
+        <p className="text-ink-500">
+          {video.status === 'SCRIPT_GENERATING'
+            ? 'Gerando o roteiro…'
+            : 'O roteiro ainda não foi gerado.'}
+        </p>
+        {video.status === 'TOPIC_QUEUED' && (
+          <Button
+            size="sm"
+            variant="primary"
+            data-testid="generate-script"
+            onClick={() => api.videos.generateScripts(video.channel_id, [video.id])}
+          >
+            Gerar roteiro
+          </Button>
+        )}
+      </div>
+    )
   const produced = !['TOPIC_QUEUED', 'SCRIPT_GENERATING', 'SCRIPT_REVIEW'].includes(video.status)
   return (
     <Card className="p-5">

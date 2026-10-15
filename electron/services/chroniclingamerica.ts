@@ -25,6 +25,10 @@ export interface AdPage {
   imageUrl: string
   ocrText?: string
   altoUrl?: string
+  /** The ad already cropped, mirrored on Wikimedia Commons (used when loc.gov is unreachable) */
+  mirror?: string
+  /** Commons file page of the mirror, for the credit line */
+  mirrorPage?: string
 }
 
 export interface Box {
@@ -293,7 +297,8 @@ export function credit(page: AdPage): string {
     timeZone: 'UTC'
   })
   const place = [page.city, page.state].filter(Boolean).join(', ')
-  return `${page.newspaper}${place ? ` (${place})` : ''}, ${date}, page ${page.page}. Library of Congress, Chronicling America: ${page.locUrl}`
+  const via = page.mirrorPage ? ` (via Wikimedia Commons: ${page.mirrorPage})` : ''
+  return `${page.newspaper}${place ? ` (${place})` : ''}, ${date}, page ${page.page}. Library of Congress, Chronicling America: ${page.locUrl}${via}`
 }
 
 export function toCandidate(page: AdPage, file?: string): StockCandidate {

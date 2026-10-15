@@ -6,9 +6,9 @@ import { download, searchStock as searchPexels, type StockCandidate } from './pe
 import { searchPixabay } from './pixabay'
 import { searchWikimedia, type WikimediaOptions } from './wikimedia'
 import { searchArchive, searchMet, searchNasa } from './archives'
-import { searchAdPages, toCandidate } from './chroniclingamerica'
+import { toCandidate } from './chroniclingamerica'
+import { findAdPages } from './commonsads'
 import { scanAd } from './adscan'
-import { PUBLIC_DOMAIN_UNTIL } from '../../shared/formats/vintage-ads'
 import { formatOf } from '../../shared/formats'
 
 let cacheDir = ''
@@ -118,9 +118,10 @@ export async function searchAll(
       } else if (provider === 'loc') {
         // Newspaper ads up to PUBLIC_DOMAIN_UNTIL; the scene file is the ad cropped around the query.
         all = await cached(`loc|${query}`, async () =>
-          (
-            await searchAdPages(query, { from: 1880, to: PUBLIC_DOMAIN_UNTIL, limit: 8 }, signal)
-          ).map((page) => ({ ...toCandidate(page), loc: { page, phrase: query } }))
+          (await findAdPages(query, 8, signal)).map((page) => ({
+            ...toCandidate(page),
+            loc: { page, phrase: query }
+          }))
         )
       } else {
         const search = { nasa: searchNasa, met: searchMet, archive: searchArchive }[provider]

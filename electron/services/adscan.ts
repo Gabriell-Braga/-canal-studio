@@ -1,3 +1,4 @@
+import { download } from './pexels'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import {
   cropAd,
@@ -52,6 +53,19 @@ export async function scanAd(
   out: string,
   signal?: AbortSignal
 ): Promise<ScanInfo> {
+  // A Commons mirror is already the cropped ad; there is no OCR, so nothing to highlight.
+  if (page.mirror) {
+    await download(page.mirror, out, signal)
+    const info: ScanInfo = {
+      page,
+      phrase,
+      crop: { x: 0, y: 0, w: 1, h: 1 },
+      highlights: [],
+      words: []
+    }
+    writeFileSync(`${out}.scan.json`, JSON.stringify(info, null, 2))
+    return info
+  }
   const ocr = await fetchOcrWords(page, signal)
   const hit = locatePhrase(ocr.words, phrase)
   const region = hit ? adRegion(ocr.words, hit) : { x: 0.3, y: 0.3, w: 0.35, h: 0.4 }

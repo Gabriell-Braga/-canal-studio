@@ -3,8 +3,8 @@ import {
   AlertTriangle,
   CalendarClock,
   Clapperboard,
+  Check,
   FileCheck2,
-  FileText,
   Plus,
   Sparkles,
   Trash2
@@ -82,10 +82,23 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
   const [duration, setDuration] = useState('')
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  // Topics picked to write their scripts now; none picked = all of them.
+  const [picked, setPicked] = useState<Set<number>>(new Set())
 
   const count = (statuses: VideoStatus[]): number =>
     videos.filter((v) => statuses.includes(v.status)).length
   const topicsQueued = count(['TOPIC_QUEUED'])
+  const waiting = videos.filter((v) => v.status === 'TOPIC_QUEUED').map((v) => v.id)
+  const chosen = waiting.filter((id) => picked.has(id))
+
+  function pick(id: number): void {
+    setPicked((s) => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
   const errors = videos.filter((v) => v.status === 'ERROR')
 
   async function addTopics(): Promise<void> {
@@ -126,6 +139,7 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
   async function generate(ids?: number[]): Promise<void> {
     try {
       const n = await api.videos.generateScripts(channel.id, ids)
+      setPicked(new Set())
       setMessage({ kind: 'info', text: `${n} roteiro(s) na fila de geração.` })
     } catch (e) {
       setMessage({ kind: 'error', text: errorText(e) })
@@ -144,11 +158,14 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
             </Button>
             <Button
               variant="primary"
-              onClick={() => generate()}
+              onClick={() => generate(chosen.length ? chosen : undefined)}
               disabled={!topicsQueued}
               data-testid="generate-scripts"
             >
-              <Sparkles size={16} /> Gerar roteiros ({topicsQueued})
+              <Sparkles size={16} />
+              {chosen.length
+                ? `Gerar roteiro dos selecionados (${chosen.length})`
+                : `Gerar todos os roteiros (${topicsQueued})`}
             </Button>
           </>
         }
@@ -230,7 +247,20 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
           return (
             <div key={col.title} className="flex min-w-0 flex-col">
               <div className="mb-2 flex items-center justify-between px-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400">
-                <span>{col.title}</span>
+                <span className="flex items-center gap-2">
+                  {col.title}
+                  {col.statuses.includes('TOPIC_QUEUED') && waiting.length > 1 && (
+                    <button
+                      data-testid="pick-all-topics"
+                      className="font-medium normal-case tracking-normal text-brand-300 hover:text-brand-200"
+                      onClick={() =>
+                        setPicked(chosen.length === waiting.length ? new Set() : new Set(waiting))
+                      }
+                    >
+                      {chosen.length === waiting.length ? 'limpar' : 'selecionar todos'}
+                    </button>
+                  )}
+                </span>
                 <span
                   className={`rounded-full px-1.5 ${
                     items.length && col.attention
@@ -248,7 +278,8 @@ export default function Production({ onOpen, onReview }: Props): React.JSX.Eleme
                     video={v}
                     attention={col.attention}
                     onOpen={() => onOpen(v.id)}
-                    onGenerate={() => generate([v.id])}
+                    picked={v.status === 'TOPIC_QUEUED' ? picked.has(v.id) : undefined}
+                    onPick={() => pick(v.id)}
                   />
                 ))}
                 {!items.length && (
@@ -269,13 +300,15 @@ function VideoCard({
   video,
   attention,
   onOpen,
-  onGenerate
+  picked,
+  onPick
 }: {
   video: Video
   attention?: boolean
   onOpen: () => void
-  /** Write this topic's script alone (topics waiting only) */
-  onGenerate?: () => void
+  /** Waiting topics have a checkbox: picked ones get their scripts written together */
+  picked?: boolean
+  onPick?: () => void
 }): React.JSX.Element {
   const isError = video.status === 'ERROR'
   const thumb = video.thumbnail_paths[video.chosen_thumbnail ?? 0]
@@ -286,6 +319,8 @@ function VideoCard({
         data-testid="video-card"
         onClick={onOpen}
         className={`group w-full overflow-hidden rounded-lg border text-left text-sm transition-all duration-150 hover:-translate-y-px hover:shadow-lg ${
+          picked ? 'ring-2 ring-brand-300/60' : ''
+        } ${picked !== undefined ? 'pl-6' : ''} ${
           isError
             ? 'border-red-500/30 bg-red-500/[0.06] hover:border-red-400/50'
             : attention
@@ -324,16 +359,21 @@ function VideoCard({
           )}
         </div>
       </button>
-      {onGenerate && video.status === 'TOPIC_QUEUED' && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-1.5 w-full"
-          data-testid="generate-one-script"
-          onClick={onGenerate}
+      {picked !== undefined && (
+        <button
+          role="checkbox"
+          aria-checked={picked}
+          aria-label="Selecionar tema"
+          data-testid="pick-topic"
+          onClick={onPick}
+          className={`absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
+            picked
+              ? 'border-brand-300 bg-brand-300 text-ink-950'
+              : 'border-ink-600 bg-ink-950/80 text-transparent hover:border-ink-400'
+          }`}
         >
-          <FileText size={13} /> Gerar roteiro
-        </Button>
+          <Check size={13} strokeWidth={3} />
+        </button>
       )}
       <button
         aria-label="Excluir vídeo"

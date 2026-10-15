@@ -938,30 +938,34 @@ async function attachAd({ launch, api, shot, log, dataDir }) {
 
 scenarios.attachAd = attachAd
 
-/** One topic's script at a time: the card button queues only that topic. */
+/** Pick topics and write only their scripts; the rest stay waiting. */
 async function oneScript({ launch, api, shot, log, waitUntil }) {
   const { app, page } = await launch()
-  const [a, b] = await api(page, 'videos.addTopics', 1, ['One script A', 'One script B'], 1)
+  const [a, b, c] = await api(page, 'videos.addTopics', 1, ['Pick A', 'Pick B', 'Pick C'], 1)
   await page.getByTestId('nav-production').click()
-  await shot(page, 'topics-with-button')
-  await page
-    .getByTestId('video-card')
-    .filter({ hasText: 'One script A' })
-    .locator('xpath=..')
-    .getByTestId('generate-one-script')
-    .click()
+  const card = (topic) =>
+    page.getByTestId('video-card').filter({ hasText: topic }).locator('xpath=..')
+  await card('Pick A').getByTestId('pick-topic').click()
+  await card('Pick C').getByTestId('pick-topic').click()
+  const button = page.getByTestId('generate-scripts')
+  assert(
+    (await button.textContent()).includes('selecionados (2)'),
+    'button counts the picked topics'
+  )
+  await shot(page, 'topics-picked')
+  await button.click()
   await waitUntil(
-    async () => (await api(page, 'videos.get', a.id)).video.status === 'SCRIPT_REVIEW',
-    {
-      label: 'script A',
-      timeoutMs: 60_000,
-      everyMs: 1000
-    }
+    async () => {
+      const [va, vc] = await Promise.all([a, c].map((v) => api(page, 'videos.get', v.id)))
+      return va.video.status === 'SCRIPT_REVIEW' && vc.video.status === 'SCRIPT_REVIEW'
+    },
+    { label: 'scripts A and C', timeoutMs: 60_000, everyMs: 1000 }
   )
   const other = (await api(page, 'videos.get', b.id)).video.status
   assert(other === 'TOPIC_QUEUED', `topic B untouched (${other})`)
-  log('Só o tema A foi para roteiro; B continua em Temas')
-  await shot(page, 'after-one-script')
+  assert((await button.textContent()).includes('todos os roteiros (1)'), 'selection cleared')
+  log('Só A e C foram para roteiro; B continua em Temas')
+  await shot(page, 'after-picked-scripts')
   await app.close()
 }
 

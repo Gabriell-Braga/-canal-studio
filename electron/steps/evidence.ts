@@ -292,10 +292,11 @@ export async function findVideoEvidence(
 
 // ---------------------------------------------------------------- more ads of the same product
 
-const adsKey = (videoId: number): string => `evidence.ads.video.${videoId}`
+// v2: up to 10 ads from more search terms (older entries held at most 6).
+const adsKey = (videoId: number): string => `evidence.ads2.video.${videoId}`
 
 /** Most ads a video alternates between, the investigated one included. */
-export const MAX_ADS = 6
+export const MAX_ADS = 10
 
 /**
  * Up to `want` ads, as different as possible (other newspapers and years first), from
@@ -348,7 +349,7 @@ export async function gatherAds(
   const keyword = clean(q.keyword) ? q.keyword : productKeyword(q.product)
   const found: Evidence[] = []
   for (const layer of layers(q.categories, signal)) {
-    for (const term of searchOrder(q.product, q.terms).slice(0, 2)) {
+    for (const term of searchOrder(q.product, q.terms).slice(0, 4)) {
       try {
         const pages = await layer.search(term, () => undefined)
         const read: AdPage[] = []

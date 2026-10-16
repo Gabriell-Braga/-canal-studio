@@ -2,15 +2,12 @@ import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { extname, join, relative } from 'path'
 import { z } from 'zod'
 import { formatOf, type FormatPack, type ThumbModel } from '../../shared/formats'
-import { OCR_MIN_CONFIDENCE, readScan } from '../services/adscan'
-import { priceTag } from '../../shared/cpi'
+import { readScan } from '../services/adscan'
 import {
-  testimonialOnly,
   THUMB,
   THUMB_CHECK,
   thumbProblems,
   thumbText,
-  vintageLayout,
   type ThumbReading
 } from '../../shared/thumb'
 import { pythonPost } from '../services/python'
@@ -34,6 +31,7 @@ import { isValidFile, probeDuration, runTool } from '../services/ffmpeg'
 import { generateStructured } from '../services/llm'
 import { runRender } from '../services/remotion'
 import { renderCompanies } from './overlays'
+import { conceptThumbs } from './vintagethumb'
 import { polishSettings } from './polish'
 import { prepareComfy } from './scenes'
 import type { Step, StepContext } from './types'
@@ -226,19 +224,27 @@ export async function mobilePreview(
   )
 }
 
+/** The thumbnails side by side at feed size, or null when ffmpeg fails. */
+async function feedPreview(files: string[], outDir: string, ctx: StepContext): Promise<string | null> {
+  const preview = join(outDir, 'preview_mobile.png')
+  try {
+    await mobilePreview(files, preview, ctx.signal)
+  } catch (error) {
+    if (ctx.signal.aborted) throw error
+    ctx.log(`Prévia mobile falhou (${(error as Error).message})`, 'warn')
+  }
+  return isValidFile(preview) ? preview : null
+}
+
 /** Problems of a thumbnail at feed size; none when the check cannot run (sidecar down). */
-async function previewProblems(
-  file: string,
-  ctx: StepContext,
-  checkCoverage = true
-): Promise<string[]> {
+async function previewProblems(file: string, ctx: StepContext): Promise<string[]> {
   try {
     const r = await pythonPost<ThumbReading>(
       '/thumb_check',
       { image_path: file, width: THUMB.preview.width, height: THUMB.preview.height },
       ctx.signal
     )
-    return thumbProblems(r, checkCoverage)
+    return thumbProblems(r)
   } catch (error) {
     if (ctx.signal.aborted) throw error
     ctx.log(`Checagem da prévia indisponível: ${(error as Error).message}`, 'warn')
@@ -407,6 +413,20 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
     }
   )
   const titles = rankTitles(pack.titles, tr.maxChars, recent, entities).slice(0, 3)
+  // Ads on Trial: thumbnails start from the video's conflict, not from its materials.
+  if (format.maxMediaYear) {
+    const thumbs = await conceptThumbs(video.id, ctx, outDir, keepTitle ?? titles[0] ?? '', story)
+    return {
+      titles,
+      thumbs,
+      preview: await feedPreview(
+        thumbs.map((t) => t.file),
+        outDir,
+        ctx
+      ),
+      faceCheck: null
+    }
+  }
   const layoutOf = (id: string): string => format.thumbModels.find((m) => m.id === id)?.layout ?? id
   const wins = getState<Record<string, string>>(`thumbWins.ch.${video.channel_id}`, {})
   let concepts = orderModels(modelIds(format), wins).map(
@@ -422,25 +442,12 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
     .find((f) => !!readScan(f))
   const scanSlot = (id: string): ThumbModel['scan'] =>
     scanFile ? format.thumbModels.find((m) => m.id === id)?.scan : undefined
-  // Public-domain formats never put AI images on thumbnails: only the real scan, face and price.
-  const realOnly = !!format.maxMediaYear
-  if (realOnly && !(scanFile && (await sharpScan(scanFile)))) {
-    ctx.log(
-      'Sem scan nítido do anúncio (altura < 900 px ou OCR fraco): thumbnail A não gerada',
-      'warn'
-    )
-    concepts = concepts.filter(
-      (c) => format.thumbModels.find((m) => m.id === c.approach)?.scan !== 'background'
-    )
-  }
-  const wanted = realOnly
-    ? []
-    : concepts.flatMap((c) => [
-        ...(scanSlot(c.approach) === 'background' ? [] : [{ key: c.approach, prompt: c.image }]),
-        ...(TWO_IMAGES.has(layoutOf(c.approach)) && !scanSlot(c.approach)
-          ? [{ key: `${c.approach}_2`, prompt: c.image2 || `${c.image}, abandoned, ruined, grey` }]
-          : [])
-      ])
+  const wanted = concepts.flatMap((c) => [
+    ...(scanSlot(c.approach) === 'background' ? [] : [{ key: c.approach, prompt: c.image }]),
+    ...(TWO_IMAGES.has(layoutOf(c.approach)) && !scanSlot(c.approach)
+      ? [{ key: `${c.approach}_2`, prompt: c.image2 || `${c.image}, abandoned, ruined, grey` }]
+      : [])
+  ])
   if (wanted.length)
     try {
       await prepareComfy(s, ctx.signal)
@@ -462,10 +469,7 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
     } finally {
       await freeComfy(s.comfyUrl)
     }
-  const fallback =
-    images.size < wanted.length || (realOnly && !scanFile)
-      ? await sceneBackgrounds(video, dir, ctx)
-      : []
+  const fallback = images.size < wanted.length ? await sceneBackgrounds(video, dir, ctx) : []
   let next = 0
   const imageFor = (key: string): string => {
     const file = images.get(key) ?? fallback[next++ % Math.max(1, fallback.length)]
@@ -479,12 +483,6 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
   for (const c of concepts) {
     const model = format.thumbModels.find((m) => m.id === c.approach)
     if (!model?.face || !c.person.trim()) continue
-    const scan = readScan(scanFile ?? null)
-    const adText = scan?.ocrText ?? scan?.words.map((w) => w.text).join(' ') ?? ''
-    if (realOnly && testimonialOnly(c.person, adText, story)) {
-      ctx.log(`${c.person} só aparece num depoimento do anúncio: não é o rosto da história`, 'warn')
-      continue
-    }
     const emotion = (EXPRESSIONS as string[]).includes(c.emotion)
       ? (c.emotion as ExpressionPreset)
       : 'shock'
@@ -500,42 +498,25 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
     }
   }
 
-  if (realOnly) {
-    const faceless = concepts.filter(
-      (c) => format.thumbModels.find((m) => m.id === c.approach)?.face && !faces.has(c.approach)
-    )
-    if (faceless.length)
-      ctx.log('Sem retrato real da pessoa principal: thumbnail B não gerada', 'warn')
-    concepts = concepts.filter((c) => !faceless.includes(c))
-  }
   const faceBoxes = new Map<string, { y: number; h: number } | null>()
   for (const [id, file] of faces) faceBoxes.set(id, await faceBox(file, ctx))
-  const real = realOnly ? (scanFile ?? imageFor('real')) : ''
   const headTitle = keepTitle ?? titles[0] ?? ''
-  let stills = concepts.map((c, i) => {
+  const stills = concepts.map((c, i) => {
     const props: ThumbnailProps = {
       approach: c.approach,
       layout: layoutOf(c.approach),
       format: format.id,
       background: url(
         ctx.projectDir,
-        realOnly
-          ? real
-          : scanSlot(c.approach) === 'background'
-            ? (scanFile as string)
-            : imageFor(c.approach)
+        scanSlot(c.approach) === 'background' ? (scanFile as string) : imageFor(c.approach)
       ),
-      background2: realOnly
-        ? url(ctx.projectDir, real)
-        : scanSlot(c.approach) === 'background2'
+      background2:
+        scanSlot(c.approach) === 'background2'
           ? url(ctx.projectDir, scanFile as string)
           : TWO_IMAGES.has(layoutOf(c.approach))
             ? url(ctx.projectDir, imageFor(`${c.approach}_2`))
             : null,
-      text:
-        realOnly && layoutOf(c.approach) === 'then-now'
-          ? thenNowText(video, c.text)
-          : thumbText(c.text, headTitle),
+      text: thumbText(c.text, headTitle),
       faceBox: faceBoxes.get(c.approach) ?? null,
       // No white logo plate: it shrinks the subject and reads as an ad.
       logo: null,
@@ -543,39 +524,13 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
     }
     return { out: join(outDir, `thumb_${i + 1}_${c.approach}.png`), props }
   })
-  if (realOnly) {
-    // Text that cannot fit the 6% safe area at a size the phone preview reads: reproved.
-    stills = stills.filter((st) => {
-      const problems = vintageLayout(st.props.layout ?? st.props.approach, st.props.text).problems
-      if (problems.length)
-        ctx.log(`Thumbnail ${st.props.approach} reprovada: ${problems.join('; ')}`, 'warn')
-      return !problems.length
-    })
-    if (!stills.length) throw new Error('Nenhuma thumbnail aprovada na checagem de área segura')
-  }
   await runRender(
     { mode: 'stills', root: ctx.projectDir, out: '', stills },
     join(ctx.projectDir, 'thumb-job.json'),
     { progress: (p) => ctx.progress(0.8 + 0.15 * p), log: (m) => ctx.log(m), signal: ctx.signal }
   )
-  // Mobile-size check: a small subject or flat contrast gets a new, closer AI image;
-  // real-only thumbnails that fail are dropped instead.
-  if (realOnly) {
-    const passed: typeof stills = []
-    for (const st of stills) {
-      const problems = await previewProblems(st.out, ctx, false)
-      if (problems.length) {
-        ctx.log(
-          `Thumbnail ${st.props.approach} reprovada na prévia: ${problems.join('; ')}`,
-          'warn'
-        )
-        rmSync(st.out, { force: true })
-      } else passed.push(st)
-    }
-    if (!passed.length) throw new Error('Nenhuma thumbnail legível na prévia de celular')
-    stills = passed
-  }
-  for (let round = 0; round < (realOnly ? 0 : 2); round++) {
+  // Mobile-size check: a small subject or flat contrast gets a new, closer AI image.
+  for (let round = 0; round < 2; round++) {
     const failing: typeof stills = []
     for (const st of stills) {
       const problems = await previewProblems(st.out, ctx)
@@ -607,17 +562,11 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
       { log: (m) => ctx.log(m), signal: ctx.signal }
     )
   }
-  const preview = join(outDir, 'preview_mobile.png')
-  try {
-    await mobilePreview(
-      stills.map((st) => st.out),
-      preview,
-      ctx.signal
-    )
-  } catch (error) {
-    if (ctx.signal.aborted) throw error
-    ctx.log(`Prévia mobile falhou (${(error as Error).message})`, 'warn')
-  }
+  const preview = await feedPreview(
+    stills.map((st) => st.out),
+    outDir,
+    ctx
+  )
   return {
     titles,
     thumbs: stills.map((st) => ({
@@ -625,30 +574,8 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
       text: st.props.text,
       file: st.out
     })),
-    preview: isValidFile(preview) ? preview : null,
+    preview,
     faceCheck
-  }
-}
-
-/** A scan sharp enough for thumbnail A: at least 900 px tall and readable OCR. */
-async function sharpScan(file: string): Promise<boolean> {
-  const scan = readScan(file)
-  if (scan?.ocrConfidence !== undefined && scan.ocrConfidence < OCR_MIN_CONFIDENCE) return false
-  try {
-    const { stdout } = await runTool('ffprobe', [
-      '-v',
-      'error',
-      '-select_streams',
-      'v:0',
-      '-show_entries',
-      'stream=height',
-      '-of',
-      'csv=p=0',
-      file
-    ])
-    return Number(stdout.trim()) >= 900
-  } catch {
-    return false
   }
 }
 
@@ -666,23 +593,6 @@ async function faceBox(file: string, ctx: StepContext): Promise<{ y: number; h: 
     if (ctx.signal.aborted) throw error
     return null
   }
-}
-
-/**
- * Model C: the ad's price then and corrected for today (CPI table), from the first scene with
- * a price; without one, the verdict is stamped on the right side.
- */
-export function thenNowText(video: Pick<Video, 'script'>, fallback: string): string {
-  const priced = video.script?.scenes.find((sc) => sc.price) as
-    { price: { usd: number; year: number } } | undefined
-  const tag = priced ? priceTag(priced.price.usd, priced.price.year) : null
-  if (tag) return `${tag.then} → ${tag.today}`
-  const claims = Array.isArray(video.script?.claims)
-    ? (video.script?.claims as { verdict?: string }[])
-    : []
-  const verdict = claims.find((c) => c.verdict)?.verdict
-  if (verdict) return `→ ${verdict}`
-  return fallback.includes('→') ? fallback : `→ ${fallback}`
 }
 
 /** Plain-text summary of a packaging run, written next to exported thumbnails. */

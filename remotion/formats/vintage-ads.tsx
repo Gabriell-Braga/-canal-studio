@@ -18,7 +18,8 @@ export const F = {
   title: `"${B.fonts.title}", Georgia, serif`,
   stamp: `"${B.fonts.stamp}", Impact, sans-serif`,
   type: `"${B.fonts.type}", "Courier New", monospace`,
-  card: `"${B.fonts.card}", Georgia, serif`
+  card: `"${B.fonts.card}", Georgia, serif`,
+  hand: `"${B.fonts.hand}", cursive`
 }
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const
 
@@ -28,7 +29,8 @@ const FONT_FILES: [string, string, string?][] = [
   [B.fonts.stamp, 'Oswald.ttf', '700'],
   [B.fonts.type, 'SpecialElite-Regular.ttf'],
   [B.fonts.card, 'OldStandard-Regular.ttf'],
-  [B.fonts.card, 'OldStandard-Bold.ttf', '700']
+  [B.fonts.card, 'OldStandard-Bold.ttf', '700'],
+  [B.fonts.hand, 'HomemadeApple-Regular.ttf']
 ]
 let fontsLoading: Promise<void> | null = null
 export function loadFonts(): void {
@@ -111,6 +113,41 @@ export function scanCamera(
 }
 
 /**
+ * Camera that closes in on one part of a scan (`region`, px in the frame) over the shot:
+ * starts halfway in and ends with the part filling ~80% of the width or 85% of the height,
+ * kept inside the scan (`img`) so the frame shows ink, not empty paper.
+ */
+export function regionCamera(
+  frame: number,
+  frames: number,
+  size: { width: number; height: number },
+  region: { x: number; y: number; w: number; h: number },
+  img: { x: number; y: number; w: number; h: number }
+): { scale: number; x: number; y: number } {
+  const end = Math.max(
+    1.15,
+    Math.min(
+      2.8,
+      (size.width * 0.8) / Math.max(1, region.w),
+      (size.height * 0.85) / Math.max(1, region.h)
+    )
+  )
+  const p = interpolate(frame, [0, frames], [0, 1], { ...clamp, easing: (t) => t * (2 - t) })
+  const scale = 1 + (end - 1) * (0.55 + 0.45 * p)
+  const inside = (c: number, lo: number, len: number, view: number): number => {
+    const half = view / (2 * scale)
+    return len * scale <= view ? lo + len / 2 : Math.min(lo + len - half, Math.max(lo + half, c))
+  }
+  const rx = region.x + region.w / 2
+  const ry = region.y + region.h * (0.4 + 0.2 * p)
+  return {
+    scale,
+    x: inside(rx, img.x, img.w, size.width),
+    y: inside(ry, img.y, img.h, size.height)
+  }
+}
+
+/**
  * The ad scan on full-frame paper, filling most of the height; the camera follows the
  * quoted phrase and phrases light up with an animated highlighter at the seconds given.
  */
@@ -143,7 +180,23 @@ export function PaperScan({
         }
       })()
     : null
-  const cam = scanCamera(frame, frames, fps, { width, height }, region)
+  // No phrase to follow: close in on this shot's part of the scan (OCR text bands).
+  const part = shot.scan?.regions?.[0]
+  const cam =
+    !region && part
+      ? regionCamera(
+          frame,
+          frames,
+          { width, height },
+          {
+            x: img.x + part.x * img.w,
+            y: img.y + part.y * img.h,
+            w: part.w * img.w,
+            h: part.h * img.h
+          },
+          img
+        )
+      : scanCamera(frame, frames, fps, { width, height }, region)
   const highlight = (boxes: Box[], at: number, k: number): React.ReactNode =>
     boxes.map((b, i) => {
       // Words light up one after another, like a marker dragged along the line.

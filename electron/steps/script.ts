@@ -15,7 +15,12 @@ import { generateStructured, llmLabel, type LlmCall } from '../services/llm'
 import { polishScript } from './polish'
 import type { Step } from './types'
 import { findVideoEvidence, videoEvidence, type Evidence } from './evidence'
-import { adQuotes, quoteInText, unsourcedFacts } from '../../shared/formats/vintage-ads'
+import {
+  adQuotes,
+  quoteInText,
+  scriptProblems,
+  unsourcedFacts
+} from '../../shared/formats/vintage-ads'
 import { isEnglishWord } from '../services/words'
 
 export const NO_AD_ALERT: ReviewAlert = {
@@ -175,7 +180,24 @@ ${ev.excerpt}
         words,
         scenes: Math.max(3, Math.round((minutes * 60) / 15))
       }) + structureRules(pack, structure.id)
-    const script = await generateStructured(prompt, scriptSchemaFor(pack), call)
+    let script = await generateStructured(prompt, scriptSchemaFor(pack), call)
+    // Ads on Trial: a late first Claim Check or a hook about the newspaper gets one more try.
+    let pacing = ev ? scriptProblems(script, ev.page) : []
+    if (ev && pacing.length) {
+      ctx.log(`Roteiro refeito: ${pacing.join('; ')}`, 'warn')
+      const retry = await generateStructured(
+        `${prompt}
+
+The previous draft broke these rules; fix them: the first Claim Check within 2:30 (about 375 words from the start of the hook), the biography told between the tests, and a hook whose first sentence is the story's conflict, never the newspaper, town or date where the ad was found.`,
+        scriptSchemaFor(pack),
+        call
+      ).catch((error) => {
+        if (ctx.signal.aborted) throw error
+        return null
+      })
+      const again = retry ? scriptProblems(retry, ev.page) : pacing
+      if (retry && again.length < pacing.length) [script, pacing] = [retry, again]
+    }
     script.structure = structure.id
     ctx.log(`Primeira versão: ${script.scenes.length} cenas e ${scriptWordCount(script)} palavras`)
     ctx.progress(0.6)
@@ -234,6 +256,7 @@ ${ev.excerpt}
           })
       }
     }
+    for (const message of pacing) alerts.unshift({ kind: 'pacing', message })
     if (ev && hasOverlay(pack, 'adVoice')) {
       const alert = adFactAlert(script, ev)
       if (alert) alerts.unshift(alert)

@@ -3,12 +3,14 @@ import { Composition, Still } from 'remotion'
 import {
   shortDuration,
   type ShortProps,
+  type CardProps,
   type ThumbnailProps,
   type VideoProps
 } from '../shared/render'
 import { ChannelIntro } from './ChannelIntro'
 import { Short } from './Short'
 import { FormatThumbnail } from './formats'
+import { VintageCard } from './formats/vintage-cards'
 import { Video } from './Video'
 
 const defaultVideo: VideoProps = {
@@ -43,6 +45,8 @@ const defaultThumb: ThumbnailProps = {
   background: '',
   text: '$250B → $0'
 }
+
+const defaultCard: CardProps = { kind: 'quote', text: 'Sample quote' }
 
 export const Root: React.FC = () => (
   <>
@@ -97,6 +101,13 @@ export const Root: React.FC = () => (
       width={1280}
       height={720}
       defaultProps={defaultThumb}
+    />
+    <Still
+      id="Card"
+      component={VintageCard}
+      width={1920}
+      height={1080}
+      defaultProps={defaultCard}
     />
   </>
 )

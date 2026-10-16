@@ -88,6 +88,11 @@ const fileOf = (src: string): string => decodeURIComponent(src.split('/').pop() 
 const mmss = (s: number): string =>
   `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
+/** Alerts that stop an Ads on Trial render: the same image past 3 uses, stills past the cadence. */
+export function pacingAlerts(alerts: string[]): string[] {
+  return alerts.filter((a) => /^(Mesma imagem|Imagem parada)/.test(a))
+}
+
 /** The automatic review of a rendered video: media coverage, stills, repeats, announcer. */
 export function buildReport(
   scenes: RenderScene[],

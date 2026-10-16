@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { getVideo, listScenes, updateScene } from '../db/repo'
 import { pythonPost } from '../services/python'
-import { readTimings } from './audio'
+import { readPronunciations, readTimings } from './audio'
 import type { Step } from './types'
 
 export interface Word {
@@ -30,6 +30,7 @@ export const transcribeStep: Step = {
     const fresh =
       existsSync(wordsFile) && statSync(wordsFile).mtimeMs > statSync(video.audio_path).mtimeMs
     if (!fresh) {
+      const names = Object.keys(readPronunciations(ctx.projectDir))
       ctx.log(
         `Transcrevendo com faster-whisper ${ctx.settings.whisperModel} (${ctx.settings.whisperDevice})`
       )
@@ -38,7 +39,9 @@ export const transcribeStep: Step = {
         {
           audio_path: video.audio_path,
           model: ctx.settings.whisperModel,
-          device: ctx.settings.whisperDevice
+          device: ctx.settings.whisperDevice,
+          // Respelled names sound right; the prompt makes Whisper write them as the script does.
+          initial_prompt: names.length ? `Names: ${names.join(', ')}.` : undefined
         },
         ctx.signal
       )

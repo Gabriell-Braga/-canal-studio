@@ -187,6 +187,13 @@ export function toPhrases(words: RenderWord[], hold = 0.6): Phrase[] {
 
 const CAPTION_HOLD_SEC = 1.5
 
+/** Dark box behind every burned-in caption: white text stays legible over white photos. */
+export const CAPTION_BOX: React.CSSProperties = {
+  background: 'rgba(0,0,0,0.6)',
+  padding: '10px 24px',
+  borderRadius: 10
+}
+
 function Captions({
   words,
   style,
@@ -223,7 +230,7 @@ function Captions({
     >
       <div
         style={{
-          ...(style.box ?? {}),
+          ...(style.box ?? CAPTION_BOX),
           maxWidth: 1500,
           textAlign: 'center',
           fontFamily: style.fontFamily,

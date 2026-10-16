@@ -25,7 +25,7 @@ export interface RenderScene {
   /** Images: the point to keep in frame when cropping (top of the main subject) */
   focus?: Focus
   /** A newspaper ad scan: drawn on paper, with phrases highlighted at given seconds of the shot */
-  scan?: { highlights: { at: number; boxes: Box[] }[]; aspect?: number }
+  scan?: { highlights: { at: number; boxes: Box[] }[]; aspect?: number; regions?: Box[] }
   /** Seconds this image stays up (main shot or sub-shot); missing = equal parts of the scene */
   sec?: number
   /** Paper-texture filler (public-domain AI image): not real media */
@@ -205,6 +205,25 @@ export interface ChannelIntroProps {
   [key: string]: unknown
 }
 
+/**
+ * Full-screen data card of Ads on Trial (quote, timeline, price, claim), rendered as a still
+ * and shown like any picture, so a scene that runs out of real media never repeats one.
+ */
+export interface CardProps {
+  kind: 'quote' | 'timeline' | 'price' | 'claim'
+  /** Quote, claim or price line */
+  text: string
+  /** Attribution or source, small */
+  sub?: string
+  /** Timeline years, in order */
+  years?: number[]
+  /** Year in red on the timeline */
+  current?: number
+  /** Red stamp word (claim verdict, "TODAY" on prices) */
+  stamp?: string
+  [key: string]: unknown
+}
+
 export interface RenderJob {
   mode: 'video' | 'short' | 'stills' | 'intro'
   /** Root folder the file server exposes; props reference files as {{root}}/relative/path */
@@ -213,7 +232,8 @@ export interface RenderJob {
   out: string
   video?: VideoProps
   short?: ShortProps
-  stills?: { props: ThumbnailProps; out: string }[]
+  /** Thumbnails, or Ads on Trial data cards (`composition: 'Card'`) */
+  stills?: { props: ThumbnailProps | CardProps; out: string; composition?: 'Thumbnail' | 'Card' }[]
   intro?: ChannelIntroProps
   concurrency?: number
   /** Short jobs: image scenes carry their crop focus (older shorts render again to get it) */

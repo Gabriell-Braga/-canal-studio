@@ -168,7 +168,11 @@ async function main(): Promise<void> {
     if (job.mode === 'stills' && job.stills) {
       for (const [i, still] of job.stills.entries()) {
         const inputProps = withBase(still.props, base)
-        const composition = await selectComposition({ serveUrl, id: 'Thumbnail', inputProps })
+        const composition = await selectComposition({
+          serveUrl,
+          id: still.composition ?? 'Thumbnail',
+          inputProps
+        })
         await renderStill({
           serveUrl,
           composition,

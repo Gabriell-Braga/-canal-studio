@@ -4,6 +4,7 @@ import { buildReport, type AnnouncerSpan, type ReviewReport } from '../../shared
 import type { VideoProps } from '../../shared/render'
 import { getState } from '../db/settings'
 import { isValidFile, runTool } from '../services/ffmpeg'
+import { readTimings } from './audio'
 
 /** dados/revisao/<id>: next to dados/projetos/<id>. */
 export function reviewDir(projectDir: string, videoId: number): string {
@@ -73,9 +74,14 @@ export async function writeReviewReport(
     await contactSheet(video, until, sheet, signal)
     if (isValidFile(sheet)) contact = sheet
   }
+  const built = buildReport(props.scenes, until, announcer, rejected)
+  // Notes the steps left for the review (a small media bank, scenes short of images).
+  built.alerts.push(...getState<string[]>(`review.notes.media.${videoId}`, []))
+  const announcerNote = readTimings(projectDir)?.announcerNote
+  if (announcerNote) built.alerts.push(announcerNote)
   const report: ReviewReport = {
     createdAt: new Date().toISOString(),
-    ...buildReport(props.scenes, until, announcer, rejected),
+    ...built,
     contactSheet: contact
   }
   writeFileSync(join(dir, 'report.json'), JSON.stringify(report, null, 2))

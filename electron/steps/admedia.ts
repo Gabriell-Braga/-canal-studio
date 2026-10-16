@@ -2,17 +2,21 @@ import { createHash } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { basename, join } from 'path'
 import { z } from 'zod'
-import type { AssetType, Scene, Settings } from '../../shared/types'
+import type { CardProps } from '../../shared/render'
+import type { AssetType, Scene, Script, Settings } from '../../shared/types'
+import { priceTag } from '../../shared/cpi'
+import { eraProblem, lateClue, sceneYears } from '../../shared/era'
 import { maxStillSec, shotDurations } from '../../shared/shots'
 import { adSceneData } from '../../shared/formats/vintage-ads'
 import { getVideo, listScenes, updateScene, updateVideo } from '../db/repo'
 import { setState } from '../db/settings'
-import { enhanceScan, scanAd } from '../services/adscan'
+import { enhanceScan, localOcr, scanAd } from '../services/adscan'
 import { credit } from '../services/chroniclingamerica'
 import { freeComfy } from '../services/comfy'
 import { isValidFile, runTool } from '../services/ffmpeg'
 import { generateStructured } from '../services/llm'
 import type { StockCandidate } from '../services/pexels'
+import { runRender } from '../services/remotion'
 import { fetchCandidate, searchReal } from '../services/stock'
 import { gatherAds, videoEvidence, type Evidence } from './evidence'
 import { polishSettings } from './polish'
@@ -24,6 +28,9 @@ import type { StepContext } from './types'
 /** The same file appears at most this many times in a video. */
 export const MAX_USES = 3
 
+/** Distinct pictures a video should have before planning its shots. */
+export const BANK_MIN = 25
+
 /** One usable picture of the video. */
 export interface MediaItem {
   file: string
@@ -31,6 +38,8 @@ export interface MediaItem {
   type: AssetType
   source: string
   credit: string | null
+  /** Year the source dates it to (ads: the paper's date) */
+  year?: number
   /** The investigated ad: its scan carries the highlighted quote */
   main?: boolean
 }
@@ -47,6 +56,11 @@ export interface PlanScene {
   mainAd: boolean
   /** Pictures the visual check approved for this scene */
   ok: MediaItem[]
+  /** Year the scene is set in (its own or the last one before it) */
+  year?: number | null
+  narration?: string
+  /** Files the checks refused for this scene: never shown in it, not even as a fallback */
+  banned?: Set<string>
 }
 
 export interface Library {
@@ -58,18 +72,22 @@ export interface Library {
 
 const rank = (k: MediaKind): number => MEDIA_KINDS.indexOf(k)
 
+/** Images a scene needs at its cadence (shared/shots). */
+export const slotsOf = (sc: Pick<PlanScene, 'start' | 'end' | 'hold'>): number =>
+  shotDurations(sc.start, sc.end, sc.hold).length
+
 /**
  * Which pictures each scene shows, in order (first = main asset). Each scene gets one image
  * per slot of its cadence (shared/shots), by priority: ads, the real product, the real
- * person, places, period engravings, never a random object. When a scene runs out:
- * another ad of the product, a period photo of the story, then the best media of the video
- * again (another framing). No file goes past MAX_USES while something else is left, and no
- * scene ever ends up empty. In the first minute the ad, the product and the face all show.
+ * person, places, period engravings, never a random object. When a scene runs out: another
+ * ad of the product, then a period photo of the story. A file refused for a scene (visual
+ * check, period clue) never shows in it, a picture from another era only where the scene
+ * talks about it, and no file goes past MAX_USES: slots left empty become data cards
+ * (planCards). In the first minute the ad, the product and the face all show.
  */
 export function planShots(scenes: PlanScene[], lib: Library): Map<number, MediaItem[]> {
   const uses = new Map<string, number>()
   const used = (m: MediaItem): number => uses.get(m.file) ?? 0
-  const free = (m: MediaItem): boolean => used(m) < MAX_USES
   const best = (list: MediaItem[]): MediaItem[] =>
     [...list].sort((a, b) => used(a) - used(b) || rank(a.kind) - rank(b.kind))
   // The first minute must show the real product and the real face.
@@ -77,34 +95,30 @@ export function planShots(scenes: PlanScene[], lib: Library): Map<number, MediaI
     lib.photos.find((p) => p.kind === 'product'),
     lib.photos.find((p) => p.kind === 'portrait')
   ].filter((m): m is MediaItem => !!m)
-  const everything = [...lib.ads, ...lib.photos]
   const out = new Map<number, MediaItem[]>()
 
   for (const sc of scenes) {
-    const need = shotDurations(sc.start, sc.end, sc.hold).length
+    const need = slotsOf(sc)
     const list: MediaItem[] = []
-    const take = (m: MediaItem | undefined): boolean => {
-      if (!m || list.length >= need || list.includes(m) || !free(m)) return false
+    const fits = (m: MediaItem): boolean =>
+      !sc.banned?.has(m.file) && !eraProblem(m.year, sc.year, sc.narration ?? '')
+    const take = (m: MediaItem | undefined, anyEra = false): boolean => {
+      if (!m || list.length >= need || list.includes(m) || used(m) >= MAX_USES) return false
+      if (sc.banned?.has(m.file) || (!anyEra && !fits(m))) return false
       list.push(m)
       uses.set(m.file, used(m) + 1)
       return true
     }
+    // The scan the script asks for is the scene's subject: its own date does not matter.
     if (sc.scan) {
       const main = lib.ads.find((a) => a.main)
-      if (!(sc.mainAd && take(main))) take(best(lib.ads.filter((a) => !a.main))[0] ?? main)
+      if (!(sc.mainAd && take(main, true)))
+        take(best(lib.ads.filter((a) => !a.main && !sc.banned?.has(a.file)))[0] ?? main, true)
     }
     if (sc.start < 60) for (const m of early) if (!used(m)) take(m)
     for (const m of best(sc.ok)) take(m)
     for (const m of best(lib.ads)) take(m)
     for (const m of best(lib.photos)) take(m)
-    // Last resort: the best pictures of the video again, as a new framing.
-    for (const m of best(everything)) take(m)
-    if (!list.length && everything.length) {
-      // Never an empty scene: the least used picture even past the limit.
-      const m = best(everything)[0]
-      list.push(m)
-      uses.set(m.file, used(m) + 1)
-    }
     out.set(sc.index, list)
   }
   return out
@@ -117,12 +131,136 @@ export function longestStill(sc: Pick<PlanScene, 'start' | 'end' | 'hold'>, coun
   return (sc.end - sc.start - (sc.hold > 0 ? d[0] : 0)) / Math.max(1, count - (sc.hold > 0 ? 1 : 0))
 }
 
+// ---------------------------------------------------------------- data cards
+
+/**
+ * Sentences of a narration, short enough to read on screen: a long one is cut into equal
+ * parts of at most 14 words, so every scene has enough lines to fill its slots.
+ */
+export function cardLines(narration: string): string[] {
+  return (narration.match(/[^.!?]+[.!?]*/g) ?? []).flatMap((t) => {
+    const words = t.trim().split(/\s+/).filter(Boolean)
+    if (words.length < 5) return []
+    if (words.length <= 18) return [words.join(' ')]
+    const parts = Math.ceil(words.length / 14)
+    const size = Math.ceil(words.length / parts)
+    return Array.from({ length: parts }, (_, i) => words.slice(i * size, (i + 1) * size))
+      .filter((w) => w.length >= 5)
+      .map((w, i, all) => `${i ? '…' : ''}${w.join(' ')}${i < all.length - 1 ? '…' : ''}`)
+  })
+}
+
+/**
+ * Full-screen cards for the slots planShots left empty, from what the scene says: its
+ * Claim Check, its price, the ad's words, the story's timeline, then a line of its narration.
+ * No card repeats in the video; a scene with nothing to say keeps fewer images.
+ */
+export function planCards(
+  scenes: (Pick<PlanScene, 'index' | 'year' | 'narration'> & { missing: number })[],
+  script: Script | null,
+  years: (number | null)[]
+): Map<number, CardProps[]> {
+  const claims = Array.isArray(script?.claims)
+    ? (script.claims as { scene?: number; quote?: string; verdict?: string; source?: string }[])
+    : []
+  const story = [...new Set(years.filter((y): y is number => !!y))].sort((a, b) => a - b)
+  // At most 7 marks: the ends and evenly spaced years between them.
+  const marks =
+    story.length <= 7
+      ? story
+      : [
+          ...new Set(
+            Array.from({ length: 7 }, (_, i) => story[Math.round((i * (story.length - 1)) / 6)])
+          )
+        ]
+  const seen = new Set<string>()
+  const out = new Map<number, CardProps[]>()
+  for (const sc of scenes) {
+    if (sc.missing <= 0) continue
+    const data = adSceneData(script, sc.index)
+    const options: CardProps[] = []
+    for (const c of claims.filter((c) => Number(c.scene) === sc.index && c.quote))
+      options.push({ kind: 'claim', text: String(c.quote), stamp: c.verdict, sub: c.source })
+    const price = data.price ? priceTag(data.price.usd, data.price.year) : null
+    if (price)
+      options.push({
+        kind: 'price',
+        text: `${price.then} in ${data.price?.year}`,
+        sub: `≈ ${price.today} today`
+      })
+    if (data.adQuote) options.push({ kind: 'quote', text: data.adQuote, sub: 'The ad' })
+    const lines = cardLines(sc.narration ?? '')
+    if (sc.year && marks.length >= 3)
+      options.push({
+        kind: 'timeline',
+        text: lines.find((l) => l.includes(String(sc.year))) ?? '',
+        years: marks.includes(sc.year) ? marks : [...marks, sc.year].sort((a, b) => a - b),
+        current: sc.year
+      })
+    for (const l of lines) options.push({ kind: 'quote', text: l })
+    const list: CardProps[] = []
+    for (const o of options) {
+      const key = `${o.kind}|${o.text}|${o.current ?? ''}`
+      if (list.length >= sc.missing || seen.has(key)) continue
+      seen.add(key)
+      list.push(o)
+    }
+    if (list.length) out.set(sc.index, list)
+  }
+  return out
+}
+
+/** Real pictures first, each card after one of them, so the scene alternates. */
+export function mergeCards<T>(media: T[], cards: T[]): T[] {
+  const out: T[] = []
+  for (let i = 0; i < Math.max(media.length, cards.length); i++) {
+    if (media[i]) out.push(media[i])
+    if (cards[i]) out.push(cards[i])
+  }
+  return out
+}
+
+/** Render the cards as stills in the scenes folder (once per content) and wrap them as media. */
+async function renderCards(
+  cards: Map<number, CardProps[]>,
+  dir: string,
+  ctx: StepContext
+): Promise<Map<number, MediaItem[]>> {
+  const out = new Map<number, MediaItem[]>()
+  const todo: { props: CardProps; out: string; composition: 'Card' }[] = []
+  for (const [index, list] of cards) {
+    out.set(
+      index,
+      list.map((props) => {
+        const hash = createHash('sha1').update(JSON.stringify(props)).digest('hex').slice(0, 12)
+        const file = join(dir, `card_${props.kind}_${hash}.png`)
+        if (!isValidFile(file)) todo.push({ props, out: file, composition: 'Card' })
+        return {
+          file,
+          kind: 'other',
+          type: 'stock_photo',
+          source: `card:${props.kind}`,
+          credit: null
+        }
+      })
+    )
+  }
+  if (todo.length)
+    await runRender(
+      { mode: 'stills', root: ctx.projectDir, out: '', stills: todo },
+      join(ctx.projectDir, 'cards-job.json'),
+      { progress: () => undefined, log: (m) => ctx.log(m), signal: ctx.signal }
+    )
+  return out
+}
+
 // ---------------------------------------------------------------- building the library
 
 const subjectsSchema = z.object({
   product: z.string(),
   person: z.string(),
-  places: z.array(z.string()).max(3)
+  places: z.array(z.string()).max(3),
+  extras: z.array(z.string()).max(6).default([])
 })
 
 /** The story's product, main person and places, as Commons search terms. */
@@ -138,7 +276,8 @@ Give Wikimedia Commons search terms for real period pictures:
 - product: the product as named on its bottle or box, e.g. "Lydia Pinkham's Vegetable Compound"
 - person: the real person at the center of the story (maker, founder, seller), full name, or "" (never a customer from a testimonial)
 - places: up to 3 places of the story (factory, town), e.g. ["Lydia E. Pinkham Medicine Company Lynn", "Lynn Massachusetts 1900"]
-Return ONLY JSON: {"product": "...", "person": "...", "places": ["..."]}`,
+- extras: up to 6 more period subjects of the story, each a short search: the product's trade card, label or box, the company's headquarters, a period magazine cover or newspaper about it, the law the story cites (e.g. "Pure Food and Drug Act 1906"), other people of the story
+Return ONLY JSON: {"product": "...", "person": "...", "places": ["..."], "extras": ["..."]}`,
     subjectsSchema,
     { settings: polishSettings(s), signal, temperature: 0, effort: 'low' }
   )
@@ -206,6 +345,7 @@ export async function vintageScenes(videoId: number, ctx: StepContext): Promise<
         type: 'stock_photo',
         source: `loc:${ad.page.id}`,
         credit: credit(ad.page),
+        year: Number(ad.page.date.slice(0, 4)) || undefined,
         main: k === 0
       })
     } catch (error) {
@@ -229,7 +369,7 @@ export async function vintageScenes(videoId: number, ctx: StepContext): Promise<
   const story = [script?.hook, ...scenes.map((sc) => sc.narration)].join(' ')
   const subjects = await storySubjects(video.topic, story, s, ctx.signal).catch((error) => {
     if (ctx.signal.aborted) throw error
-    return { product: '', person: '', places: [] as string[] }
+    return { product: '', person: '', places: [] as string[], extras: [] as string[] }
   })
   const libQueries: { q: string; kind: MediaKind }[] = [
     ...(subjects.product
@@ -239,13 +379,14 @@ export async function vintageScenes(videoId: number, ctx: StepContext): Promise<
         ]
       : []),
     ...(subjects.person ? [{ q: subjects.person, kind: 'portrait' as const }] : []),
-    ...subjects.places.map((q) => ({ q, kind: 'place' as const }))
+    ...subjects.places.map((q) => ({ q, kind: 'place' as const })),
+    ...subjects.extras.map((q) => ({ q, kind: 'other' as const }))
   ]
   const exclude = new Set<string>(adItems.map((a) => a.source))
   const libCandidates: { pick: StockCandidate; kind: MediaKind }[] = []
   for (const { q, kind } of libQueries) {
     const found = await searchReal(q, s, exclude, (m) => log(m, 'warn'), ctx.signal)
-    for (const pick of found.filter((c) => c.kind === 'stock_photo').slice(0, 4)) {
+    for (const pick of found.filter((c) => c.kind === 'stock_photo').slice(0, 6)) {
       exclude.add(pick.source)
       libCandidates.push({ pick, kind })
     }
@@ -282,17 +423,49 @@ export async function vintageScenes(videoId: number, ctx: StepContext): Promise<
   const item = (pick: StockCandidate, kind: MediaKind): MediaItem | null => {
     const file = files.get(pick.source)
     return file
-      ? { file, kind, type: 'stock_photo', source: pick.source, credit: pick.credit ?? null }
+      ? {
+          file,
+          kind,
+          type: 'stock_photo',
+          source: pick.source,
+          credit: pick.credit ?? null,
+          year: pick.year
+        }
       : null
   }
   ctx.progress(0.45)
 
-  // 5. Visual check: does the picture show what the narration says? Only "yes" is used.
+  // 5a. Printed clues of a later ad (nylon, ZIP codes, "yours for only"): refused everywhere.
+  const rejected: { scene: number; file: string; reason: string }[] = []
+  const ocrFile = join(vdir, 'ocr.json')
+  const ocrCache: Record<string, string> = existsSync(ocrFile)
+    ? (JSON.parse(readFileSync(ocrFile, 'utf8')) as Record<string, string>)
+    : {}
+  const late = new Set<string>()
+  for (const file of new Set(files.values())) {
+    if (ctx.signal.aborted) throw new Error('Cancelado')
+    const key = basename(file)
+    if (ocrCache[key] === undefined) {
+      ocrCache[key] = (await localOcr(file, ctx.signal)).text
+      writeFileSync(ocrFile, JSON.stringify(ocrCache, null, 2))
+    }
+    const clue = lateClue(ocrCache[key])
+    if (clue) {
+      late.add(file)
+      rejected.push({
+        scene: -1,
+        file,
+        reason: `pista de anúncio posterior a 1930 no texto (${clue})`
+      })
+    }
+  }
+  for (const [source, file] of files) if (late.has(file)) files.delete(source)
+
+  // 5b. Visual check: does the picture show what the narration says? Only "yes" is used.
   const cacheFile = join(vdir, 'checks.json')
   const cache: VisionCache = existsSync(cacheFile)
     ? (JSON.parse(readFileSync(cacheFile, 'utf8')) as VisionCache)
     : {}
-  const rejected: { scene: number; file: string; reason: string }[] = []
   const check = async (
     narration: string,
     items: MediaItem[],
@@ -347,13 +520,22 @@ export async function vintageScenes(videoId: number, ctx: StepContext): Promise<
       Number(c.scene)
     )
   )
+  const years = sceneYears(scenes.map((sc) => sc.year))
   for (const [k, sc] of scenes.entries()) {
     if (ctx.signal.aborted) throw new Error('Cancelado')
     if (sc.locked || sc.start_sec === null || sc.end_sec === null) continue
     const own = (perScene.get(sc.index) ?? [])
       .map((p) => item(p, 'other'))
       .filter((m): m is MediaItem => !!m)
-    const ok = await check(sc.narration, [...own, ...photos], sc.index)
+    const before = rejected.length
+    const approved = await check(sc.narration, [...own, ...photos], sc.index)
+    // Another era than the scene's (±15 years) only where the narration talks about it.
+    const ok = approved.filter((m) => {
+      const why = eraProblem(m.year, years[k], sc.narration)
+      if (why) rejected.push({ scene: sc.index, file: m.file, reason: `fora da época (${why})` })
+      return !why
+    })
+    const banned = new Set([...late, ...rejected.slice(before).map((r) => r.file)])
     const data = adSceneData(script ?? null, sc.index)
     const period = periods.find((p) => p.sceneId === sc.id)
     plan.push({
@@ -363,18 +545,55 @@ export async function vintageScenes(videoId: number, ctx: StepContext): Promise<
       hold: period ? period.end - sc.start_sec + 0.3 : 0,
       scan: data.scan && adItems.length > 0,
       mainAd: sc.index === 0 || claimScenes.has(sc.index) || !!data.adQuote,
-      ok
+      ok,
+      year: years[k],
+      narration: sc.narration,
+      banned
     })
     ctx.progress(0.45 + (0.45 * (k + 1)) / scenes.length)
   }
   setState(`relevance.rejected.video.${videoId}`, rejected)
   if (rejected.length) log(`${rejected.length} imagem(ns) reprovada(s) na checagem visual`, 'warn')
 
-  // 6. Shot by shot.
+  // 6. The video's bank: every distinct picture it may show. Below BANK_MIN the gaps become
+  // data cards instead of repeats, and the review says so.
+  const bank = [...adItems, ...photos]
+  for (const p of plan) for (const m of p.ok) if (!bank.some((b) => b.file === m.file)) bank.push(m)
+  writeFileSync(
+    join(dir, 'bank.json'),
+    JSON.stringify(
+      {
+        items: bank.map(({ file, kind, year, source, credit }) => ({
+          file,
+          kind,
+          year,
+          source,
+          credit
+        }))
+      },
+      null,
+      2
+    )
+  )
+  const notes: string[] = []
+  if (bank.length < BANK_MIN) {
+    notes.push(
+      `Banco de mídia com ${bank.length} imagens distintas (mínimo ${BANK_MIN}): lacunas viraram cartões de dados`
+    )
+    log(notes[0], 'warn')
+  }
+
+  // 7. Shot by shot; slots without media get a data card.
   const shots = planShots(plan, { ads: adItems, photos })
+  const cards = planCards(
+    plan.map((p) => ({ ...p, missing: slotsOf(p) - (shots.get(p.index)?.length ?? 0) })),
+    script ?? null,
+    years
+  )
+  const cardItems = await renderCards(cards, dir, ctx)
   let short = 0
   for (const p of plan) {
-    const list = shots.get(p.index) ?? []
+    const list = mergeCards(shots.get(p.index) ?? [], cardItems.get(p.index) ?? [])
     const sc = scenes.find((x) => x.index === p.index) as Scene
     if (!list.length) continue
     if (longestStill(p, list.length) > maxStillSec(p.start) + 1) short++
@@ -393,8 +612,11 @@ export async function vintageScenes(videoId: number, ctx: StepContext): Promise<
       }))
     })
   }
-  if (short)
-    log(`${short} cena(s) com menos imagens que o ritmo pede (ver relatório de revisão)`, 'warn')
+  if (short) {
+    notes.push(`${short} cena(s) com menos imagens que o ritmo pede, mesmo com cartões`)
+    log(notes.at(-1) as string, 'warn')
+  }
+  setState(`review.notes.media.${videoId}`, notes)
   const missing = listScenes(videoId).filter((sc) => !isValidFile(sc.asset_path))
   if (missing.length)
     throw new Error(
@@ -402,7 +624,7 @@ export async function vintageScenes(videoId: number, ctx: StepContext): Promise<
     )
   updateVideo(videoId, { synthetic_content: false, synthetic_reason: null })
   ctx.log(
-    `Cenas: ${adItems.length} anúncio(s), ${photos.length} foto(s) de época aprovadas, ${rejected.length} reprovada(s)`
+    `Cenas: ${adItems.length} anúncio(s), ${photos.length} foto(s) de época aprovadas, banco de ${bank.length}, ${[...cardItems.values()].flat().length} cartão(ões), ${rejected.length} reprovada(s)`
   )
   ctx.progress(1)
 }

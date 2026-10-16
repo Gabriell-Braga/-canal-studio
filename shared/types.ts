@@ -1,5 +1,6 @@
 import type { AnnouncerPlan } from './formats/vintage-ads'
 import type { ReviewReport } from './coverage'
+import type { ThumbBriefReport } from './thumb'
 export type ServiceId =
   | 'node'
   | 'python'
@@ -586,6 +587,10 @@ export interface Api {
     suggestTopics: (channelId: number) => Promise<string[]>
     /** Thumbnail model that won "Testar e comparar" for this video */
     thumbWinner: (id: number) => Promise<string | null>
+    /** Ads on Trial: each thumbnail's concept, blind test and feed-size scores */
+    thumbBrief: (id: number) => Promise<ThumbBriefReport | null>
+    /** Ads on Trial: new thumbnail concepts as a side job (status and title stay) */
+    newThumbConcept: (id: number) => Promise<void>
     setThumbWinner: (id: number, model: string | null) => Promise<void>
     /** The real ad (OCR text) a video is about; null for other formats */
     evidence: (id: number) => Promise<AdEvidence | null>

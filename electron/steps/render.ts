@@ -10,15 +10,17 @@ import {
 } from '../../shared/render'
 import type { Scene, Video } from '../../shared/types'
 import { getVideo, listScenes, updateVideo } from '../db/repo'
-import { isValidFile, probeDuration, probeSize } from '../services/ffmpeg'
+import { isValidFile, masterAudio, probeDuration, probeSize } from '../services/ffmpeg'
 import { remotionCodeHash, runRender } from '../services/remotion'
 import { readWords } from './transcribe'
 import { writeSrt } from '../services/captions'
 import { channelIntroProps, renderCompanies, yearCardsFor } from './overlays'
 import { readTimings } from './audio'
+import { FinalError } from './types'
 import { readScan } from '../services/adscan'
 import { shotDurations } from '../../shared/shots'
-import { mediaGaps } from '../../shared/coverage'
+import { scanRegions } from '../../shared/framing'
+import { buildReport, mediaGaps, pacingAlerts } from '../../shared/coverage'
 import { writeReviewReport } from './review-report'
 import { sceneFocus } from './focus'
 import { musicTurn, planMusic, prepareMusic } from './music'
@@ -90,7 +92,10 @@ export const renderStep: Step = {
     const scenes = listScenes(videoId)
     const missing = scenes.filter((s) => !isValidFile(s.asset_path) || s.start_sec === null)
     if (missing.length)
-      throw new Error(`${missing.length} cena(s) sem mídia ou tempo; refaça as cenas`)
+      throw new FinalError(
+        `${missing.length} cena(s) sem mídia ou tempo; refaça as cenas`,
+        'scenes'
+      )
 
     const pack = formatOf(ctx.settings.format)
     // Public-domain formats turn AI images into paper texture: on screen that is no media.
@@ -99,6 +104,7 @@ export const renderStep: Step = {
     const periods =
       (timings as { periods?: { sceneId: number; start: number; end: number; quote?: string }[] })
         ?.periods ?? []
+    const scanShots = new Map<string, number>()
     const media = async (
       path: string,
       type: Scene['asset_type'],
@@ -106,6 +112,12 @@ export const renderStep: Step = {
       sec: number
     ): Promise<NonNullable<RenderScene['shots']>[number]> => {
       const isVideo = type === 'stock_video' || type === 'ai_video'
+      // Each new shot of a scan closes in on another part of it. Counted before any await,
+      // so the order follows the scenes.
+      const scan = readScan(path)
+      const regions = scan ? scanRegions(scan.words ?? []) : []
+      const nth = scanShots.get(path) ?? 0
+      if (scan) scanShots.set(path, nth + 1)
       return {
         src: url(pd, path),
         type: isVideo ? 'video' : 'image',
@@ -113,7 +125,15 @@ export const renderStep: Step = {
         sec,
         clipDuration: isVideo ? await probeDuration(path) : undefined,
         focus: isVideo ? undefined : await sceneFocus(path, ctx),
-        ...(readScan(path) ? { scan: { highlights: [], aspect: await aspectOf(path) } } : {}),
+        ...(scan
+          ? {
+              scan: {
+                highlights: [],
+                aspect: await aspectOf(path),
+                regions: regions.map((_, k) => regions[(nth + k) % regions.length])
+              }
+            }
+          : {}),
         ...(fillerAi && type === 'ai_image' ? { filler: true } : {})
       }
     }
@@ -228,9 +248,19 @@ export const renderStep: Step = {
     if (gaps.length) {
       const at = (t: number): string =>
         `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
-      throw new Error(
-        `Trechos sem mídia: ${gaps.map((g) => `${at(g.from)}–${at(g.to)}`).join(', ')}. Refaça as cenas.`
+      throw new FinalError(
+        `Trechos sem mídia: ${gaps.map((g) => `${at(g.from)}–${at(g.to)}`).join(', ')}. Refaça as cenas.`,
+        'scenes'
       )
+    }
+    // Ads on Trial: repeats past 3 uses and stills past the cadence stop the render too.
+    if (fillerAi) {
+      const pacing = pacingAlerts(buildReport(props.scenes, narrationSec, periods, []).alerts)
+      if (pacing.length)
+        throw new FinalError(
+          `Ritmo fora da regra (${pacing.length}): ${pacing.slice(0, 3).join('; ')}${pacing.length > 3 ? '…' : ''}. Refaça as cenas.`,
+          'scenes'
+        )
     }
     const report = async (): Promise<void> => {
       try {
@@ -272,6 +302,9 @@ export const renderStep: Step = {
       join(pd, 'render-job.json'),
       { progress: ctx.progress, log: (m) => ctx.log(m), signal: ctx.signal }
     )
+    // Music + narration can peak above the narration alone: -14 LUFS, never over -1 dBTP.
+    const level = await masterAudio(tmp, ctx.signal)
+    ctx.log(`Áudio final: ${level.input_i} LUFS, pico ${level.input_tp} dBTP antes do limitador`)
     rmSync(out, { force: true })
     renameSync(tmp, out)
     writeFileSync(hashFile, hash)

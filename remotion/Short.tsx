@@ -15,7 +15,7 @@ import type { RenderScene, ShortProps } from '../shared/render'
 import { LogoIntro, LogoTile, YearCards } from './Overlays'
 import { THUMB } from '../shared/thumb'
 import { brandTextShadow, template } from './templates'
-import { KenBurns, toPhrases } from './Video'
+import { CAPTION_BOX, KenBurns, toPhrases } from './Video'
 
 const FADE_SEC = 0.35
 /** The short opens on the company logo so the viewer knows the subject at once. */
@@ -95,6 +95,7 @@ function ShortCaptions({
       <div
         style={{
           transform: `scale(${0.85 + 0.15 * pop})`,
+          ...CAPTION_BOX,
           maxWidth: 940,
           textAlign: 'center',
           fontFamily: look.font,

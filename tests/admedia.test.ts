@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   longestStill,
   MAX_USES,
+  mergeCards,
+  cardLines,
+  planCards,
   planShots,
   type MediaItem,
   type PlanScene
@@ -39,9 +42,26 @@ describe('planShots', () => {
   const ads = [media('ad0', 'ad', true), media('ad1', 'ad'), media('ad2', 'ad')]
   const photos = [media('bottle', 'product'), media('lydia', 'portrait'), media('lynn', 'place')]
 
-  it('never leaves a scene without media, even with almost nothing to show', () => {
+  it('never goes past MAX_USES, even with almost nothing to show (cards fill the rest)', () => {
     const plan = planShots(scenes(300, 15), { ads: [media('ad0', 'ad', true)], photos: [] })
-    for (const list of plan.values()) expect(list.length).toBeGreaterThan(0)
+    const uses = [...plan.values()].flat().filter((m) => m.file === 'ad0').length
+    expect(uses).toBe(MAX_USES)
+  })
+
+  it('never shows a picture in a scene that refused it, not even as a fallback', () => {
+    const lynn = media('lynn', 'place')
+    const sc = scenes(200, 20).map((s) => ({ ...s, banned: new Set(['lynn']) }))
+    const plan = planShots(sc, { ads: [], photos: [lynn] })
+    expect([...plan.values()].flat()).toHaveLength(0)
+  })
+
+  it('keeps pictures of another era out of a scene unless it talks about later', () => {
+    const box = { ...media('box1950', 'product'), year: 1950 }
+    const [sc] = scenes(20, 20)
+    const birth = { ...sc, start: 100, end: 120, year: 1819, narration: 'She was born in Lynn.' }
+    expect(planShots([birth], { ads: [], photos: [box] }).get(0)).toEqual([])
+    const after = { ...birth, narration: 'Decades later the company still sold it.' }
+    expect(planShots([after], { ads: [], photos: [box] }).get(0)).toEqual([box])
   })
 
   it('falls back to other ads, then period photos, then reuse, when a scene has no approved picture', () => {
@@ -95,5 +115,48 @@ describe('planShots', () => {
   it('reports the longest still when a scene has fewer images than slots', () => {
     expect(longestStill({ start: 100, end: 121, hold: 0 }, 1)).toBe(21)
     expect(longestStill({ start: 100, end: 121, hold: 0 }, 3)).toBe(7)
+  })
+})
+
+describe('planCards', () => {
+  const script = {
+    claims: [{ scene: 2, quote: 'Cures uterine trouble', verdict: 'FALSE', source: 'JAMA, 1915' }],
+    scenes: [{ narration: 'x' }, { narration: 'x', price: { usd: 1, year: 1903 } }]
+  } as never
+  const sc = (index: number, missing: number, narration = '', year: number | null = null) => ({
+    index,
+    missing,
+    narration,
+    year
+  })
+
+  it('fills the empty slots with the claim, the price, then lines of the narration, never twice', () => {
+    const cards = planCards(
+      [
+        sc(
+          2,
+          3,
+          'In 1903 the paper ran the ad for her cure. Women believed every single word of it.',
+          1903
+        )
+      ],
+      script,
+      [1819, 1875, 1883, 1903]
+    )
+    const kinds = cards.get(2)?.map((c) => c.kind)
+    expect(kinds).toEqual(['claim', 'price', 'timeline'])
+    const again = planCards([sc(1, 2, 'x'), sc(3, 1, 'x')], script, [null])
+    expect(again.size).toBe(0)
+  })
+
+  it('cuts long sentences into readable parts instead of dropping them', () => {
+    const long = Array.from({ length: 40 }, (_, i) => `w${i}`).join(' ') + '.'
+    const lines = cardLines(`Too short. ${long}`)
+    expect(lines).toHaveLength(3)
+    for (const l of lines) expect(l.replace(/…/g, '').split(' ').length).toBeLessThanOrEqual(14)
+  })
+
+  it('alternates real pictures and cards', () => {
+    expect(mergeCards(['a', 'b'], ['c1'])).toEqual(['a', 'c1', 'b'])
   })
 })

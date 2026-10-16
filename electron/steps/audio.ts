@@ -12,12 +12,17 @@ import {
   YEAR_CARD_SEC,
   yearChanges
 } from '../../shared/render'
-import { polishScript } from './polish'
+import { z } from 'zod'
+import { generateStructured } from '../services/llm'
+import { polishScript, polishSettings } from './polish'
 import { periodVoice } from '../../shared/formats'
 import {
   estimatedStarts,
+  announcerNoteFor,
   planAnnouncer,
   speakableAd,
+  speakableNarration,
+  type Pronunciations,
   type AnnouncerPlan,
   type AnnouncerSegment
 } from '../../shared/formats/vintage-ads'
@@ -44,6 +49,8 @@ export interface AudioTimings {
   intro?: { start: number; duration: number }
   /** Where the period announcer speaks (radio static included), seconds of narration.wav */
   periods?: AnnouncerPeriod[]
+  /** Why the video has no period announcer (pt-BR), shown in the review; absent when it has one */
+  announcerNote?: string
 }
 
 export interface AnnouncerPeriod {
@@ -232,6 +239,125 @@ export async function periodLine(
   )
 }
 
+/** One name of the per-video pronunciation dictionary, with what Whisper heard in the test. */
+export interface PronEntry {
+  /** Respelling ("Bock") or misaki phonemes ("/bˈɑk/") */
+  say: string
+  /** Used by the narrator; false when the plain name tested closer than the respelling */
+  ok: boolean
+  heard?: string
+  heardPlain?: string
+}
+
+const PRON_FILE = 'pronuncias.json'
+
+/** Similarity of two spellings, 0–1 (1 − normalized Levenshtein over letters). */
+export function spellingSimilarity(a: string, b: string): number {
+  const x = a.toLowerCase().replace(/[^a-z]/g, '')
+  const y = b.toLowerCase().replace(/[^a-z]/g, '')
+  if (!x || !y) return 0
+  let prev = Array.from({ length: y.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= x.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= y.length; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1))
+    prev = cur
+  }
+  return 1 - prev[y.length] / Math.max(x.length, y.length)
+}
+
+/** The dictionary entries the narrator uses. */
+export function usablePronunciations(entries: Record<string, PronEntry>): Pronunciations {
+  return Object.fromEntries(
+    Object.entries(entries)
+      .filter(([, e]) => e.ok && e.say?.trim())
+      .map(([name, e]) => [name, e.say])
+  )
+}
+
+export function readPronunciations(projectDir: string): Record<string, PronEntry> {
+  const file = join(projectDir, 'audio', PRON_FILE)
+  if (!existsSync(file)) return {}
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as Record<string, PronEntry>
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * The video's pronunciation dictionary (audio/pronuncias.json, editable by hand): proper
+ * names the TTS may misread, each with a respelling, tested once by ear (Kokoro then
+ * Whisper). A respelling is kept only when Whisper hears it at least as close to the name
+ * as the plain name. Made once per video; an existing file is used as is.
+ */
+async function pronunciations(
+  script: Script,
+  dir: string,
+  voice: string,
+  s: Settings,
+  signal: AbortSignal,
+  log: (m: string, level?: 'info' | 'warn') => void
+): Promise<Pronunciations> {
+  const file = join(dir, PRON_FILE)
+  if (existsSync(file)) return usablePronunciations(readPronunciations(join(dir, '..')))
+  const text = [script.hook, ...script.scenes.map((sc) => sc.narration)].join(' ')
+  let names: { name: string; say: string }[] = []
+  try {
+    const r = await generateStructured(
+      `This narration will be read by an American English text-to-speech voice (Kokoro, misaki G2P). List the proper names in it (people, places, brands) that such a voice is likely to mispronounce, each with a plain English respelling that makes it say the name correctly, e.g. {"name": "Bok", "say": "Bock"}, {"name": "Aroline", "say": "Arro-leen"}. Skip common names it reads fine. Use the name exactly as written in the text.
+
+NARRATION:
+${text.slice(0, 12000)}`,
+      z.object({ names: z.array(z.object({ name: z.string(), say: z.string() })).max(20) }),
+      { settings: polishSettings(s), signal, temperature: 0, effort: 'low' }
+    )
+    names = r.names.filter((n) => n.name.trim() && n.say.trim() && text.includes(n.name))
+  } catch (error) {
+    if (signal.aborted) throw error
+    log(`Dicionário de pronúncia indisponível: ${(error as Error).message}`, 'warn')
+    return {}
+  }
+  const hear = async (say: string, k: number, tag: string): Promise<string> => {
+    const wav = join(dir, `pron_${k}_${tag}.wav`)
+    await pythonPost('/tts', { text: `${say}.`, voice, speed: 1, out_path: wav }, signal)
+    const r = await pythonPost<{ words: { word: string }[] }>(
+      '/transcribe',
+      { audio_path: wav, model: s.whisperModel, device: s.whisperDevice },
+      signal
+    )
+    return r.words
+      .map((w) => w.word)
+      .join(' ')
+      .trim()
+  }
+  const entries: Record<string, PronEntry> = {}
+  for (const [k, n] of names.entries()) {
+    try {
+      const heard = await hear(n.say, k, 'say')
+      const heardPlain = await hear(n.name, k, 'plain')
+      // ponytail: spelling similarity as the ear test; a phoneme-level check if names still slip
+      const ok = spellingSimilarity(heard, n.name) >= spellingSimilarity(heardPlain, n.name)
+      entries[n.name] = { say: n.say, ok, heard, heardPlain }
+    } catch (error) {
+      if (signal.aborted) throw error
+      entries[n.name] = { say: n.say, ok: false }
+    }
+  }
+  writeFileSync(file, JSON.stringify(entries, null, 2))
+  const used = usablePronunciations(entries)
+  log(
+    `Pronúncia: ${Object.keys(entries).length} nome(s) testado(s), ${Object.keys(used).length} com grafia ajustada${
+      Object.keys(used).length
+        ? ` (${Object.entries(used)
+            .map(([a, b]) => `${a} → ${b}`)
+            .join(', ')})`
+        : ''
+    }`
+  )
+  return used
+}
+
 export function readTimings(projectDir: string): AudioTimings | null {
   const file = join(projectDir, 'audio', 'timings.json')
   if (!existsSync(file)) return null
@@ -277,17 +403,21 @@ export const audioStep: Step = {
         ? scenes.length - 1
         : -1
 
-    // 1. The narrator's voice for every scene.
+    // 1. The narrator's voice for every scene: titles in words, names as the dictionary says.
+    const dict = script
+      ? await pronunciations(script, dir, voice, ctx.settings, ctx.signal, (m, l) => ctx.log(m, l))
+      : {}
+    const spoken = (text: string): string => speakableNarration(text, dict)
     const timings: SceneTiming[] = []
     let generated = 0
     for (const [i, scene] of scenes.entries()) {
       if (ctx.signal.aborted) throw new Error('Cancelado')
       const speed = i === outroIndex ? voiceSpeed * OUTRO_SPEED : voiceSpeed
-      const file = sceneFile(dir, scene.index, scene.narration, voice, speed)
+      const file = sceneFile(dir, scene.index, spoken(scene.narration), voice, speed)
       if (!isValidFile(file)) {
         await pythonPost(
           '/tts',
-          { text: scene.narration, voice, speed, out_path: file },
+          { text: spoken(scene.narration), voice, speed, out_path: file },
           ctx.signal
         )
         generated++
@@ -322,6 +452,7 @@ export const audioStep: Step = {
     // first minute, 90 s apart. Inserting them only pushes later scenes further.
     const secondary = periodVoice(ctx.settings)
     const periods: AnnouncerPeriod[] = []
+    let announcerNote: string | undefined
     if (secondary) {
       const starts = sceneStarts()
       const plan = planAnnouncer(
@@ -334,6 +465,10 @@ export const audioStep: Step = {
         isEnglishWord
       )
       for (const d of plan.dropped) ctx.log(`Locutor fora da cena ${d.scene}: ${d.reason}`)
+      if (!plan.segments.length) {
+        announcerNote = announcerNoteFor(plan)
+        ctx.log(announcerNote, 'warn')
+      }
       const offsets = new Map<number, { at: number; length: number }>()
       for (const seg of plan.segments) {
         const k = scenes.findIndex((s) => s.index === seg.scene)
@@ -341,7 +476,7 @@ export const audioStep: Step = {
         const file = sceneFile(
           dir,
           seg.scene,
-          `${secondary.voice}@${secondary.speed}:${seg.bridge}|${seg.quote}||${scenes[k].narration}`,
+          `${secondary.voice}@${secondary.speed}:${seg.bridge}|${seg.quote}||${spoken(scenes[k].narration)}`,
           voice,
           speed
         )
@@ -399,7 +534,8 @@ export const audioStep: Step = {
       total,
       files,
       intro,
-      periods
+      periods,
+      announcerNote
     }
     writeFileSync(timingsFile, JSON.stringify(data, null, 2))
     updateVideo(videoId, { audio_path: out })

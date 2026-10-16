@@ -185,6 +185,8 @@ export function registerIpc(
   handle('videos:suggestedSlot', (id: number) => pipeline.suggestedSlot(id))
   handle('videos:suggestTopics', (channelId: number) => pipeline.suggestTopics(channelId))
   handle('videos:thumbWinner', (id: number) => pipeline.thumbWinner(id))
+  handle('videos:thumbBrief', (id: number) => pipeline.thumbBrief(id))
+  handle('videos:newThumbConcept', (id: number) => pipeline.newThumbConcept(id))
   handle('videos:evidence', (id: number) => {
     const ev = videoEvidence(id)
     return ev

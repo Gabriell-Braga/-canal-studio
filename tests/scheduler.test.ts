@@ -13,7 +13,7 @@ import {
 } from '../electron/db/repo'
 import { setSettings, setState } from '../electron/db/settings'
 import { Scheduler, type QueueEvent } from '../electron/queue/scheduler'
-import type { Step } from '../electron/steps/types'
+import { FinalError, type Step } from '../electron/steps/types'
 import { freshDb, waitFor } from './helpers'
 
 let clock = new Date(2026, 9, 6, 12, 0)
@@ -21,6 +21,7 @@ let concurrentGpu = 0
 let maxConcurrentGpu = 0
 let failTimes: Partial<Record<JobType, number>> = {}
 let events: QueueEvent[] = []
+let finalFail: JobType | null = null
 
 function fakeStep(type: JobType, status: Step['status'], ms = 30): Step {
   return {
@@ -32,6 +33,7 @@ function fakeStep(type: JobType, status: Step['status'], ms = 30): Step {
       try {
         await new Promise((r) => setTimeout(r, ms))
         if (ctx.signal.aborted) throw new Error('aborted')
+        if (finalFail === type) throw new FinalError(`${type} cannot work`, 'scenes')
         if ((failTimes[type] ?? 0) > 0) {
           failTimes[type]!--
           throw new Error(`${type} broke`)
@@ -89,6 +91,7 @@ beforeEach(() => {
   concurrentGpu = 0
   maxConcurrentGpu = 0
   failTimes = {}
+  finalFail = null
   events = []
 })
 
@@ -149,6 +152,17 @@ describe('scheduler', () => {
     s.runNow()
     await drain(s)
     expect(getVideo(ids[2]).status).toBe('FINAL_REVIEW')
+  })
+
+  it('stops at once on a FinalError and points the retry at its step', async () => {
+    const s = makeScheduler()
+    const v = createVideo({ topic: 'G', durationMin: 1, synthetic: true })
+    finalFail = 'render'
+    const job = enqueueJob(v.id, 'render', 'now')
+    await drain(s)
+    expect(getJob(job.id).status).toBe('failed')
+    expect(getJob(job.id).attempts).toBe(1)
+    expect(getVideo(v.id).error_step).toBe('scenes')
   })
 
   it('retries with back-off, then marks the video as ERROR', async () => {

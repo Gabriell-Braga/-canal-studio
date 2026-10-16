@@ -62,13 +62,18 @@ const TEXT_FILLER = new Set('the a an of to in on at and or for is was it its th
  * Thumbnail text: at most 3 words and never the title's words (the two must add up, not
  * repeat). Words the title already says are dropped; what is left may be nothing.
  */
-export function thumbText(text: string, title: string): string {
-  const said = new Set(
+/** The title's meaningful words, lowercase: thumbnail text must not repeat them. */
+export function titleWords(title: string): Set<string> {
+  return new Set(
     title
       .toLowerCase()
       .split(/[^a-z0-9$%]+/)
       .filter((w) => w.length > 2 && !TEXT_FILLER.has(w))
   )
+}
+
+export function thumbText(text: string, title: string): string {
+  const said = titleWords(title)
   const words = text
     .replace(/["“”]/g, '')
     .split(/\s+/)
@@ -282,4 +287,242 @@ export function testimonialOnly(person: string, adText: string, story: string): 
   if (last.length < 3) return false
   const has = (t: string): boolean => new RegExp(`\\b${last}`, 'i').test(t)
   return has(adText) && !has(story)
+}
+
+// ---------------------------------------------------------------- Ads on Trial concepts
+
+/**
+ * Ads on Trial thumbnails start from an idea, not from the materials: the video's conflict,
+ * the question the thumbnail plants, and three different concepts that show it.
+ */
+export const CONCEPT_TYPES = ['contradiction', 'secret', 'mystery'] as const
+export type ConceptType = (typeof CONCEPT_TYPES)[number]
+
+export const CONCEPT_LABELS: Record<ConceptType, string> = {
+  contradiction: 'Contradição',
+  secret: 'Segredo',
+  mystery: 'Mistério'
+}
+
+/** Photos come from the video's media bank; the rest are drawn with the brand's parts. */
+export const MEDIA_ELEMENTS = ['portrait', 'product', 'ad', 'place'] as const
+export const DRAWN_ELEMENTS = ['letter', 'stamp', 'label', 'tombstone', 'document'] as const
+export type ElementKind = (typeof MEDIA_ELEMENTS)[number] | (typeof DRAWN_ELEMENTS)[number]
+
+export interface ConceptElement {
+  kind: ElementKind
+  /** What it is, concretely ("Lydia Pinkham's real portrait", "a letter dated 1903") */
+  what: string
+  /** Portraits: the full name of the person shown */
+  person: string
+  /** Words drawn on it: letter line, stamp word, label name, tombstone inscription */
+  words: string
+}
+
+export interface ThumbConcept {
+  type: ConceptType
+  idea: string
+  /** Dominant subject first, then the conflict element, then an optional accent */
+  elements: ConceptElement[]
+  text: string
+  /** One word of `text` painted red (the conflict point); '' when a stamp carries it */
+  accent_word: string
+  background: 'dark' | 'paper'
+  why_click: string
+}
+
+export interface ThumbBriefing {
+  conflict: string
+  question: string
+  concepts: ThumbConcept[]
+}
+
+/** Feed-size scores (1–10) from the vision model; every one must reach THUMB_MIN_SCORE. */
+export interface ThumbScores {
+  understand: number
+  click: number
+  readable: number
+  stands_out: number
+  note: string
+}
+
+export const THUMB_MIN_SCORE = 7
+
+/** What the review shows for each thumbnail: its concept, the blind test and its scores. */
+export interface ThumbConceptReport {
+  file: string
+  concept: ThumbConcept
+  /** What a viewer who saw only the concept thought the video was about */
+  blind: { about: string; question: string; ok: boolean } | null
+  scores: ThumbScores | null
+  attempts: number
+}
+
+export interface ThumbBriefReport {
+  conflict: string
+  question: string
+  thumbs: ThumbConceptReport[]
+}
+
+const PRICE_ONLY = /^[\s$€£¢\d.,→%x×-]+$/i
+
+/** Why a concept cannot be used (pt-BR); empty when it can. */
+export function conceptProblems(c: ThumbConcept, title: string): string[] {
+  const out: string[] = []
+  const words = c.text.replace(/["“”]/g, '').split(/\s+/).filter(Boolean)
+  if (!words.length) out.push('sem texto')
+  if (words.length > 4) out.push(`texto com ${words.length} palavras (máximo 4)`)
+  const said = titleWords(title)
+  const repeated = words.filter((w) => said.has(w.toLowerCase().replace(/[^a-z0-9$%]/g, '')))
+  if (repeated.length) out.push(`texto repete o título (${repeated.join(', ')})`)
+  if (words.length && PRICE_ONLY.test(c.text)) out.push('texto é só um preço, sem contexto')
+  if (!c.elements.length) out.push('sem elementos visuais')
+  if (c.elements.length > 3) out.push(`${c.elements.length} elementos (máximo 3)`)
+  if (c.elements.some((e) => e.kind === 'portrait' && !e.person.trim()))
+    out.push('retrato sem o nome da pessoa')
+  if (c.accent_word && !words.some((w) => w.toLowerCase().includes(c.accent_word.toLowerCase())))
+    out.push('palavra de destaque fora do texto')
+  return out
+}
+
+/** Problems of a whole briefing: three concepts, one of each type, each usable. */
+export function briefingProblems(b: ThumbBriefing, title: string): string[] {
+  const out: string[] = []
+  if (!b.conflict.trim()) out.push('sem conflito')
+  if (!b.question.trim()) out.push('sem pergunta')
+  const types = b.concepts.map((c) => c.type)
+  if (b.concepts.length !== 3 || new Set(types).size !== 3)
+    out.push(
+      `conceitos precisam ser um de cada tipo (${CONCEPT_TYPES.join(', ')}); veio ${types.join(', ')}`
+    )
+  for (const c of b.concepts) for (const p of conceptProblems(c, title)) out.push(`${c.type}: ${p}`)
+  return out
+}
+
+/** Scores below the minimum, as a pt-BR list; empty = the thumbnail passes. */
+export function scoreProblems(s: ThumbScores): string[] {
+  const names: [keyof ThumbScores, string][] = [
+    ['understand', 'entendo o assunto em 2 s'],
+    ['click', 'dá vontade de clicar'],
+    ['readable', 'dá para ler o texto'],
+    ['stands_out', 'o sujeito se destaca']
+  ]
+  return names
+    .filter(([k]) => (s[k] as number) < THUMB_MIN_SCORE)
+    .map(([k, label]) => `${label}: ${s[k]}`)
+}
+
+/** One element as the Remotion layout draws it: a bank picture, or a drawn brand part. */
+export interface ConceptPiece {
+  kind: ElementKind
+  /** Picture of a media element ({{root}} URL); null = drawn from `words` */
+  src: string | null
+  words: string
+  /** width / height of the picture */
+  aspect?: number
+}
+
+/** `concept` prop of a concept thumbnail (layout "concept"). */
+export interface ConceptDraw {
+  background: 'dark' | 'paper'
+  subject: ConceptPiece
+  support: ConceptPiece | null
+  /** Red rubber stamp over the seam ('' = none) */
+  stamp: string
+  /** Word of the text painted red ('' = none) */
+  accentWord: string
+}
+
+/** Aspect a drawn part gets in the subject box. */
+export function pieceAspect(p: ConceptPiece): number {
+  return p.src ? (p.aspect ?? 0.8) : p.kind === 'stamp' ? 1.6 : 0.8
+}
+
+/** Shortest picture a thumbnail may use, px: anything smaller turns to mush when enlarged. */
+export const MIN_THUMB_MEDIA_PX = 600
+
+export interface ConceptLayout {
+  /** Dominant subject, left: 40–60% of the frame */
+  subject: PxBox
+  /** Conflict element, bottom right */
+  support: PxBox
+  /** The text, top right, one or two lines */
+  texts: PlacedText[]
+  /** Optional accent stamp, over the seam between subject and support */
+  stamp?: PlacedText
+  problems: string[]
+}
+
+/** Bold condensed caps (Oswald 700, 1 px tracking): conservative average glyph width, em. */
+const BOLD_RATIO = 0.56
+
+/** Text in one or two lines, whichever reads bigger, left-aligned in the zone. */
+export function fitLines(text: string, zone: PxBox, maxSize: number): PlacedText[] {
+  const words = text.toUpperCase().split(/\s+/).filter(Boolean)
+  const outline = 8
+  const options: string[][] = [[words.join(' ')]]
+  for (let k = 1; k < words.length; k++)
+    options.push([words.slice(0, k).join(' '), words.slice(k).join(' ')])
+  let best: PlacedText[] = []
+  let bestSize = 0
+  for (const lines of options) {
+    const longest = Math.max(...lines.map((l) => l.length), 1)
+    const size = Math.min(
+      maxSize,
+      (zone.h - outline * lines.length) / (lines.length * 1.05),
+      (zone.w - outline) / (longest * BOLD_RATIO)
+    )
+    if (size <= bestSize) continue
+    bestSize = size
+    best = lines.map((line, i) => {
+      const w = line.length * BOLD_RATIO * size + outline
+      const box = { x: zone.x, y: zone.y + i * size * 1.05, w, h: size + outline }
+      return {
+        kind: 'title' as const,
+        text: line,
+        size,
+        box,
+        rotate: 0,
+        center: { x: box.x + w / 2, y: box.y + box.h / 2 }
+      }
+    })
+  }
+  return best
+}
+
+/**
+ * Boxes of a concept thumbnail (Z reading): the dominant subject on the left, the text top
+ * right, the conflict element bottom right, an optional red stamp over the seam. The subject
+ * never covers less than 40% of the frame: a tall picture is cropped from the top to reach it.
+ */
+export function conceptLayout(text: string, subjectAspect: number, stampText = ''): ConceptLayout {
+  const S = safeArea()
+  const right = S.x + S.w
+  const frame = V.width * V.height
+  const h = V.height - 2 * 36
+  const w = Math.min(760, Math.max((0.4 * frame) / h, h * subjectAspect))
+  const subject = { x: 36, y: 36, w, h }
+  const sx = subject.x + subject.w + 28
+  const support = { x: sx, y: 250, w: V.width - 36 - sx, h: V.height - V.strip - 250 }
+  const tx = Math.max(sx, S.x)
+  const texts = fitLines(text, { x: tx, y: S.y, w: right - tx, h: 200 }, 130)
+  const out: ConceptLayout = { subject, support, texts, problems: [] }
+  if (stampText)
+    out.stamp = fitStamp(
+      stampText.toUpperCase(),
+      { x: sx - 300, y: 450, w: 560, h: S.y + S.h - 450 },
+      110,
+      -10
+    )
+  const share = (subject.w * subject.h) / frame
+  if (share < 0.4 || share > 0.6)
+    out.problems.push(`Sujeito ocupa ${Math.round(share * 100)}% do quadro (40–60%)`)
+  for (const t of [...texts, ...(out.stamp ? [out.stamp] : [])]) {
+    if (!inside(t.box, S)) out.problems.push(`Texto "${t.text}" sai da área segura`)
+    if (t.size < MIN_TEXT_SIZE)
+      out.problems.push(
+        `Texto "${t.text}" ilegível na prévia (${Math.round((t.size * THUMB.preview.height) / V.height)} px; mínimo ${V.minPreviewPx})`
+      )
+  }
+  return out
 }

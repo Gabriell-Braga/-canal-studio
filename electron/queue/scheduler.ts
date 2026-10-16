@@ -15,7 +15,7 @@ import {
   videosByStatus
 } from '../db/repo'
 import { getSettings, getState, setState } from '../db/settings'
-import type { Step } from '../steps/types'
+import { FinalError, type Step } from '../steps/types'
 import { backoffMs, inWindow, windowKey } from './window'
 
 export type QueueEvent =
@@ -323,7 +323,7 @@ export class Scheduler {
           attempts: job.attempts
         })
         log(`${message}. Nova verificação às ${retryAt.toLocaleTimeString('pt-BR')}`, 'warn')
-      } else if (attempt < job.max_attempts) {
+      } else if (attempt < job.max_attempts && !(error instanceof FinalError)) {
         const retryAt = new Date(this.clock().getTime() + backoffMs(attempt))
         updateJob(job.id, { status: 'pending', run_after: retryAt.toISOString() })
         log(`Falhou: ${message}. Nova tentativa às ${retryAt.toLocaleTimeString('pt-BR')}`, 'warn')
@@ -339,7 +339,7 @@ export class Scheduler {
           updateVideo(job.video_id, {
             status: 'ERROR',
             error_message: message,
-            error_step: job.type
+            error_step: (error instanceof FinalError && error.step) || job.type
           })
         this.opts.onEvent?.({ type: 'error', videoId: job.video_id, message })
       }

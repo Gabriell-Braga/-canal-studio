@@ -39,6 +39,8 @@ export interface StockCandidate {
   credit?: string
   /** What the media shows (tags, title, description), used to judge relevance */
   label?: string
+  /** Year the source dates the media to (Commons date field), when known */
+  year?: number
   /** A real photo of the person or event the scene names (Wikimedia search by real_subject) */
   real?: boolean
   /** Library of Congress page: the scene file is the ad cropped around this phrase */

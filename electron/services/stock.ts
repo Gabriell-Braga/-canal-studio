@@ -65,7 +65,7 @@ export async function searchReal(
   if (!subject.trim()) return []
   try {
     const all = await cached(
-      `real|${s.format}|${s.wikimediaAllowCcBy}|${s.wikimediaAllowCcBySa}|${subject}`,
+      `real2|${s.format}|${s.wikimediaAllowCcBy}|${s.wikimediaAllowCcBySa}|${subject}`,
       () => searchWikimedia(subject, wikimediaOptions(s, true), new Set(), signal)
     )
     return all.filter((c) => !exclude.has(c.source)).map((c) => ({ ...c, real: true }))
@@ -112,7 +112,7 @@ export async function searchAll(
         )
       } else if (provider === 'wikimedia') {
         all = await cached(
-          `wikimedia|${s.format}|${s.wikimediaAllowCcBy}|${s.wikimediaAllowCcBySa}|${query}`,
+          `wikimedia2|${s.format}|${s.wikimediaAllowCcBy}|${s.wikimediaAllowCcBySa}|${query}`,
           () => searchWikimedia(query, wikimediaOptions(s), new Set(), signal)
         )
       } else if (provider === 'loc') {

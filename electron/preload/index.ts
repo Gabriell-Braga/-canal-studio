@@ -45,6 +45,8 @@ const api: Api = {
     suggestedSlot: invoke('videos:suggestedSlot'),
     suggestTopics: invoke('videos:suggestTopics'),
     thumbWinner: invoke('videos:thumbWinner'),
+    thumbBrief: invoke('videos:thumbBrief'),
+    newThumbConcept: invoke('videos:newThumbConcept'),
     setThumbWinner: invoke('videos:setThumbWinner'),
     evidence: invoke('videos:evidence'),
     announcerPlan: invoke('videos:announcerPlan'),

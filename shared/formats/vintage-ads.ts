@@ -22,7 +22,8 @@ export const ADS_ON_TRIAL = {
     title: 'Abril Fatface',
     stamp: 'Oswald',
     type: 'Special Elite',
-    card: 'Old Standard TT'
+    card: 'Old Standard TT',
+    hand: 'Homemade Apple'
   }
 }
 
@@ -39,7 +40,7 @@ export const vintageAds: FormatPack = {
   description:
     'Cada vídeo investiga um anúncio real de jornal (1880–1930): promessa, quem estava por trás, o que era verdade e o que aconteceu depois.',
   scriptRules: {
-    hook: "The video opens full screen on the real scan with the ad's main promise highlighted: put that promise, word for word, in hook_ad_quote. The NARRATOR (never the period announcer) reads or comments that promise in the first 5 seconds, then one sentence that makes the stakes concrete (who bought it, how many, what it cost). The opening talks about the story and the promise, never about the newspaper where the ad was found (its name, town or date go only on the provenance card). By 8 seconds the viewer knows exactly which ad and which promise this is.",
+    hook: `The video opens full screen on the real scan with the ad's main promise highlighted: put that promise, word for word, in hook_ad_quote. The FIRST sentence states the story's conflict, the contradiction that makes the ad strange (e.g. "Thousands of women wrote to Lydia Pinkham for advice. She had been dead for twenty years."), never where or when the ad was printed. The NARRATOR (never the period announcer) reads or comments that promise in the first 5 seconds, then one sentence that makes the stakes concrete (who bought it, how many, what it cost). The opening talks about the story and the promise, never about the newspaper where the ad was found (its name, town or date go only on the provenance card). By 8 seconds the viewer knows exactly which ad and which promise this is.`,
     rehook:
       'Before 25 seconds, ask one concrete question the video answers at the end (e.g. "So what was actually in the bottle?"). Write it fresh for this ad.',
     body: `Every quote from the ad is LITERAL text from its OCR (fix only obvious OCR typos); pick them from the ad's headline and promise lines (the claim, slogan, price or "write to..." call), never from testimonials, letters, addresses, fine print or other articles on the page. ad_quote goes only on Claim Check scenes (the scene where that promise is tested), 6 to 20 words; the narration of the scene before it must not quote it again. Never invent quotes and never attribute words to real people without a named source.
@@ -47,6 +48,7 @@ The narrator is calm and investigative, never mocking the people who bought it: 
 Prices: whenever the ad (or the story) gives a price, set that scene's price to the amount and the year; the app converts it to today's money, so never do the math in the narration ("one dollar, about eighteen of today's dollars" is said only if you are sure of the figure from the app; prefer "a full day's wages").
 scan: true for scenes that show the ad's scan itself (at least the first scene and every scene with an ad_quote).
 Never name places, dates or people about the ad that are not in its OCR text or in a named source.
+Pacing: the first Claim Check comes within the first 2:30 (about 375 words of narration from the start of the hook). Never tell the whole biography before the tests: give only the background the next Claim Check needs, then test, then the next piece of the life story, then the next test.
 Target 8–12 minutes only when the evidence fills them; never pad.`,
     ending:
       'Close with the fixed segment "Would it run today?": which law or agency ended this kind of ad (Pure Food and Drug Act 1906, FTC Act 1914, Wheeler-Lea Act 1938, FD&C Act 1938), or how the same promise still runs today in new clothes. Then a hook for the next ad of the series and at most one short invitation to subscribe.',
@@ -85,31 +87,25 @@ Target 8–12 minutes only when the evidence fills them; never pad.`,
     ],
     banned: ['The <year> Ad That…', "You Won't Believe…"]
   },
+  // Built from the video's conflict by electron/steps/vintagethumb.ts, one concept each.
   thumbModels: [
     {
-      id: 'ad-stamp',
-      label: 'A · Anúncio + carimbo',
-      layout: 'ad-stamp',
-      scan: 'background',
-      brief:
-        'The real ad scan fills about 60% of the frame, big and legible, on a plain dark background, with a huge red rubber stamp: "text" is the stamp word ("FALSE", "POISON", "$0.50"), at most one more word. "image": "" (the scan is used; without a sharp scan this model is skipped).'
+      id: 'contradiction',
+      label: 'A · Contradição',
+      layout: 'concept',
+      brief: 'Two elements that could not exist together. "image": "" (built from the briefing).'
     },
     {
-      id: 'era-face',
-      label: 'B · Rosto da época',
-      layout: 'era-face',
-      scan: 'background2',
-      face: true,
-      brief:
-        'The real face of the story\'s protagonist (the product\'s maker or seller, real public-domain portrait, expression edited) big on the left, with a red arrow to the real product or ad. "person" is that protagonist\'s full name; never a customer quoted in a testimonial or anyone else printed in the ad; "" when no real portrait exists (the model is then skipped). "image": "" (plain dark background). Text: 0–2 words.'
+      id: 'secret',
+      label: 'B · Segredo',
+      layout: 'concept',
+      brief: 'The product and what it hid. "image": "" (built from the briefing).'
     },
     {
-      id: 'then-now',
-      label: 'C · Então × hoje',
-      layout: 'then-now',
-      scan: 'background2',
-      brief:
-        'Split down the middle: left the real ad with its old price, right the same price in today\'s money as a big number on a plain background (the app computes it from the script\'s price), or the verdict stamp when there is no price. "text" is "OLD → VERDICT" (e.g. "$1 → FALSE"), used only when there is no price. "image": "" (no modern object).'
+      id: 'mystery',
+      label: 'C · Mistério',
+      layout: 'concept',
+      brief: 'The question of the video as a picture. "image": "" (built from the briefing).'
     }
   ],
   overlays: [
@@ -360,21 +356,48 @@ export function cleanOcr(text: string): string {
 
 /** An ad line as the announcer reads it: OCR cleaned, abbreviations and prices in words. */
 export function speakableAd(text: string): string {
-  return cleanOcr(text)
-    .replace(STATE_RE, (_m, k: string) => `, ${STATES[k]}`)
-    .replace(/\$\s?(\d[\d,]*)(?:\.(\d{2}))?/g, (_m, d: string, c?: string) =>
-      moneyWords(Number(d.replace(/,/g, '')), Number(c ?? 0))
-    )
-    .replace(/\b(\d+)\s*cts?\b\.?/gi, '$1 cents')
+  return expandTitles(
+    cleanOcr(text)
+      .replace(STATE_RE, (_m, k: string) => `, ${STATES[k]}`)
+      .replace(/\$\s?(\d[\d,]*)(?:\.(\d{2}))?/g, (_m, d: string, c?: string) =>
+        moneyWords(Number(d.replace(/,/g, '')), Number(c ?? 0))
+      )
+      .replace(/\b(\d+)\s*cts?\b\.?/gi, '$1 cents')
+      .replace(/\bDrs\./g, 'Doctors')
+      .replace(/\bCo\.(?=[\s,;:]|$)/g, 'Company')
+      .replace(/\bBros\./g, 'Brothers')
+      .replace(/\bdoz\.?(?=\s|$)/gi, 'dozen')
+      .replace(/\bbot\.?(?=\s|$)/gi, 'bottle')
+      .replace(/\s*&\s*/g, ' and ')
+  )
+}
+
+/**
+ * Titles in words, so Kokoro does not stop at their period ("Mrs. Haule" read as a sentence
+ * end). "St." is Saint before a name ("St. Louis") unless a capitalized word comes right
+ * before it ("Main St."), which is a street.
+ */
+export function expandTitles(text: string): string {
+  return text
     .replace(/\bMrs\./g, 'Missus')
     .replace(/\bMr\./g, 'Mister')
-    .replace(/\bDrs\./g, 'Doctors')
     .replace(/\bDr\./g, 'Doctor')
-    .replace(/\bCo\.(?=[\s,;:]|$)/g, 'Company')
-    .replace(/\bBros\./g, 'Brothers')
-    .replace(/\bdoz\.?(?=\s|$)/gi, 'dozen')
-    .replace(/\bbot\.?(?=\s|$)/gi, 'bottle')
-    .replace(/\s*&\s*/g, ' and ')
+    .replace(/\b([A-Z][a-z]+) St\./g, '$1 Street')
+    .replace(/\bSt\.(?=\s+[A-Z])/g, 'Saint')
+}
+
+/** How a proper name is said: a respelling ("Bock") or misaki phonemes ("/bˈɑk/"). */
+export type Pronunciations = Record<string, string>
+
+/** The narrator's text as sent to the TTS: titles in words, names as the dictionary says. */
+export function speakableNarration(text: string, dict: Pronunciations = {}): string {
+  let out = expandTitles(text)
+  for (const [name, say] of Object.entries(dict)) {
+    if (!name.trim() || !say.trim()) continue
+    const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g')
+    out = out.replace(re, say.startsWith('/') ? `[${name}](${say})` : say)
+  }
+  return out
 }
 
 // ---------------------------------------------------------------- period announcer plan
@@ -520,6 +543,12 @@ export function planAnnouncer(
   return plan
 }
 
+/** Review warning for a video without any announcer line: why each candidate was dropped. */
+export function announcerNoteFor(plan: AnnouncerPlan): string {
+  const why = plan.dropped.map((d) => `cena ${d.scene}: ${d.reason}`).join('; ')
+  return `Sem locutor de época: nenhuma citação do anúncio passou no filtro${why ? ` (${why})` : ' (roteiro sem Claim Check com citação)'}`
+}
+
 /**
  * Scene start times before any audio exists, from word counts (150 words a minute at speed
  * 1). Index 0 is the hook; the channel intro sits after it.
@@ -535,6 +564,42 @@ export function estimatedStarts(
   for (let i = 1; i < secs.length; i++)
     starts.push(starts[i - 1] + secs[i - 1] + opts.pauseSec + (i === 1 ? opts.introSec : 0))
   return (scene) => starts[scene] ?? 0
+}
+
+/** The first Claim Check starts by this second of narration. */
+export const FIRST_CLAIM_BY_SEC = 150
+
+const PAPER_WORDS = /\b(newspaper|weekly paper|daily paper|gazette|page \d+)\b/i
+
+/**
+ * Script pacing and hook rules the model must meet (pt-BR, empty when it does): the first
+ * Claim Check by 2:30 (from word counts) and a hook about the conflict, not about the
+ * newspaper the ad was found in (its name and town go on the provenance card).
+ */
+export function scriptProblems(
+  script: Script,
+  page: { newspaper: string; city?: string }
+): string[] {
+  const out: string[] = []
+  const claims = Array.isArray(script.claims) ? (script.claims as { scene?: number }[]) : []
+  const first = Math.min(...claims.map((c) => Number(c.scene)).filter((n) => n > 0))
+  const at = estimatedStarts(script, { speed: 1, pauseSec: 0.35, introSec: 0 })
+  if (!Number.isFinite(first)) out.push('Nenhum Claim Check no roteiro')
+  else if (at(first) > FIRST_CLAIM_BY_SEC)
+    out.push(
+      `Primeiro Claim Check só em ${Math.floor(at(first) / 60)}:${String(Math.round(at(first) % 60)).padStart(2, '0')} (máximo 2:30)`
+    )
+  const hook = script.hook.toLowerCase()
+  const name = page.newspaper.toLowerCase().replace(/^the\s+/, '')
+  const names = [name, ...(page.city ? [page.city.toLowerCase()] : [])].filter((n) => n.length > 2)
+  // "Red River Prospector": its first two words ("Red River") already name it.
+  const pairs = names.flatMap((n) => {
+    const w = n.split(/\s+/)
+    return w.length > 2 ? [n, `${w[0]} ${w[1]}`] : [n]
+  })
+  if (PAPER_WORDS.test(script.hook) || pairs.some((p) => hook.includes(p)))
+    out.push('O gancho fala do jornal onde o anúncio foi achado; abra com o conflito da história')
+  return out
 }
 
 // ---------------------------------------------------------------- unsourced facts

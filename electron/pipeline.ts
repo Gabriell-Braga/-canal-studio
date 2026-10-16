@@ -1,4 +1,5 @@
 import type { JobType, Video } from '../shared/types'
+import type { ThumbBriefReport } from '../shared/thumb'
 import {
   cancelPendingJobs,
   createVideo,
@@ -365,6 +366,18 @@ ${JSON.stringify(v.script)}`,
   }
 
   /** Thumbnail model that won YouTube's "Test & compare" for this video, if recorded. */
+  /** Ads on Trial: concept, blind test and scores of the thumbnails, for the final review. */
+  thumbBrief(id: number): ThumbBriefReport | null {
+    return getState<ThumbBriefReport | null>(`thumbBrief.video.${id}`, null)
+  }
+
+  /** New thumbnail concepts as a side job: the video keeps its status and its title. */
+  newThumbConcept(id: number): void {
+    getVideo(id)
+    enqueueJob(id, 'thumbnail', 'now', 5, false, { keepStatus: true, newConcept: true })
+    this.scheduler.kick()
+  }
+
   thumbWinner(id: number): string | null {
     const v = getVideo(id)
     return getState<Record<string, string>>(`thumbWins.ch.${v.channel_id}`, {})[id] ?? null

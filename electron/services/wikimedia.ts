@@ -116,15 +116,16 @@ export async function searchWikimedia(
       (options.allowCcBy && ATTRIBUTION.test(license)) ||
       (!!options.allowCcBySa && SHARE_ALIKE.test(license))
     if (!free && !credited) continue
-    if (options.maxYear) {
-      const year = yearOf(strip(info.extmetadata?.DateTimeOriginal?.value))
-      if (year !== null && year > options.maxYear) continue
-    }
+    // Public-domain formats: the source must date the file, and its latest year counts
+    // ("between 1883 and 1900" is 1900). No date, no file.
+    const year = latestYear(info.extmetadata?.DateTimeOriginal?.value)
+    if (options.maxYear && (year === null || year > options.maxYear)) continue
     const artist = strip(info.extmetadata?.Artist?.value) || 'Unknown author'
     candidates.push({
       source,
       kind: 'stock_photo',
       url: info.thumburl ?? info.url,
+      year: year ?? undefined,
       label: `${page.title.replace(/^File:/, '').replace(/\.\w+$/, '')}. ${strip(
         info.extmetadata?.ImageDescription?.value
       ).slice(0, 160)}`,
@@ -134,6 +135,16 @@ export async function searchWikimedia(
     })
   }
   return candidates
+}
+
+/**
+ * Latest year a Commons date field allows, or null when it has none. Hidden machine data
+ * ("date QS:P,+1500-00-00…") is dropped first, so only the visible date counts.
+ */
+export function latestYear(html: string | undefined): number | null {
+  const visible = strip((html ?? '').replace(/<div[^>]*display:\s*none[^>]*>[\s\S]*?<\/div>/gi, ''))
+  const years = [...visible.matchAll(/\b(1[5-9]\d\d|20\d\d)\b/g)].map((m) => Number(m[1]))
+  return years.length ? Math.max(...years) : null
 }
 
 /** First 4-digit year (1500–2099) in a Commons date field, or null. */

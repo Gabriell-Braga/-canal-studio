@@ -19,3 +19,16 @@ export interface Step {
   status?: VideoStatus
   run: (videoId: number, ctx: StepContext) => Promise<void>
 }
+
+/**
+ * A failure that retrying the same step cannot fix. The queue stops at once and points the
+ * video's retry at `step` (the step whose output must change), not at the one that failed.
+ */
+export class FinalError extends Error {
+  constructor(
+    message: string,
+    readonly step?: JobType
+  ) {
+    super(message)
+  }
+}

@@ -49,6 +49,12 @@ export function loadFonts(): void {
     .then(() => continueRender(handle))
 }
 
+/** Resolves once the channel's fonts are loaded (canvas measuring needs them). */
+export function fontsReady(): Promise<void> {
+  loadFonts()
+  return fontsLoading ?? Promise.resolve()
+}
+
 /** Aged paper: base color plus a faint fibrous noise, edge to edge (no vignette). */
 export function Paper({ children }: { children?: React.ReactNode }): React.JSX.Element {
   return (
@@ -246,7 +252,7 @@ export function PaperScan({
 }
 
 /** Worn rubber-stamp ink: the same texture on every stamp of the channel. */
-function StampInk({ id }: { id: string }): React.JSX.Element {
+export function StampInk({ id }: { id: string }): React.JSX.Element {
   return (
     <svg width="0" height="0" style={{ position: 'absolute' }}>
       <filter id={id}>

@@ -8,7 +8,7 @@ import {
   type Video,
   type VideoDetail as Detail
 } from '../../shared/types'
-import { THUMB } from '../../shared/thumb'
+import { THUMB, type ThumbBriefReport, type ThumbMetrics } from '../../shared/thumb'
 import type { ReviewReport } from '../../shared/coverage'
 import { checklistFor, type ChecklistId } from '../../shared/checklist'
 import { THUMB_KIND_LABELS, thumbKindOf } from '../../shared/render'
@@ -553,10 +553,17 @@ function PublishTab({
   const [chosen, setChosen] = useState(video.chosen_thumbnail ?? 0)
   const [mobile, setMobile] = useState(false)
   const [winner, setWinner] = useState<string | null>(null)
+  const [brief, setBrief] = useState<ThumbBriefReport | null>(null)
 
   useEffect(() => {
     api.videos.thumbWinner(video.id).then(setWinner, () => undefined)
   }, [video.id])
+
+  useEffect(() => {
+    api.videos.thumbBrief(video.id).then(setBrief, () => undefined)
+  }, [video.id, video.updated_at])
+  const metricsOf = (p: string): ThumbMetrics | undefined =>
+    brief?.thumbs.find((t) => t.file === p)?.metrics
 
   function markWinner(model: string | null): void {
     setWinner(model)
@@ -637,42 +644,44 @@ function PublishTab({
         {video.thumbnail_paths.length ? (
           <div className={mobile ? 'flex flex-wrap gap-3' : 'grid grid-cols-3 gap-3'}>
             {video.thumbnail_paths.map((p, i) => (
-              <button
-                key={p}
-                data-testid="thumb-option"
-                onClick={() => setChosen(i)}
-                className={`relative overflow-hidden rounded-md border-2 ${chosen === i ? 'border-brand-500' : 'border-transparent'}`}
-              >
-                <img
-                  src={mediaUrl(p, video.updated_at)}
-                  className="aspect-video w-full object-cover"
-                  style={
-                    mobile
-                      ? { width: THUMB.preview.width, height: THUMB.preview.height }
-                      : undefined
-                  }
-                />
-                {thumbKindOf(p) && !mobile && (
-                  <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-white">
-                    {THUMB_KIND_LABELS[thumbKindOf(p) ?? 'ai']}
-                  </span>
-                )}
-                {video.youtube_id && thumbKindOf(p) && !mobile && (
-                  <span
-                    role="checkbox"
-                    aria-checked={winner === thumbKindOf(p)}
-                    title="Marque o modelo que venceu o Testar e comparar do YouTube Studio"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const kind = thumbKindOf(p)
-                      markWinner(winner === kind ? null : kind)
-                    }}
-                    className={`absolute bottom-1.5 right-1.5 rounded px-1.5 py-0.5 text-[11px] ${winner === thumbKindOf(p) ? 'bg-brand-500 text-black' : 'bg-black/70 text-white'}`}
-                  >
-                    {winner === thumbKindOf(p) ? 'Venceu o teste' : 'Marcar vencedora'}
-                  </span>
-                )}
-              </button>
+              <div key={p}>
+                <button
+                  data-testid="thumb-option"
+                  onClick={() => setChosen(i)}
+                  className={`relative overflow-hidden rounded-md border-2 ${chosen === i ? 'border-brand-500' : 'border-transparent'}`}
+                >
+                  <img
+                    src={mediaUrl(p, video.updated_at)}
+                    className="aspect-video w-full object-cover"
+                    style={
+                      mobile
+                        ? { width: THUMB.preview.width, height: THUMB.preview.height }
+                        : undefined
+                    }
+                  />
+                  {thumbKindOf(p) && !mobile && (
+                    <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-white">
+                      {THUMB_KIND_LABELS[thumbKindOf(p) ?? 'ai']}
+                    </span>
+                  )}
+                  {video.youtube_id && thumbKindOf(p) && !mobile && (
+                    <span
+                      role="checkbox"
+                      aria-checked={winner === thumbKindOf(p)}
+                      title="Marque o modelo que venceu o Testar e comparar do YouTube Studio"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const kind = thumbKindOf(p)
+                        markWinner(winner === kind ? null : kind)
+                      }}
+                      className={`absolute bottom-1.5 right-1.5 rounded px-1.5 py-0.5 text-[11px] ${winner === thumbKindOf(p) ? 'bg-brand-500 text-black' : 'bg-black/70 text-white'}`}
+                    >
+                      {winner === thumbKindOf(p) ? 'Venceu o teste' : 'Marcar vencedora'}
+                    </span>
+                  )}
+                </button>
+                {!mobile && metricsOf(p) && <ThumbChecks m={metricsOf(p) as ThumbMetrics} />}
+              </div>
             ))}
           </div>
         ) : (
@@ -961,6 +970,27 @@ function ShortsTab({
           onDeleted={() => setDeleting(null)}
         />
       )}
+    </div>
+  )
+}
+
+/** The automatic checks of one template thumbnail, under it in the final review. */
+function ThumbChecks({ m }: { m: ThumbMetrics }): React.JSX.Element {
+  const score = (v: number | null): string => (v === null ? '—' : String(v))
+  return (
+    <div
+      data-testid="thumb-checks"
+      className="mt-1 space-y-0.5 text-[11px] leading-snug text-ink-400"
+    >
+      <div>
+        Vazio {m.emptyPct}% · ocupação {m.occupancyPct}% (sujeito {m.subjectPct}%) · OCR {m.ocr} ·
+        contraste {m.contrast}:1
+      </div>
+      <div>
+        Notas: entendo em 2 s {score(m.understand)} · vontade de clicar {score(m.click)} · nada
+        vazio {score(m.notEmpty)}
+      </div>
+      {m.problems.length > 0 && <div className="text-red-400">{m.problems.join(' · ')}</div>}
     </div>
   )
 }

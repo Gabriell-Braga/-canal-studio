@@ -178,6 +178,8 @@ _cutout: dict[str, object] = {"session": None}
 class CutoutRequest(BaseModel):
     image_path: str
     out_path: str
+    # Crop the PNG to the subject (thumbnails place the subject by its own edges).
+    trim: bool = False
 
 
 def _cutout_session():
@@ -217,13 +219,26 @@ def cutout(req: CutoutRequest):
     out.parent.mkdir(parents=True, exist_ok=True)
     rgba = img.copy()
     rgba.putalpha(mask)
-    rgba.save(out)
     solid = np.asarray(mask) > 127
     coverage = float(solid.mean())
+    # Mean luminance (0-1) of the subject: thumbnails pick a background that contrasts with it.
+    lum = np.asarray(img.convert("L"), dtype=np.float32) / 255.0
+    luminance = float(lum[solid].mean()) if solid.any() else 0.5
+    if req.trim and solid.any():
+        ys, xs = np.nonzero(solid)
+        rgba = rgba.crop((int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1))
+    rgba.save(out)
     # Horizontal center of the subject (0 left, 1 right): the text goes on the other side.
     cols = solid.sum(axis=0)
     center_x = float((cols * np.arange(len(cols))).sum() / max(cols.sum(), 1) / max(len(cols) - 1, 1))
-    return {"path": str(out), "coverage": coverage, "center_x": center_x}
+    return {
+        "path": str(out),
+        "coverage": coverage,
+        "center_x": center_x,
+        "luminance": luminance,
+        "width": rgba.width,
+        "height": rgba.height,
+    }
 
 
 class FocusRequest(BaseModel):

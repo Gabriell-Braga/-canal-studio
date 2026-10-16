@@ -317,6 +317,8 @@ export interface ConceptElement {
   person: string
   /** Words drawn on it: letter line, stamp word, label name, tombstone inscription */
   words: string
+  /** Wikimedia Commons search for the real picture (photo elements; '' for drawn parts) */
+  search: string
 }
 
 export interface ThumbConcept {
@@ -356,12 +358,18 @@ export interface ThumbConceptReport {
   blind: { about: string; question: string; ok: boolean } | null
   scores: ThumbScores | null
   attempts: number
+  /** Measured checks (template thumbnails) */
+  metrics?: ThumbMetrics
+  /** Credits the pictures' licenses ask for */
+  credits?: string[]
 }
 
 export interface ThumbBriefReport {
   conflict: string
   question: string
   thumbs: ThumbConceptReport[]
+  /** Credits of every picture the thumbnails use, for the description */
+  credits?: string[]
 }
 
 const PRICE_ONLY = /^[\s$€£¢\d.,→%x×-]+$/i
@@ -412,117 +420,494 @@ export function scoreProblems(s: ThumbScores): string[] {
     .map(([k, label]) => `${label}: ${s[k]}`)
 }
 
-/** One element as the Remotion layout draws it: a bank picture, or a drawn brand part. */
-export interface ConceptPiece {
-  kind: ElementKind
-  /** Picture of a media element ({{root}} URL); null = drawn from `words` */
-  src: string | null
-  words: string
-  /** width / height of the picture */
-  aspect?: number
-}
-
-/** `concept` prop of a concept thumbnail (layout "concept"). */
-export interface ConceptDraw {
-  background: 'dark' | 'paper'
-  subject: ConceptPiece
-  support: ConceptPiece | null
-  /** Red rubber stamp over the seam ('' = none) */
-  stamp: string
-  /** Word of the text painted red ('' = none) */
-  accentWord: string
-}
-
-/** Aspect a drawn part gets in the subject box. */
-export function pieceAspect(p: ConceptPiece): number {
-  return p.src ? (p.aspect ?? 0.8) : p.kind === 'stamp' ? 1.6 : 0.8
-}
-
 /** Shortest picture a thumbnail may use, px: anything smaller turns to mush when enlarged. */
 export const MIN_THUMB_MEDIA_PX = 600
 
-export interface ConceptLayout {
-  /** Dominant subject, left: 40–60% of the frame */
-  subject: PxBox
-  /** Conflict element, bottom right */
-  support: PxBox
-  /** The text, top right, one or two lines */
-  texts: PlacedText[]
-  /** Optional accent stamp, over the seam between subject and support */
-  stamp?: PlacedText
-  problems: string[]
+// ---------------------------------------------------------------- Ads on Trial templates
+
+/**
+ * Concept thumbnails use three fixed templates: the LLM picks what goes in each zone, the
+ * zones themselves never move. Zones are in thumbnail pixels (1280×720).
+ */
+export const TEMPLATE_OF: Record<ConceptType, 'T1' | 'T2' | 'T3'> = {
+  contradiction: 'T1',
+  secret: 'T2',
+  mystery: 'T3'
+}
+export type TemplateId = (typeof TEMPLATE_OF)[ConceptType]
+
+const TW = 1280
+const TH = 720
+
+export const TPL = {
+  width: TW,
+  height: TH,
+  /** Nothing cut or placed closer to the edge than this share of the frame */
+  safe: 0.05,
+  /** YouTube's duration badge, bottom right: no text behind it */
+  clock: { x: TW * 0.82, y: TH * 0.86, w: TW * 0.18, h: TH * 0.14 },
+  /** Minimum cap height per text role, px */
+  minCap: { title: 110, stamp: 80, other: 48, letter: 56 },
+  /** Largest cap height a title grows to */
+  maxCap: 180,
+  lineHeight: 0.9,
+  red: '#C2211C',
+  titleStroke: 12,
+  accentStroke: 6,
+  /** White outline around cutouts, px */
+  outline: 8,
+  maxTitleWords: 4
 }
 
-/** Bold condensed caps (Oswald 700, 1 px tracking): conservative average glyph width, em. */
-const BOLD_RATIO = 0.56
+export interface StampZone {
+  cx: number
+  cy: number
+  /** Stamp width range, px */
+  minW: number
+  maxW: number
+  rotate: number
+}
 
-/** Text in one or two lines, whichever reads bigger, left-aligned in the zone. */
-export function fitLines(text: string, zone: PxBox, maxSize: number): PlacedText[] {
-  const words = text.toUpperCase().split(/\s+/).filter(Boolean)
-  const outline = 8
-  const options: string[][] = [[words.join(' ')]]
-  for (let k = 1; k < words.length; k++)
-    options.push([words.slice(0, k).join(' '), words.slice(k).join(' ')])
-  let best: PlacedText[] = []
-  let bestSize = 0
-  for (const lines of options) {
-    const longest = Math.max(...lines.map((l) => l.length), 1)
-    const size = Math.min(
-      maxSize,
-      (zone.h - outline * lines.length) / (lines.length * 1.05),
-      (zone.w - outline) / (longest * BOLD_RATIO)
-    )
-    if (size <= bestSize) continue
-    bestSize = size
-    best = lines.map((line, i) => {
-      const w = line.length * BOLD_RATIO * size + outline
-      const box = { x: zone.x, y: zone.y + i * size * 1.05, w, h: size + outline }
-      return {
-        kind: 'title' as const,
-        text: line,
-        size,
-        box,
-        rotate: 0,
-        center: { x: box.x + w / 2, y: box.y + box.h / 2 }
-      }
-    })
+export interface TemplateZones {
+  /** T1 subject / T2 object / T3 left element: the main element */
+  main: PxBox
+  /** T3: the element on the right, tilted */
+  side?: PxBox & { rotate: number }
+  title: PxBox & {
+    maxLines: number
+    /** Lines allowed when maxLines cannot reach the minimum cap height */
+    fallbackLines?: number
+    column?: boolean
+    align: 'left' | 'center'
+  }
+  /** T3: dark band behind the title */
+  band?: PxBox
+  stamp?: StampZone
+}
+
+export function templateZones(t: TemplateId): TemplateZones {
+  if (t === 'T1')
+    return {
+      // Bust cut out, 115% of the frame tall (bleeds at the bottom), head top at ~6%.
+      main: { x: 0, y: TH * 0.06, w: TW * 0.52, h: TH * 1.15 },
+      title: {
+        x: TW * 0.5,
+        y: TH * 0.08,
+        w: TW * 0.45,
+        h: TH * 0.54,
+        maxLines: 2,
+        // 110 px caps leave ~8 Oswald capitals per line in 45% of the width.
+        fallbackLines: 3,
+        align: 'left'
+      },
+      // As far right and as wide as allowed: the bottom right is otherwise empty.
+      stamp: { cx: TW * 0.58, cy: TH * 0.74, minW: TW * 0.4, maxW: TW * 0.4, rotate: -8 }
+    }
+  if (t === 'T2')
+    return {
+      // The title column is 37% wide (a 6-letter word at 110 px caps needs 36%), the
+      // object starts where it ends.
+      main: { x: TW * 0.36, y: TH * 0.01, w: TW * 0.4, h: TH * 0.98 },
+      title: {
+        x: TW * 0.05,
+        y: TH * 0.1,
+        w: TW * 0.37,
+        h: TH * 0.6,
+        maxLines: 2,
+        column: true,
+        align: 'left'
+      },
+      // Across the object, toward the right (never over the title column).
+      stamp: { cx: TW * 0.62, cy: TH * 0.6, minW: TW * 0.4, maxW: TW * 0.48, rotate: -16 }
+    }
+  return {
+    main: { x: 0, y: 0, w: TW * 0.5, h: TH },
+    // Over the divider by 6% of the frame, tilted 6°: its text stays inside the 5% margin.
+    side: { x: TW * 0.44, y: TH * 0.14, w: TW * 0.5, h: TH * 0.84, rotate: 6 },
+    band: { x: 0, y: TH * 0.04, w: TW, h: TH * 0.26 },
+    title: { x: TW * 0.05, y: TH * 0.05, w: TW * 0.9, h: TH * 0.24, maxLines: 1, align: 'center' }
+  }
+}
+
+/** Every way to put `words` in at most `maxLines` lines (up to 3), in reading order. */
+export function lineSplits(words: string[], maxLines: number): string[][] {
+  if (!words.length) return []
+  const out: string[][] = [[words.join(' ')]]
+  if (maxLines >= 2)
+    for (let k = 1; k < words.length; k++)
+      out.push([words.slice(0, k).join(' '), words.slice(k).join(' ')])
+  if (maxLines >= 3)
+    for (let a = 1; a < words.length - 1; a++)
+      for (let b = a + 1; b < words.length; b++)
+        out.push([
+          words.slice(0, a).join(' '),
+          words.slice(a, b).join(' '),
+          words.slice(b).join(' ')
+        ])
+  return out
+}
+
+export interface FitResult {
+  lines: string[]
+  /** Font size, px */
+  size: number
+  /** Cap height at that size, px */
+  cap: number
+}
+
+export interface FitOptions {
+  maxLines: number
+  maxCap: number
+  /** The font's cap height / font size */
+  capRatio: number
+  /** Width of a line at a font size: canvas in the browser, an estimate in tests */
+  width: (line: string, size: number) => number
+  /** One word per line */
+  column?: boolean
+}
+
+/**
+ * Biggest text that fits `zone`: tries every line split, sizes the font so the widest line
+ * fills the width and the lines fit the height (line height 0.9), never past `maxCap`.
+ */
+export function fitText(
+  text: string,
+  zone: { w: number; h: number },
+  opts: FitOptions
+): FitResult | null {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  const splits = opts.column ? [words] : lineSplits(words, opts.maxLines)
+  let best: FitResult | null = null
+  for (const lines of splits) {
+    if (!opts.column && lines.length > opts.maxLines) continue
+    const at100 = Math.max(...lines.map((l) => opts.width(l, 100)))
+    const byWidth = (zone.w / Math.max(at100, 1)) * 100
+    const byHeight = zone.h / (lines.length * TPL.lineHeight)
+    const size = Math.min(byWidth, byHeight, opts.maxCap / opts.capRatio)
+    if (!best || size > best.size) best = { lines, size, cap: size * opts.capRatio }
   }
   return best
 }
 
 /**
- * Boxes of a concept thumbnail (Z reading): the dominant subject on the left, the text top
- * right, the conflict element bottom right, an optional red stamp over the seam. The subject
- * never covers less than 40% of the frame: a tall picture is cropped from the top to reach it.
+ * Small text (letter, tombstone): the biggest fit at least `minCap` tall; words drop from the
+ * end until it fits. Never shrinks below the minimum: null when not even one word fits.
  */
-export function conceptLayout(text: string, subjectAspect: number, stampText = ''): ConceptLayout {
-  const S = safeArea()
-  const right = S.x + S.w
-  const frame = V.width * V.height
-  const h = V.height - 2 * 36
-  const w = Math.min(760, Math.max((0.4 * frame) / h, h * subjectAspect))
-  const subject = { x: 36, y: 36, w, h }
-  const sx = subject.x + subject.w + 28
-  const support = { x: sx, y: 250, w: V.width - 36 - sx, h: V.height - V.strip - 250 }
-  const tx = Math.max(sx, S.x)
-  const texts = fitLines(text, { x: tx, y: S.y, w: right - tx, h: 200 }, 130)
-  const out: ConceptLayout = { subject, support, texts, problems: [] }
-  if (stampText)
-    out.stamp = fitStamp(
-      stampText.toUpperCase(),
-      { x: sx - 300, y: 450, w: 560, h: S.y + S.h - 450 },
-      110,
-      -10
-    )
-  const share = (subject.w * subject.h) / frame
-  if (share < 0.4 || share > 0.6)
-    out.problems.push(`Sujeito ocupa ${Math.round(share * 100)}% do quadro (40–60%)`)
-  for (const t of [...texts, ...(out.stamp ? [out.stamp] : [])]) {
-    if (!inside(t.box, S)) out.problems.push(`Texto "${t.text}" sai da área segura`)
-    if (t.size < MIN_TEXT_SIZE)
-      out.problems.push(
-        `Texto "${t.text}" ilegível na prévia (${Math.round((t.size * THUMB.preview.height) / V.height)} px; mínimo ${V.minPreviewPx})`
-      )
+export function fitAtLeast(
+  text: string,
+  zone: { w: number; h: number },
+  minCap: number,
+  opts: Omit<FitOptions, 'column'>
+): FitResult | null {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  for (let n = words.length; n > 0; n--) {
+    const fit = fitText(words.slice(0, n).join(' '), zone, opts)
+    if (fit && fit.cap >= minCap - 0.5) return fit
+  }
+  return null
+}
+
+/** One text as the browser drew it: cap height and box, both in thumbnail px. */
+export interface MeasuredText {
+  role: 'title' | 'stamp' | 'other' | 'letter'
+  text: string
+  cap: number
+  rect: PxBox
+}
+
+const overlaps = (a: PxBox, b: PxBox): boolean =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+
+/** Size, safe-margin and duration-badge rules on the measured texts (pt-BR). */
+export function textProblems(texts: MeasuredText[]): string[] {
+  const out: string[] = []
+  const m = TPL.safe
+  const safe = { x: TW * m, y: TH * m, w: TW * (1 - 2 * m), h: TH * (1 - 2 * m) }
+  if (!texts.some((t) => t.role === 'title')) out.push('sem título medido')
+  for (const t of texts) {
+    const min = TPL.minCap[t.role]
+    if (t.cap < min - 0.5)
+      out.push(`"${t.text}" com ${Math.round(t.cap)} px de altura de maiúscula (mínimo ${min})`)
+    if (!inside(t.rect, safe)) out.push(`"${t.text}" fora da margem de 5%`)
+    if (overlaps(t.rect, TPL.clock)) out.push(`"${t.text}" atrás do relógio de duração`)
   }
   return out
+}
+
+// ---------------------------------------------------------------- automatic checks
+
+export const THUMB_RULES = {
+  grid: { cols: 16, rows: 9 },
+  /** A cell is empty when its luminance variance is below this (0–255 scale)… */
+  emptyVariance: 6,
+  /** …and under this share of its pixels are Sobel edges */
+  emptyEdges: 0.02,
+  /** Sobel magnitude (0–255 luminance) that counts as an edge */
+  edgeMagnitude: 48,
+  /** Image size the grid is measured on: averages out paper grain, keeps real structure */
+  measure: { width: 320, height: 180 },
+  maxEmptyShare: 0.18,
+  /** No empty block bigger than 3×3 cells */
+  maxEmptyBlock: 3,
+  minOccupancy: 0.75,
+  minSubject: 0.35,
+  minOcr: 80,
+  minContrast: 4.5,
+  minScore: 7
+}
+
+export interface EmptyGrid {
+  /** Row-major, true = empty */
+  empty: boolean[]
+  share: number
+  /** Largest all-empty rectangle, in cells */
+  block: { w: number; h: number }
+}
+
+/** Empty cells of an RGB image (rgb24, row-major) on the 16×9 grid. */
+export function emptyGrid(rgb: Uint8Array, width: number, height: number): EmptyGrid {
+  const R = THUMB_RULES
+  const lum = new Float32Array(width * height)
+  for (let i = 0; i < width * height; i++)
+    lum[i] = 0.299 * rgb[i * 3] + 0.587 * rgb[i * 3 + 1] + 0.114 * rgb[i * 3 + 2]
+  const at = (x: number, y: number): number =>
+    lum[Math.min(height - 1, Math.max(0, y)) * width + Math.min(width - 1, Math.max(0, x))]
+  const { cols, rows } = R.grid
+  const empty: boolean[] = []
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const x0 = Math.floor((c * width) / cols)
+      const x1 = Math.floor(((c + 1) * width) / cols)
+      const y0 = Math.floor((r * height) / rows)
+      const y1 = Math.floor(((r + 1) * height) / rows)
+      let sum = 0
+      let sq = 0
+      let edges = 0
+      const n = (x1 - x0) * (y1 - y0)
+      for (let y = y0; y < y1; y++)
+        for (let x = x0; x < x1; x++) {
+          const v = at(x, y)
+          sum += v
+          sq += v * v
+          const gx =
+            at(x + 1, y - 1) +
+            2 * at(x + 1, y) +
+            at(x + 1, y + 1) -
+            (at(x - 1, y - 1) + 2 * at(x - 1, y) + at(x - 1, y + 1))
+          const gy =
+            at(x - 1, y + 1) +
+            2 * at(x, y + 1) +
+            at(x + 1, y + 1) -
+            (at(x - 1, y - 1) + 2 * at(x, y - 1) + at(x + 1, y - 1))
+          if (Math.hypot(gx, gy) > R.edgeMagnitude) edges++
+        }
+      const mean = sum / n
+      empty.push(sq / n - mean * mean < R.emptyVariance && edges / n < R.emptyEdges)
+    }
+  let block = { w: 0, h: 0 }
+  for (let r0 = 0; r0 < rows; r0++)
+    for (let c0 = 0; c0 < cols; c0++)
+      for (let r1 = r0; r1 < rows; r1++)
+        for (let c1 = c0; c1 < cols; c1++) {
+          let all = true
+          for (let r = r0; r <= r1 && all; r++)
+            for (let c = c0; c <= c1 && all; c++) all = empty[r * cols + c]
+          if (!all) break
+          const w = c1 - c0 + 1
+          const h = r1 - r0 + 1
+          if (w * h > block.w * block.h) block = { w, h }
+        }
+  return { empty, share: empty.filter(Boolean).length / empty.length, block }
+}
+
+export function emptyProblems(g: EmptyGrid): string[] {
+  const out: string[] = []
+  const R = THUMB_RULES
+  if (g.share > R.maxEmptyShare)
+    out.push(`${Math.round(g.share * 100)}% do quadro vazio (máximo ${R.maxEmptyShare * 100}%)`)
+  const m = R.maxEmptyBlock
+  if (g.block.w * g.block.h > m * m && Math.min(g.block.w, g.block.h) >= m)
+    out.push(`bloco vazio de ${g.block.w}×${g.block.h} células (máximo ${m}×${m})`)
+  return out
+}
+
+/**
+ * Share of the frame the elements cover: pixels where the image differs from its bare
+ * background, plus the boxes of its texts (the gaps between letters belong to the text).
+ */
+export function coveredShare(
+  a: Uint8Array,
+  b: Uint8Array,
+  boxes: PxBox[] = [],
+  width = TW,
+  threshold = 16
+): number {
+  let n = 0
+  const px = Math.min(a.length, b.length) / 3
+  const inBox = (x: number, y: number): boolean =>
+    boxes.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
+  for (let i = 0; i < px; i++)
+    if (
+      Math.abs(a[i * 3] - b[i * 3]) > threshold ||
+      Math.abs(a[i * 3 + 1] - b[i * 3 + 1]) > threshold ||
+      Math.abs(a[i * 3 + 2] - b[i * 3 + 2]) > threshold ||
+      inBox(i % width, Math.floor(i / width))
+    )
+      n++
+  return n / Math.max(1, px)
+}
+
+const linear = (c: number): number => {
+  const v = c / 255
+  return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+}
+
+/** WCAG relative luminance of an sRGB color. */
+export function relLuminance(r: number, g: number, b: number): number {
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+}
+
+export function contrastRatio(l1: number, l2: number): number {
+  const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1]
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+/** Mean relative luminance of the pixels of `box` in an RGB image. */
+export function meanLuminance(rgb: Uint8Array, width: number, height: number, box: PxBox): number {
+  const x0 = Math.max(0, Math.floor(box.x))
+  const y0 = Math.max(0, Math.floor(box.y))
+  const x1 = Math.min(width, Math.ceil(box.x + box.w))
+  const y1 = Math.min(height, Math.ceil(box.y + box.h))
+  let sum = 0
+  let n = 0
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) {
+      const i = (y * width + x) * 3
+      sum += relLuminance(rgb[i], rgb[i + 1], rgb[i + 2])
+      n++
+    }
+  return n ? sum / n : 0
+}
+
+const norm = (w: string): string => w.toUpperCase().replace(/[^A-Z0-9]/g, '')
+
+/**
+ * Lowest OCR confidence among the words that must read on the phone (0 = one was not
+ * found). OCR may glue words together, so a word counts when a read token contains it.
+ */
+export function ocrConfidence(
+  required: string[],
+  read: { text: string; conf: number }[]
+): { min: number; missing: string[] } {
+  const tokens = read.map((r) => ({ t: norm(r.text), conf: r.conf }))
+  let min = 100
+  const missing: string[] = []
+  for (const w of required.map(norm).filter(Boolean)) {
+    const hit = tokens.filter((t) => t.t.includes(w)).sort((a, b) => b.conf - a.conf)[0]
+    if (!hit) {
+      missing.push(w)
+      min = 0
+    } else min = Math.min(min, hit.conf)
+  }
+  return { min, missing }
+}
+
+/** Measured numbers of one thumbnail, shown in the final review. */
+export interface ThumbMetrics {
+  emptyPct: number
+  occupancyPct: number
+  subjectPct: number
+  /** Lowest OCR confidence of the title and stamp words at 246×138 (0–100) */
+  ocr: number
+  ocrMissing: string[]
+  /** Title against what is right behind it, :1 */
+  contrast: number
+  caps: { title: number; stamp: number | null; other: number | null }
+  /** Vision scores at 246×138 (1–10) */
+  understand: number | null
+  click: number | null
+  notEmpty: number | null
+  problems: string[]
+}
+
+/** Occupancy, OCR, contrast and score rules (pt-BR); empty = they pass. */
+export function metricProblems(m: Omit<ThumbMetrics, 'problems'>): string[] {
+  const R = THUMB_RULES
+  const out: string[] = []
+  if (m.occupancyPct < R.minOccupancy * 100)
+    out.push(`elementos cobrem ${Math.round(m.occupancyPct)}% (mínimo ${R.minOccupancy * 100}%)`)
+  if (m.subjectPct < R.minSubject * 100)
+    out.push(`sujeito cobre ${Math.round(m.subjectPct)}% (mínimo ${R.minSubject * 100}%)`)
+  if (m.ocr < R.minOcr)
+    out.push(
+      m.ocrMissing.length
+        ? `OCR em 246×138 não leu: ${m.ocrMissing.join(', ')}`
+        : `OCR em 246×138 com confiança ${Math.round(m.ocr)} (mínimo ${R.minOcr})`
+    )
+  if (m.contrast < R.minContrast)
+    out.push(`contraste do título ${m.contrast.toFixed(1)}:1 (mínimo ${R.minContrast}:1)`)
+  const scores: [number | null, string][] = [
+    [m.understand, 'entendo o assunto em 2 s'],
+    [m.click, 'dá vontade de clicar'],
+    [m.notEmpty, 'nada parece vazio ou pequeno']
+  ]
+  for (const [v, label] of scores) if (v !== null && v < R.minScore) out.push(`${label}: nota ${v}`)
+  return out
+}
+
+/** Drawn parts with enough detail to stand alone; anything else needs a real picture. */
+export const DETAILED_DRAWN = ['letter', 'tombstone'] as const
+
+/**
+ * Why a concept cannot be drawn in its template without a placeholder (pt-BR): T1 needs a
+ * real portrait and a stamp, T2 a real object and a stamp, T3 two elements, each a real
+ * picture or a detailed drawn part (letter, tombstone). `hasMedia(i)`: element i has a picture.
+ */
+export function placeholderProblems(c: ThumbConcept, hasMedia: (i: number) => boolean): string[] {
+  const t = TEMPLATE_OF[c.type]
+  const out: string[] = []
+  const visual = c.elements.map((e, i) => ({ e, i })).filter(({ e }) => e.kind !== 'stamp')
+  if (t === 'T1') {
+    const p = visual.find(({ e }) => e.kind === 'portrait')
+    if (!p || !hasMedia(p.i)) out.push('T1 sem retrato real da pessoa')
+  } else if (t === 'T2') {
+    const o = visual.find(({ e }) => e.kind === 'product' || e.kind === 'ad')
+    if (!o || !hasMedia(o.i)) out.push('T2 sem objeto real (frasco, rótulo, anúncio)')
+  } else {
+    if (visual.length < 2) out.push('T3 precisa de dois elementos')
+    for (const { e, i } of visual.slice(0, 2))
+      if (!hasMedia(i) && !(DETAILED_DRAWN as readonly string[]).includes(e.kind))
+        out.push(`T3: "${e.what}" sem mídia real nem desenho detalhado`)
+  }
+  if (t !== 'T3' && !c.elements.some((e) => e.kind === 'stamp' && e.words.trim()))
+    out.push(`${t} sem carimbo`)
+  return out
+}
+
+/** One element of a template thumbnail: a prepared picture, or a detailed drawn part. */
+export interface TemplatePiece {
+  kind: ElementKind
+  /** {{root}} URL of the picture (cut out without background when `cutout`); null = drawn */
+  src: string | null
+  /** width / height of the picture */
+  aspect: number
+  cutout: boolean
+  /** Words drawn on it: letter lines, tombstone inscription (" / " breaks lines) */
+  words: string
+}
+
+/** `template` prop of an Ads on Trial template thumbnail (layout "template"). */
+export interface TemplateDraw {
+  template: TemplateId
+  title: string
+  /** Word of the title painted red ('' = none) */
+  accentWord: string
+  stamp: string
+  main: TemplatePiece
+  /** T3 only: the right element */
+  side: TemplatePiece | null
+  /** T2: solid background that contrasts with the object */
+  background: 'dark' | 'light'
+  /** Check renders: only the background, background + main element, everything but the title */
+  layers?: 'all' | 'bare' | 'subject' | 'notitle'
 }

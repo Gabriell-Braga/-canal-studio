@@ -3,13 +3,7 @@ import { extname, join, relative } from 'path'
 import { z } from 'zod'
 import { formatOf, type FormatPack, type ThumbModel } from '../../shared/formats'
 import { readScan } from '../services/adscan'
-import {
-  THUMB,
-  THUMB_CHECK,
-  thumbProblems,
-  thumbText,
-  type ThumbReading
-} from '../../shared/thumb'
+import { THUMB, THUMB_CHECK, thumbProblems, thumbText, type ThumbReading } from '../../shared/thumb'
 import { pythonPost } from '../services/python'
 import { getState } from '../db/settings'
 import { THUMB_KIND_LABELS, formatUsd } from '../../shared/render'
@@ -225,7 +219,11 @@ export async function mobilePreview(
 }
 
 /** The thumbnails side by side at feed size, or null when ffmpeg fails. */
-async function feedPreview(files: string[], outDir: string, ctx: StepContext): Promise<string | null> {
+async function feedPreview(
+  files: string[],
+  outDir: string,
+  ctx: StepContext
+): Promise<string | null> {
   const preview = join(outDir, 'preview_mobile.png')
   try {
     await mobilePreview(files, preview, ctx.signal)
@@ -429,7 +427,7 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
   }
   const layoutOf = (id: string): string => format.thumbModels.find((m) => m.id === id)?.layout ?? id
   const wins = getState<Record<string, string>>(`thumbWins.ch.${video.channel_id}`, {})
-  let concepts = orderModels(modelIds(format), wins).map(
+  const concepts = orderModels(modelIds(format), wins).map(
     (id) => pack.thumbs.find((t) => t.approach === id) ?? { ...pack.thumbs[0], approach: id }
   )
   ctx.progress(0.15)
@@ -635,7 +633,8 @@ export const thumbnailStep: Step = {
       return
     }
     // A video already on YouTube keeps its title: the thumbnails are made for it.
-    const keepTitle = video.youtube_id ? (video.title ?? undefined) : undefined
+    const keepTitle =
+      video.youtube_id || ctx.jobArgs?.keepTitle ? (video.title ?? undefined) : undefined
     const dir = join(ctx.projectDir, 'thumbs')
     const pack = await makePackaging(video, ctx, dir, keepTitle)
     // The 3 best titles and the 3 thumbnails, ready for YouTube Studio's "Test & compare".

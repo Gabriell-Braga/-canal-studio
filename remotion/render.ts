@@ -7,7 +7,7 @@
  */
 import { bundle } from '@remotion/bundler'
 import { ensureBrowser, renderMedia, renderStill, selectComposition } from '@remotion/renderer'
-import { createReadStream, existsSync, readFileSync, statSync } from 'fs'
+import { createReadStream, existsSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { createServer, type Server } from 'http'
 import { cpus, tmpdir } from 'os'
 import { dirname, extname, join, normalize, resolve, sep } from 'path'
@@ -178,7 +178,12 @@ async function main(): Promise<void> {
           composition,
           inputProps,
           output: still.out,
-          imageFormat: 'png'
+          imageFormat: 'png',
+          // Template thumbnails log their measured texts; the step checks them.
+          onBrowserLog: (log) => {
+            if (log.text.startsWith('THUMB_MEASURE '))
+              writeFileSync(`${still.out}.measure.json`, log.text.slice('THUMB_MEASURE '.length))
+          }
         })
         emit({ type: 'progress', value: (i + 1) / job.stills.length })
       }

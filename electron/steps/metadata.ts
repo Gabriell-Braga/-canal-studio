@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import type { Scene } from '../../shared/types'
 import { getVideo, listScenes, listVideos, updateVideo } from '../db/repo'
+import { getState } from '../db/settings'
+import type { ThumbBriefReport } from '../../shared/thumb'
 import { formatOf } from '../../shared/formats'
 import { generateStructured } from '../services/llm'
 import type { Step } from './types'
@@ -118,6 +120,10 @@ ${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter 
       ...new Set(
         listScenes(videoId)
           .flatMap((sc) => [sc.asset_credit, ...sc.extra_assets.map((x) => x.credit)])
+          // Pictures the thumbnails use count too.
+          .concat(
+            getState<ThumbBriefReport | null>(`thumbBrief.video.${videoId}`, null)?.credits ?? []
+          )
           .filter(Boolean)
       )
     ]

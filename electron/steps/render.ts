@@ -10,7 +10,7 @@ import {
 } from '../../shared/render'
 import type { Scene, Video } from '../../shared/types'
 import { getVideo, listScenes, updateVideo } from '../db/repo'
-import { isValidFile, masterAudio, probeDuration, probeSize } from '../services/ffmpeg'
+import { isAssetFile, isValidFile, masterAudio, probeDuration, probeSize } from '../services/ffmpeg'
 import { remotionCodeHash, runRender } from '../services/remotion'
 import { readWords } from './transcribe'
 import { writeSrt } from '../services/captions'
@@ -21,6 +21,7 @@ import { readScan } from '../services/adscan'
 import { shotDurations } from '../../shared/shots'
 import { scanRegions } from '../../shared/framing'
 import { buildReport, mediaGaps, pacingAlerts } from '../../shared/coverage'
+import type { ShotCategory, ShotFile, VisualSpec } from '../../shared/visuals'
 import { writeReviewReport } from './review-report'
 import { sceneFocus } from './focus'
 import { musicTurn, planMusic, prepareMusic } from './music'
@@ -72,6 +73,37 @@ async function musicFor(
   return prepareMusic(parts, folder, video.id, ctx)
 }
 
+/** An Ads on Trial shot file (scenes/shot_<hash>.json), or null for a picture or clip. */
+export function readShotFile(path: string | null): ShotFile | null {
+  if (!path?.endsWith('.json') || !isValidFile(path, 2)) return null
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as ShotFile
+  } catch {
+    return null
+  }
+}
+
+/** The spec with its pictures as render URLs. */
+function visualUrls(spec: VisualSpec, toUrl: (file: string) => string): VisualSpec {
+  if (spec.kind === 'evidence')
+    return { ...spec, items: spec.items.map((i) => ({ ...i, src: toUrl(i.src) })) }
+  if (spec.kind === 'timeline')
+    return { ...spec, events: spec.events.map((e) => (e.src ? { ...e, src: toUrl(e.src) } : e)) }
+  return spec
+}
+
+/** Distinct pictures in the video's media bank (scenes/bank.json), or undefined. */
+function bankSize(projectDir: string): number | undefined {
+  try {
+    const bank = JSON.parse(readFileSync(join(projectDir, 'scenes', 'bank.json'), 'utf8')) as {
+      items: unknown[]
+    }
+    return bank.items.length
+  } catch {
+    return undefined
+  }
+}
+
 /** Width / height of a scan, so its highlight boxes land on the right words. */
 async function aspectOf(file: string): Promise<number | undefined> {
   try {
@@ -90,7 +122,7 @@ export const renderStep: Step = {
     const pd = ctx.projectDir
     if (!isValidFile(video.audio_path)) throw new Error('Narração não encontrada; refaça o áudio')
     const scenes = listScenes(videoId)
-    const missing = scenes.filter((s) => !isValidFile(s.asset_path) || s.start_sec === null)
+    const missing = scenes.filter((s) => !isAssetFile(s.asset_path) || s.start_sec === null)
     if (missing.length)
       throw new FinalError(
         `${missing.length} cena(s) sem mídia ou tempo; refaça as cenas`,
@@ -109,8 +141,36 @@ export const renderStep: Step = {
       path: string,
       type: Scene['asset_type'],
       motion: number,
-      sec: number
+      sec: number,
+      source: string | null
     ): Promise<NonNullable<RenderScene['shots']>[number]> => {
+      // Text cards, AI illustrations and the rest (real media), for the review's time split.
+      const category: ShotCategory = source?.startsWith('card:')
+        ? 'card'
+        : source?.startsWith('ai:') || (fillerAi && type === 'ai_image')
+          ? 'ai'
+          : 'real'
+      // Ads on Trial shot files: an animation, a parallax move or a detail of a picture.
+      const shot = readShotFile(path)
+      if (shot?.shot === 'visual')
+        return {
+          src: '',
+          type: 'image',
+          motion,
+          sec,
+          visual: visualUrls(shot.spec, (f) => url(pd, f)),
+          category: 'animation'
+        }
+      if (shot)
+        return {
+          src: url(pd, shot.src),
+          type: 'image',
+          motion,
+          sec,
+          focus: await sceneFocus(shot.src, ctx),
+          ...(shot.shot === 'parallax' ? { depth: url(pd, shot.depth) } : { crop: shot.crop }),
+          category
+        }
       const isVideo = type === 'stock_video' || type === 'ai_video'
       // Each new shot of a scan closes in on another part of it. Counted before any await,
       // so the order follows the scenes.
@@ -134,7 +194,9 @@ export const renderStep: Step = {
               }
             }
           : {}),
-        ...(fillerAi && type === 'ai_image' ? { filler: true } : {})
+        // Old paper-texture fillers count as no media; engraving illustrations (ai:) are real shots.
+        ...(fillerAi && type === 'ai_image' && !source?.startsWith('ai:') ? { filler: true } : {}),
+        category
       }
     }
     const renderScenes: RenderScene[] = await Promise.all(
@@ -142,12 +204,18 @@ export const renderStep: Step = {
         const start = s.start_sec as number
         const end = s.end_sec as number
         const images = [
-          { path: s.asset_path as string, type: s.asset_type },
-          ...s.extra_assets.filter((x) => isValidFile(x.path))
+          { path: s.asset_path as string, type: s.asset_type, source: s.asset_source },
+          ...s.extra_assets.filter((x) => isAssetFile(x.path))
         ]
-        // The scan stays up while the period announcer reads it; the rest follows the cadence.
+        // The scan stays up while the period announcer reads it, an animation for its own
+        // length; the rest follows the cadence.
         const period = periods.find((p) => p.sceneId === s.id)
-        const hold = period ? Math.max(0, period.end - start + 0.3) : 0
+        const first = readShotFile(images[0].path)
+        const hold = period
+          ? Math.max(0, period.end - start + 0.3)
+          : first?.shot === 'visual'
+            ? first.sec
+            : 0
         let secs = shotDurations(start, end, hold)
         if (images.length < secs.length) {
           const h = Math.min(hold, end - start)
@@ -160,7 +228,7 @@ export const renderStep: Step = {
         const [main, ...shots] = await Promise.all(
           images
             .slice(0, secs.length)
-            .map((x, k) => media(x.path, x.type, (i * 7 + videoId + k * 3) % 4, secs[k]))
+            .map((x, k) => media(x.path, x.type, (i * 7 + videoId + k * 3) % 4, secs[k], x.source))
         )
         return { ...main, start, end, shots }
       })
@@ -253,9 +321,11 @@ export const renderStep: Step = {
         'scenes'
       )
     }
-    // Ads on Trial: repeats past 3 uses and stills past the cadence stop the render too.
-    if (fillerAi) {
-      const pacing = pacingAlerts(buildReport(props.scenes, narrationSec, periods, []).alerts)
+    // Ads on Trial: repeats past 3 uses, stills past the cadence and the time split (real
+    // media, animations, AI, cards) stop the render too.
+    const mix = fillerAi ? { bank: bankSize(pd) } : undefined
+    if (mix) {
+      const pacing = pacingAlerts(buildReport(props.scenes, narrationSec, periods, [], mix).alerts)
       if (pacing.length)
         throw new FinalError(
           `Ritmo fora da regra (${pacing.length}): ${pacing.slice(0, 3).join('; ')}${pacing.length > 3 ? '…' : ''}. Refaça as cenas.`,
@@ -264,7 +334,7 @@ export const renderStep: Step = {
     }
     const report = async (): Promise<void> => {
       try {
-        const r = await writeReviewReport(videoId, pd, props, periods, ctx.signal)
+        const r = await writeReviewReport(videoId, pd, props, periods, ctx.signal, mix)
         if (r.alerts.length) ctx.log(`Relatório de revisão: ${r.alerts.length} alerta(s)`, 'warn')
       } catch (error) {
         if (ctx.signal.aborted) throw error

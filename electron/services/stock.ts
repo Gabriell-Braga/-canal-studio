@@ -5,7 +5,9 @@ import type { Settings, StockProvider } from '../../shared/types'
 import { download, searchStock as searchPexels, type StockCandidate } from './pexels'
 import { searchPixabay } from './pixabay'
 import { searchWikimedia, type WikimediaOptions } from './wikimedia'
-import { searchArchive, searchMet, searchNasa } from './archives'
+import { searchArchive, searchArchivePages, searchMet, searchNasa } from './archives'
+import { searchWellcome } from './wellcome'
+import { searchSmithsonian } from './smithsonian'
 import { toCandidate } from './chroniclingamerica'
 import { findAdPages } from './commonsads'
 import { scanAd } from './adscan'
@@ -75,7 +77,7 @@ export async function searchReal(
   }
 }
 
-const KEYLESS = new Set<StockProvider>(['wikimedia', 'nasa', 'met', 'archive', 'loc'])
+const KEYLESS = new Set<StockProvider>(['wikimedia', 'nasa', 'met', 'archive', 'loc', 'wellcome'])
 
 /** Providers the channel wants, in its order, that can run with the current keys. */
 export function usableProviders(s: Settings): StockProvider[] {
@@ -83,6 +85,7 @@ export function usableProviders(s: Settings): StockProvider[] {
     (p) =>
       (p === 'pixabay' && !!s.pixabayApiKey) ||
       (p === 'pexels' && !!s.pexelsApiKey) ||
+      (p === 'smithsonian' && !!s.smithsonianApiKey) ||
       KEYLESS.has(p)
   )
 }
@@ -122,6 +125,17 @@ export async function searchAll(
             ...toCandidate(page),
             loc: { page, phrase: query }
           }))
+        )
+      } else if (provider === 'wellcome') {
+        all = await cached(`wellcome|${query}`, () => searchWellcome(query, new Set(), signal))
+      } else if (provider === 'smithsonian') {
+        all = await cached(`smithsonian|${query}`, () =>
+          searchSmithsonian(query, s.smithsonianApiKey, cacheDir, new Set(), signal)
+        )
+      } else if (provider === 'archive' && formatOf(s.format).maxMediaYear) {
+        // Public-domain formats: pages of period books, pamphlets and almanacs, not films.
+        all = await cached(`archivepages|${query}`, () =>
+          searchArchivePages(query, new Set(), signal)
         )
       } else {
         const search = { nasa: searchNasa, met: searchMet, archive: searchArchive }[provider]
@@ -170,8 +184,10 @@ export const PROVIDER_LABELS: Record<StockProvider, string> = {
   wikimedia: 'Wikimedia Commons',
   nasa: 'NASA',
   met: 'The Met',
-  archive: 'Internet Archive (Prelinger)',
-  loc: 'Library of Congress (jornais até 1930)'
+  archive: 'Internet Archive (Prelinger; livros e almanaques até 1930 no Ads on Trial)',
+  loc: 'Library of Congress (jornais até 1930)',
+  wellcome: 'Wellcome Collection',
+  smithsonian: 'Smithsonian Open Access'
 }
 
 /** Save a candidate to `out`: a newspaper ad is cropped from its page, anything else downloaded. */

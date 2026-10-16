@@ -15,6 +15,7 @@ import type { Focus, RenderScene, RenderWord, VideoProps } from '../shared/rende
 import { ChannelIntroCard, Teaser } from './ChannelIntro'
 import { formatComponents } from './formats'
 import { PaperScan } from './formats/vintage-ads'
+import { DataVisual, DetailShot, ParallaxShot } from './formats/vintage-visuals'
 import { template, type TemplateStyle } from './templates'
 
 const FADE_SEC = 0.5
@@ -114,7 +115,10 @@ function ShotLayer({
   grade,
   vignette
 }: {
-  shot: Pick<RenderScene, 'src' | 'type' | 'motion' | 'clipDuration' | 'focus' | 'scan'>
+  shot: Pick<
+    RenderScene,
+    'src' | 'type' | 'motion' | 'clipDuration' | 'focus' | 'scan' | 'visual' | 'depth' | 'crop'
+  >
   frames: number
   fade: boolean
   grade: string
@@ -125,6 +129,13 @@ function ShotLayer({
   const opacity = fade
     ? interpolate(frame, [0, SHOT_FADE], [0, 1], { extrapolateRight: 'clamp' })
     : 1
+  // Data animations and the evidence board are drawn, without the footage grade.
+  if (shot.visual)
+    return (
+      <AbsoluteFill style={{ opacity }}>
+        <DataVisual spec={shot.visual} frames={frames} />
+      </AbsoluteFill>
+    )
   // A newspaper scan is drawn on paper, without the footage grade or the vignette.
   if (shot.scan)
     return (
@@ -134,7 +145,17 @@ function ShotLayer({
     )
   return (
     <AbsoluteFill style={{ opacity, filter: grade }}>
-      {shot.type === 'image' ? (
+      {shot.type === 'image' && shot.depth ? (
+        <ParallaxShot src={shot.src} depth={shot.depth} frames={frames} motion={shot.motion} />
+      ) : shot.type === 'image' && shot.crop ? (
+        <DetailShot
+          src={shot.src}
+          crop={shot.crop}
+          frames={frames}
+          motion={shot.motion}
+          focus={shot.focus}
+        />
+      ) : shot.type === 'image' ? (
         <KenBurns src={shot.src} motion={shot.motion} frames={frames} focus={shot.focus} />
       ) : (
         // Clips shorter than the scene loop instead of freezing on the last frame.

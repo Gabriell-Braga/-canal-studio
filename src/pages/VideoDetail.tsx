@@ -457,6 +457,7 @@ function ReviewReportPanel({ video }: { video: Video }): React.JSX.Element | nul
       ) : (
         <div className="text-xs text-emerald-400">Tudo dentro das regras.</div>
       )}
+      {report.split && <SplitBar split={report.split} bank={report.bank} />}
       <div className="text-xs text-ink-400">
         Sem mídia: {report.noMediaSec.toFixed(1)} s · Maior imagem parada:{' '}
         {report.longestStill
@@ -991,6 +992,46 @@ function ThumbChecks({ m }: { m: ThumbMetrics }): React.JSX.Element {
         vazio {score(m.notEmpty)}
       </div>
       {m.problems.length > 0 && <div className="text-red-400">{m.problems.join(' · ')}</div>}
+    </div>
+  )
+}
+
+const SPLIT_PARTS: {
+  key: 'real' | 'animation' | 'ai' | 'card'
+  label: string
+  color: string
+  target: string
+}[] = [
+  { key: 'real', label: 'Mídia real', color: 'bg-emerald-500', target: '≥ 50%' },
+  { key: 'animation', label: 'Animações e evidências', color: 'bg-sky-500', target: '15–25%' },
+  { key: 'ai', label: 'Ilustração de IA', color: 'bg-amber-500', target: '≤ 25%' },
+  { key: 'card', label: 'Cartões de texto', color: 'bg-rose-500', target: '≤ 8%' }
+]
+
+/** Where the video's time goes (Ads on Trial), against the targets, as one bar. */
+function SplitBar({
+  split,
+  bank
+}: {
+  split: Record<'real' | 'animation' | 'ai' | 'card', number>
+  bank?: number
+}): React.JSX.Element {
+  return (
+    <div data-testid="split-bar" className="grid gap-1">
+      <div className="flex h-3 overflow-hidden rounded">
+        {SPLIT_PARTS.map((p) => (
+          <div key={p.key} className={p.color} style={{ width: `${split[p.key] * 100}%` }} />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-ink-400">
+        {SPLIT_PARTS.map((p) => (
+          <span key={p.key}>
+            <span className={`mr-1 inline-block h-2 w-2 rounded-sm ${p.color}`} />
+            {p.label} {Math.round(split[p.key] * 100)}% ({p.target})
+          </span>
+        ))}
+        {bank !== undefined && <span>Banco: {bank} mídias (≥ 25)</span>}
+      </div>
     </div>
   )
 }

@@ -5,12 +5,14 @@ import {
   type ShortProps,
   type CardProps,
   type ThumbnailProps,
-  type VideoProps
+  type VideoProps,
+  type VisualStillProps
 } from '../shared/render'
 import { ChannelIntro } from './ChannelIntro'
 import { Short } from './Short'
 import { FormatThumbnail } from './formats'
 import { VintageCard } from './formats/vintage-cards'
+import { VisualStill } from './formats/vintage-visuals'
 import { Video } from './Video'
 
 const defaultVideo: VideoProps = {
@@ -47,6 +49,10 @@ const defaultThumb: ThumbnailProps = {
 }
 
 const defaultCard: CardProps = { kind: 'quote', text: 'Sample quote' }
+
+const defaultVisual: VisualStillProps = {
+  shot: { shot: 'visual', spec: { kind: 'counter', then: '$1.00', today: '$37', year: 1903 }, sec: 8 }
+}
 
 export const Root: React.FC = () => (
   <>
@@ -108,6 +114,17 @@ export const Root: React.FC = () => (
       width={1920}
       height={1080}
       defaultProps={defaultCard}
+    />
+    {/* A composition, not a Still: Freeze clamps to the duration. Rendered at frame 0. */}
+    <Composition
+      id="Visual"
+      component={VisualStill}
+      width={1920}
+      height={1080}
+      fps={30}
+      durationInFrames={240}
+      defaultProps={defaultVisual}
+      calculateMetadata={({ props }) => ({ durationInFrames: props.frames ?? 240 })}
     />
   </>
 )

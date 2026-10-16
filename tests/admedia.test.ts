@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ANIM_SEC,
   longestStill,
   MAX_USES,
   mergeCards,
-  cardLines,
+  pickAnimationScenes,
   planCards,
   planShots,
   type MediaItem,
   type PlanScene
 } from '../electron/steps/admedia'
-import type { MediaKind } from '../electron/steps/relevance'
+import { pickCrops } from '../electron/steps/advisuals'
+import { byRelevance, verdictOf, type MediaKind } from '../electron/steps/relevance'
+import { mixAlerts, type ShotSpan } from '../shared/coverage'
+import type { SceneVisual, ShotCategory } from '../shared/visuals'
 import { maxStillSec } from '../shared/shots'
 
 const media = (file: string, kind: MediaKind, main = false): MediaItem => ({
@@ -121,42 +125,158 @@ describe('planShots', () => {
 describe('planCards', () => {
   const script = {
     claims: [{ scene: 2, quote: 'Cures uterine trouble', verdict: 'FALSE', source: 'JAMA, 1915' }],
-    scenes: [{ narration: 'x' }, { narration: 'x', price: { usd: 1, year: 1903 } }]
+    scenes: [{ narration: 'x' }, { narration: 'x', price: { usd: 1, year: 1903 } }],
+    verdict: { law: 'FD&C Act 1938', text: 'Banned as a drug claim since 1938' }
   } as never
-  const sc = (index: number, missing: number, narration = '', year: number | null = null) => ({
+  type CardScene = { index: number; missing: number; start: number; end: number; hold: number }
+  const sc = (index: number, missing: number, start = 100 + index * 20): CardScene => ({
     index,
     missing,
-    narration,
-    year
+    start,
+    end: start + 20,
+    hold: 0
   })
 
-  it('fills the empty slots with the claim, the price, then lines of the narration, never twice', () => {
-    const cards = planCards(
-      [
-        sc(
-          2,
-          3,
-          'In 1903 the paper ran the ad for her cure. Women believed every single word of it.',
-          1903
-        )
-      ],
-      script,
-      [1819, 1875, 1883, 1903]
-    )
-    const kinds = cards.get(2)?.map((c) => c.kind)
-    expect(kinds).toEqual(['claim', 'price', 'timeline'])
-    const again = planCards([sc(1, 2, 'x'), sc(3, 1, 'x')], script, [null])
-    expect(again.size).toBe(0)
+  it('only makes cards that add something: claim, price, closing verdict, never a narration line', () => {
+    const cards = planCards([sc(2, 3), sc(3, 1), sc(4, 2)], script, 100, 4)
+    expect(cards.get(2)?.map((c) => c.kind)).toEqual(['claim'])
+    expect(cards.has(3)).toBe(false)
+    expect(cards.get(4)?.[0].sub).toBe('Would It Run Today?')
   })
 
-  it('cuts long sentences into readable parts instead of dropping them', () => {
-    const long = Array.from({ length: 40 }, (_, i) => `w${i}`).join(' ') + '.'
-    const lines = cardLines(`Too short. ${long}`)
-    expect(lines).toHaveLength(3)
-    for (const l of lines) expect(l.replace(/…/g, '').split(' ').length).toBeLessThanOrEqual(14)
+  it('keeps cards within 8% of the video and never two in a row', () => {
+    const many = {
+      scenes: Array.from({ length: 20 }, (_, i) => ({ narration: 'x', ad_quote: `quote ${i}` }))
+    } as never
+    // 20 scenes of 20 s = 400 s; 8% = 32 s; each card holds one 7 s slot.
+    const all = Array.from({ length: 20 }, (_, i) => sc(i + 1, 3))
+    const cards = planCards(all, many, 32, 20)
+    expect(cards.size).toBeLessThanOrEqual(4)
+    // Scenes with nothing else (missing = every slot) never put two cards back to back.
+    const alone = Array.from({ length: 6 }, (_, i) => sc(i + 1, 3))
+    const sparse = planCards(alone, many, 1000, 20)
+    const idx = [...sparse.keys()].sort((a, b) => a - b)
+    for (let i = 1; i < idx.length; i++) expect(idx[i] - idx[i - 1]).toBeGreaterThan(1)
   })
 
   it('alternates real pictures and cards', () => {
     expect(mergeCards(['a', 'b'], ['c1'])).toEqual(['a', 'c1', 'b'])
+  })
+})
+
+describe('two-level relevance', () => {
+  it('uses LITERAL and CONTEXT pictures, literal first, never NONE', () => {
+    expect(verdictOf({ level: 'context', what: 'Lynn street 1880s', kind: 'place' }).ok).toBe(true)
+    expect(verdictOf({ level: 'none', what: 'a Roman vase', kind: 'other' }).ok).toBe(false)
+    const list = byRelevance([
+      { f: 'ctx', level: 'context' as const },
+      { f: 'no', level: 'none' as const },
+      { f: 'lit', level: 'literal' as const }
+    ])
+    expect(list.map((x) => x.f)).toEqual(['lit', 'ctx'])
+  })
+
+  it('plans a literal picture before a context one in the same scene', () => {
+    const [sc] = scenes(10, 10)
+    const ok = [
+      { ...media('street', 'place'), level: 'context' as const },
+      { ...media('bottle', 'product'), level: 'literal' as const }
+    ]
+    const plan = planShots([{ ...sc, start: 200, end: 207, ok }], { ads: [], photos: [] })
+    expect(plan.get(0)?.map((m) => m.file)).toEqual(['bottle'])
+  })
+})
+
+describe('animations', () => {
+  type AnimScene = { index: number; start: number; end: number; scan: boolean; visual: SceneVisual }
+  const sc = (index: number, visual: SceneVisual, scan = false): AnimScene => ({
+    index,
+    start: index * 20,
+    end: index * 20 + 20,
+    scan,
+    visual
+  })
+
+  it('draws the suggested animations, never on a scan, within 15–25% of the video', () => {
+    const list = [sc(0, 'map', true), sc(1, 'map'), sc(2, 'tree'), sc(3, 'photo'), sc(4, 'photo')]
+    const picked = pickAnimationScenes(list, 100)
+    expect(picked.has(0)).toBe(false)
+    expect(picked.get(1)).toBe('map')
+    let sec = 0
+    for (const [i, k] of picked) sec += Math.min(ANIM_SEC[k], list[i].end - list[i].start)
+    expect(sec / 100).toBeLessThanOrEqual(0.25)
+  })
+
+  it('adds evidence boards and timelines when the script suggests too few', () => {
+    const list = Array.from({ length: 10 }, (_, i) => sc(i, 'photo'))
+    const picked = pickAnimationScenes(list, 200)
+    let sec = 0
+    for (const [i, k] of picked) sec += Math.min(ANIM_SEC[k], list[i].end - list[i].start)
+    expect(sec / 200).toBeGreaterThanOrEqual(0.15)
+    expect([...picked.values()]).toContain('evidence')
+  })
+})
+
+describe('detail crops', () => {
+  it('frames regions in 16:9 inside the picture, never the whole picture, never twice alike', () => {
+    const crops = pickCrops(
+      [
+        { x: 0.4, y: 0.1, w: 0.15, h: 0.12 },
+        { x: 0.41, y: 0.11, w: 0.14, h: 0.11 },
+        { x: 0.1, y: 0.7, w: 0.2, h: 0.1 },
+        { x: 0, y: 0, w: 0.95, h: 0.95 }
+      ],
+      { width: 3000, height: 2000 }
+    )
+    expect(crops).toHaveLength(2)
+    for (const c of crops) {
+      expect(c.x).toBeGreaterThanOrEqual(0)
+      expect(c.x + c.w).toBeLessThanOrEqual(1.0001)
+      expect(c.y + c.h).toBeLessThanOrEqual(1.0001)
+      expect((c.w * 3000) / (c.h * 2000)).toBeCloseTo(16 / 9, 1)
+    }
+  })
+})
+
+describe('time split of the review', () => {
+  const span = (at: number, sec: number, category: ShotCategory, scene = 0): ShotSpan => ({
+    at,
+    sec,
+    src: `${category}${at}`,
+    still: true,
+    filler: false,
+    category,
+    scene
+  })
+
+  it('fails cards over 8%, two cards in a row and AI over 25%', () => {
+    const spans = [
+      span(0, 50, 'real'),
+      span(50, 20, 'animation'),
+      span(70, 5, 'card', 3),
+      span(75, 5, 'card', 4),
+      span(80, 20, 'ai')
+    ]
+    const alerts = mixAlerts(spans, 100, 30).join(' | ')
+    expect(alerts).toMatch(/Cartões de texto 10% .*cenas 4, 5 precisam de visual/)
+    expect(alerts).toMatch(/Dois cartões seguidos/)
+    expect(alerts).not.toMatch(/Ilustração de IA/)
+    const ai = mixAlerts(
+      [span(0, 55, 'real'), span(55, 15, 'animation'), span(70, 30, 'ai')],
+      100,
+      30
+    )
+    expect(ai.join()).toMatch(/Ilustração de IA 30%/)
+  })
+
+  it('passes a video with half real media, 20% animations and a full bank', () => {
+    const ok = [
+      span(0, 60, 'real'),
+      span(60, 20, 'animation'),
+      span(80, 15, 'ai'),
+      span(95, 5, 'card')
+    ]
+    expect(mixAlerts(ok, 100, 30)).toEqual([])
+    expect(mixAlerts(ok, 100, 14).join()).toMatch(/Banco de mídia com 14/)
   })
 })

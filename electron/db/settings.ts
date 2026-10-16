@@ -46,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   imageModel: 'z-image',
   pexelsApiKey: '',
   pixabayApiKey: '',
+  smithsonianApiKey: '',
   stockProviders: ['pixabay', 'wikimedia', 'pexels'],
   wikimediaAllowCcBy: true,
   wikimediaAllowCcBySa: true,

@@ -243,3 +243,104 @@ export async function freeComfy(url: string): Promise<void> {
     body: JSON.stringify({ unload_models: true, free_memory: true })
   }).catch(() => undefined)
 }
+
+/** IP-Adapter Plus for SDXL (ComfyUI_IPAdapter_plus node + its models). */
+export const IPADAPTER = {
+  node: 'ComfyUI_IPAdapter_plus',
+  model: 'ip-adapter-plus_sdxl_vit-h.safetensors',
+  clipVision: 'CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors'
+}
+
+export function hasIpAdapter(comfyPath: string): boolean {
+  const root = join(comfyPath, 'ComfyUI')
+  return (
+    existsSync(join(root, 'custom_nodes', IPADAPTER.node)) &&
+    existsSync(join(root, 'models', 'ipadapter', IPADAPTER.model)) &&
+    existsSync(join(root, 'models', 'clip_vision', IPADAPTER.clipVision))
+  )
+}
+
+export const ENGRAVING_STYLE =
+  '19th-century newspaper wood engraving, black ink linework on aged paper, cross-hatching, no color, light sepia'
+
+const ENGRAVING_NEGATIVE =
+  'photo, photograph, photorealistic, realistic skin, color, colorful, text, letters, words, writing, typography, caption, inscription, plate number, border text, signature, watermark, logo, face, face close-up, portrait, 3d render'
+
+async function uploadImage(file: string, s: Settings): Promise<string> {
+  const form = new FormData()
+  form.append('image', new Blob([readFileSync(file)]), `canal_${randomUUID()}${extname(file)}`)
+  form.append('overwrite', 'true')
+  const up = await fetch(`${s.comfyUrl}/upload/image`, { method: 'POST', body: form })
+  if (!up.ok) throw new Error(`ComfyUI /upload/image HTTP ${up.status}`)
+  return ((await up.json()) as { name: string }).name
+}
+
+/**
+ * An illustration in the style of a period newspaper engraving (SDXL, 1344×768). With
+ * IP-Adapter installed, 2–3 real engravings of the video steer the style (style transfer);
+ * without it, the prompt alone does. Returns whether IP-Adapter was used.
+ */
+export async function engravingImage(
+  prompt: string,
+  refs: string[],
+  out: string,
+  s: Settings,
+  signal?: AbortSignal,
+  seed = Math.floor(Math.random() * 2 ** 31)
+): Promise<boolean> {
+  const workflow = sdxlWorkflow(`${ENGRAVING_STYLE}, ${prompt}`, s, 1344, 768, seed) as Record<
+    string,
+    { class_type: string; inputs: Record<string, unknown> }
+  >
+  workflow['7'].inputs.text = ENGRAVING_NEGATIVE
+  workflow['3'].inputs.steps = 30
+  const useIp = refs.length > 0 && hasIpAdapter(s.comfyPath)
+  if (useIp) {
+    const names = await Promise.all(refs.slice(0, 3).map((f) => uploadImage(f, s)))
+    // Every reference at the same size, so they can go in one batch.
+    names.forEach((name, i) => {
+      workflow[`r${i}`] = { class_type: 'LoadImage', inputs: { image: name } }
+      workflow[`s${i}`] = {
+        class_type: 'ImageScale',
+        inputs: {
+          image: [`r${i}`, 0],
+          upscale_method: 'lanczos',
+          width: 512,
+          height: 512,
+          crop: 'center'
+        }
+      }
+    })
+    let batch: unknown[] = ['s0', 0]
+    for (let i = 1; i < names.length; i++) {
+      workflow[`b${i}`] = {
+        class_type: 'ImageBatch',
+        inputs: { image1: batch, image2: [`s${i}`, 0] }
+      }
+      batch = [`b${i}`, 0]
+    }
+    workflow.ipm = {
+      class_type: 'IPAdapterModelLoader',
+      inputs: { ipadapter_file: IPADAPTER.model }
+    }
+    workflow.clv = { class_type: 'CLIPVisionLoader', inputs: { clip_name: IPADAPTER.clipVision } }
+    workflow.ipa = {
+      class_type: 'IPAdapterAdvanced',
+      inputs: {
+        model: ['4', 0],
+        ipadapter: ['ipm', 0],
+        image: batch,
+        clip_vision: ['clv', 0],
+        weight: 0.8,
+        weight_type: 'style transfer',
+        combine_embeds: 'average',
+        start_at: 0,
+        end_at: 1,
+        embeds_scaling: 'V only'
+      }
+    }
+    workflow['3'].inputs.model = ['ipa', 0]
+  }
+  await runWorkflow(workflow, out, s, signal)
+  return useIp
+}

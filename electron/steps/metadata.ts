@@ -129,6 +129,12 @@ ${chapters.length ? `- chapter_titles: exactly ${chapters.length} short chapter 
     ]
     if (credits.length)
       description += `\n\nImage credits\n${credits.map((c) => `- ${c}`).join('\n')}`
+    // Period-style engravings made with AI (not realistic: no synthetic-content label).
+    const illustrated = listScenes(videoId).some((sc) =>
+      [sc.asset_source, ...sc.extra_assets.map((x) => x.source)].some((x) => x?.startsWith('ai:'))
+    )
+    if (illustrated)
+      description += `${credits.length ? '\n' : '\n\n'}Some illustrations are AI-generated.`
     const tags = [...new Set(meta.tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(
       0,
       15

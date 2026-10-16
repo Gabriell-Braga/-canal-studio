@@ -167,7 +167,7 @@ export async function searchArchive(
 
 // ---------------------------------------------------------------- Internet Archive (ads)
 
-interface ArchiveDoc {
+export interface ArchiveDoc {
   identifier: string
   title?: string
   year?: string | number
@@ -306,4 +306,70 @@ export async function archiveItem(
   const img = await archiveImage(identifier, signal)
   if (!img) return (reject(page.newspaper, 'sem imagem no item'), null)
   return { ...page, imageUrl: img.url, mirror: img.url, pixels: img.pixels }
+}
+
+// ---------------------------------------------------------------- Internet Archive (texts)
+
+/**
+ * Rights of a book, pamphlet or almanac: its own public-domain statement, or publication up
+ * to PUBLIC_DOMAIN_UNTIL (public domain in the US by date). Null when neither holds.
+ */
+export function textRights(d: ArchiveDoc): { year: number; rights: string } | null {
+  const year = Number(String(d.year ?? d.date ?? '').slice(0, 4))
+  if (!year || year > PUBLIC_DOMAIN_UNTIL) return null
+  const free = publicRights(d)
+  return {
+    year,
+    rights: free ? `Public domain (${free})` : `public domain in the US (published ${year})`
+  }
+}
+
+/** Page candidates (first 6 pages, 1600 px) of the items, when their rights pass. */
+export function archivePageCandidates(docs: ArchiveDoc[], exclude: Set<string>): StockCandidate[] {
+  const out: StockCandidate[] = []
+  for (const d of docs) {
+    const r = textRights(d)
+    if (!r) continue
+    const title = (d.title ?? d.identifier).slice(0, 120)
+    for (let k = 0; k < 6; k++) {
+      const source = `archive:${d.identifier}:n${k}`
+      if (exclude.has(source)) continue
+      out.push({
+        source,
+        kind: 'stock_photo',
+        url: `https://archive.org/download/${d.identifier}/page/n${k}_w1600.jpg`,
+        year: r.year,
+        label: `${title} page ${k}`,
+        credit: `"${title}", Internet Archive, ${r.rights} (https://archive.org/details/${d.identifier})`
+      })
+    }
+  }
+  return out
+}
+
+/** Pages of books, pamphlets and almanacs dated up to PUBLIC_DOMAIN_UNTIL. */
+export async function searchArchivePages(
+  query: string,
+  exclude: Set<string>,
+  signal?: AbortSignal
+): Promise<StockCandidate[]> {
+  const q = encodeURIComponent(
+    `(${query.slice(0, 100)}) AND mediatype:texts AND year:[1800 TO ${PUBLIC_DOMAIN_UNTIL}]`
+  )
+  const fl = [
+    'identifier',
+    'title',
+    'year',
+    'date',
+    'licenseurl',
+    'rights',
+    'possible-copyright-status'
+  ]
+    .map((f) => `fl[]=${f}`)
+    .join('&')
+  const { response } = await getJson<{ response: { docs: ArchiveDoc[] } }>(
+    `https://archive.org/advancedsearch.php?q=${q}&${fl}&rows=5&output=json`,
+    signal
+  )
+  return archivePageCandidates(response.docs, exclude)
 }

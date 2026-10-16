@@ -70,6 +70,11 @@ export function isValidFile(file: string | null | undefined, minBytes = 1024): f
   return !!file && existsSync(file) && statSync(file).size >= minBytes
 }
 
+/** A scene asset: a picture or clip, or an Ads on Trial shot file (small JSON). */
+export function isAssetFile(file: string | null | undefined): file is string {
+  return isValidFile(file, file?.endsWith('.json') ? 2 : 1024)
+}
+
 /** Final mix target: -14 LUFS integrated, true peak never above -1 dBTP. */
 export const MASTER = { lufs: -14, truePeak: -1, lufsTolerance: 0.5 }
 

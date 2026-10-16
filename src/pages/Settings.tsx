@@ -40,6 +40,16 @@ const PROVIDERS: { id: StockProvider; name: string; note: string }[] = [
     id: 'loc',
     name: 'Library of Congress (Chronicling America)',
     note: 'anúncios de jornais até 1930, recortados da página · sem chave'
+  },
+  {
+    id: 'wellcome',
+    name: 'Wellcome Collection',
+    note: 'anúncios de remédios, cartões e panfletos até 1930 (PD, CC0, CC BY) · sem chave'
+  },
+  {
+    id: 'smithsonian',
+    name: 'Smithsonian Open Access',
+    note: 'frascos, rótulos e cartões de remédios (só CC0) · precisa de chave grátis'
   }
 ]
 
@@ -776,6 +786,17 @@ export default function Settings({ scope }: { scope: Scope }): React.JSX.Element
               type="password"
               value={s.pixabayApiKey}
               onChange={(e) => set('pixabayApiKey', e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Chave da Smithsonian (api.data.gov)"
+            hint="Grátis em https://api.data.gov/signup/ · usada pelo provedor Smithsonian Open Access."
+          >
+            <input
+              className={inputClass}
+              type="password"
+              value={s.smithsonianApiKey}
+              onChange={(e) => set('smithsonianApiKey', e.target.value)}
             />
           </Field>
           <Field

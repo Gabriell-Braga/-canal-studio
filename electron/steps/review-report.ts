@@ -61,7 +61,9 @@ export async function writeReviewReport(
   projectDir: string,
   props: VideoProps,
   announcer: AnnouncerSpan[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** Ads on Trial: time split and card rules, with the media bank size */
+  mix?: { bank?: number }
 ): Promise<ReviewReport> {
   const dir = reviewDir(projectDir, videoId)
   mkdirSync(dir, { recursive: true })
@@ -74,7 +76,7 @@ export async function writeReviewReport(
     await contactSheet(video, until, sheet, signal)
     if (isValidFile(sheet)) contact = sheet
   }
-  const built = buildReport(props.scenes, until, announcer, rejected)
+  const built = buildReport(props.scenes, until, announcer, rejected, mix)
   // Notes the steps left for the review (a small media bank, scenes short of images).
   built.alerts.push(...getState<string[]>(`review.notes.media.${videoId}`, []))
   const announcerNote = readTimings(projectDir)?.announcerNote

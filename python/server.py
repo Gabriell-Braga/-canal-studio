@@ -279,6 +279,75 @@ def focus(req: FocusRequest):
     return {"x": float(cols.mean() / size), "y": float(head / size), "aspect": aspect}
 
 
+class DepthRequest(BaseModel):
+    image_path: str
+    out_path: str
+
+
+_depth: dict[str, object] = {"pipe": None}
+
+
+@app.post("/depth")
+def depth(req: DepthRequest):
+    """Depth map of a picture for 2.5D parallax: grayscale PNG, white = near.
+
+    Depth Anything V2 Small (Apache-2.0) on CPU. spread is the standard deviation of the map
+    (0-1): a flat scan or a page has almost none, a photo with a clear subject has plenty.
+    """
+    from PIL import Image
+
+    if not Path(req.image_path).exists():
+        raise HTTPException(404, f"image not found: {req.image_path}")
+    with _lock:
+        if _depth["pipe"] is None:
+            from transformers import pipeline
+
+            _depth["pipe"] = pipeline("depth-estimation", model="depth-anything/Depth-Anything-V2-Small-hf", device=-1)
+        img = Image.open(req.image_path).convert("RGB")
+        small = img.copy()
+        small.thumbnail((1024, 1024))
+        pred = np.asarray(_depth["pipe"](small)["predicted_depth"].squeeze().cpu().numpy(), dtype=np.float32)
+    pred = (pred - pred.min()) / max(float(pred.max() - pred.min()), 1e-6)
+    out = Path(req.out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray((pred * 255).astype(np.uint8)).resize(img.size, Image.BICUBIC).save(out)
+    return {"path": str(out), "spread": float(pred.std())}
+
+
+class RegionsRequest(BaseModel):
+    image_path: str
+    count: int = 4
+
+
+@app.post("/salient_regions")
+def salient_regions(req: RegionsRequest):
+    """Boxes (x, y, w, h as 0-1 of the image) of the salient objects, biggest first: the parts
+    of a picture worth a close-up (a face, a hand, a bottle, an engraving inside a page)."""
+    import cv2
+    from PIL import Image
+
+    if not Path(req.image_path).exists():
+        raise HTTPException(404, f"image not found: {req.image_path}")
+    with _lock:
+        session = _cutout_session()
+        img = Image.open(req.image_path).convert("RGB")
+        x = np.asarray(img.resize((1024, 1024), Image.LANCZOS), dtype=np.float32)
+        x = x / max(float(x.max()), 1e-6) - 0.5
+        x = x.transpose(2, 0, 1)[None]
+        pred = session.run(None, {session.get_inputs()[0].name: x})[0][0, 0]
+        pred = (pred - pred.min()) / max(float(pred.max() - pred.min()), 1e-6)
+    solid = (pred > 0.5).astype(np.uint8)
+    n, _, stats, _ = cv2.connectedComponentsWithStats(solid, connectivity=8)
+    boxes = []
+    for i in range(1, n):
+        x0, y0, w, h, area = (int(v) for v in stats[i])
+        if area < 0.005 * solid.size:
+            continue
+        boxes.append({"x": x0 / 1024, "y": y0 / 1024, "w": w / 1024, "h": h / 1024, "area": area / solid.size})
+    boxes.sort(key=lambda b: b["area"], reverse=True)
+    return {"boxes": boxes[: req.count], "width": img.width, "height": img.height}
+
+
 @app.post("/unload")
 def unload():
     """Release Whisper (and its VRAM) before ComfyUI runs."""

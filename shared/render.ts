@@ -30,6 +30,14 @@ export interface RenderScene {
   sec?: number
   /** Paper-texture filler (public-domain AI image): not real media */
   filler?: boolean
+  /** Ads on Trial: a data animation or the evidence board drawn instead of `src` */
+  visual?: import('./visuals').VisualSpec
+  /** 2.5D parallax: depth map of `src` (white = near) */
+  depth?: string
+  /** Detail shot: the region of `src` (0–1) that fills the frame */
+  crop?: Box
+  /** How this shot counts in the review's split (real media, animation, AI, card) */
+  category?: import('./visuals').ShotCategory
   /** More shots after the main one, sharing the scene's time equally (fast cuts) */
   shots?: Omit<RenderScene, 'start' | 'end' | 'shots'>[]
 }
@@ -224,6 +232,17 @@ export interface CardProps {
   [key: string]: unknown
 }
 
+/**
+ * Still of an Ads on Trial drawn shot (review contact sheets): a shot file with {{root}} URLs,
+ * frozen at `at` (0–1) of a `frames`-long shot.
+ */
+export interface VisualStillProps {
+  shot: import('./visuals').ShotFile
+  at?: number
+  frames?: number
+  [key: string]: unknown
+}
+
 export interface RenderJob {
   mode: 'video' | 'short' | 'stills' | 'intro'
   /** Root folder the file server exposes; props reference files as {{root}}/relative/path */
@@ -233,7 +252,11 @@ export interface RenderJob {
   video?: VideoProps
   short?: ShortProps
   /** Thumbnails, or Ads on Trial data cards (`composition: 'Card'`) */
-  stills?: { props: ThumbnailProps | CardProps; out: string; composition?: 'Thumbnail' | 'Card' }[]
+  stills?: {
+    props: ThumbnailProps | CardProps | VisualStillProps
+    out: string
+    composition?: 'Thumbnail' | 'Card' | 'Visual'
+  }[]
   intro?: ChannelIntroProps
   concurrency?: number
   /** Short jobs: image scenes carry their crop focus (older shorts render again to get it) */

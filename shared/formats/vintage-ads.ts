@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SCENE_VISUALS } from '../visuals'
 import type { Script } from '../types'
 import type { FormatPack } from './types'
 
@@ -170,6 +171,13 @@ Target 8–12 minutes only when the evidence fills them; never pad.`,
       }
     },
     {
+      id: 'sceneVisual',
+      label: 'Visual por cena',
+      rules:
+        'visual: for each scene, the visual that tells it best: "scan" (the ad itself), "photo" (a real period photo or engraving), "detail" (a close-up of a real picture), "evidence" (proof or a twist: real clippings on a board, 2–3 per video), "map" (where the ad ran), "timeline" (several key dates), "tree" (family: who died, who took over), "label" (what was inside), "letter" (letters written or answered), "illustration" (an everyday moment no real picture shows), "quote" (only the ad\'s literal words, a verdict or a key number). Vary them; text cards are a last resort.',
+      sceneFields: { visual: z.enum(SCENE_VISUALS).default('photo') }
+    },
+    {
       id: 'verdict',
       label: 'Would It Run Today?',
       rules: `verdict: the closing segment: {"law": one of ${AD_LAWS.map((l) => `"${l}"`).join(', ')} or "Still running" when it runs today in new clothes, "text": one short line (max 14 words) shown on the card}.`,
@@ -208,7 +216,7 @@ Target 8–12 minutes only when the evidence fills them; never pad.`,
       'Sears mail-order heart remedy'
     ]
   },
-  mediaProviders: ['loc', 'wikimedia', 'archive'],
+  mediaProviders: ['loc', 'wikimedia', 'wellcome', 'smithsonian', 'archive'],
   maxMediaYear: PUBLIC_DOMAIN_UNTIL,
   wikimediaCategories: ['Patent medicines', 'Advertisements in the United States', 'Quackery'],
   voices: {

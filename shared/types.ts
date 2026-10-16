@@ -343,7 +343,16 @@ export interface PublishSlot {
   time: string
 }
 
-export type StockProvider = 'pixabay' | 'pexels' | 'wikimedia' | 'nasa' | 'met' | 'archive' | 'loc'
+export type StockProvider =
+  | 'pixabay'
+  | 'pexels'
+  | 'wikimedia'
+  | 'nasa'
+  | 'met'
+  | 'archive'
+  | 'loc'
+  | 'wellcome'
+  | 'smithsonian'
 
 export interface Settings {
   /** Channel format (shared/formats): script rules, thumbnails, overlays, topics */
@@ -381,6 +390,8 @@ export interface Settings {
   imageModel: 'z-image' | 'sdxl'
   pexelsApiKey: string
   pixabayApiKey: string
+  /** api.data.gov key for Smithsonian Open Access (shared) */
+  smithsonianApiKey: string
   /** Stock sources tried in this order for each scene (per channel). */
   stockProviders: StockProvider[]
   /** Also use CC BY files from Wikimedia, credited in the video description. */

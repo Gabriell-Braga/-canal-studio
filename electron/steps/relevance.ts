@@ -103,27 +103,48 @@ Return ONLY JSON: {"picks": [{"scene": 0, "choice": 2}, ...]} with one entry per
 export const MEDIA_KINDS = ['ad', 'product', 'portrait', 'place', 'event', 'other'] as const
 export type MediaKind = (typeof MEDIA_KINDS)[number]
 
+/**
+ * How a picture relates to a narration line: LITERAL shows what the line says, CONTEXT shows
+ * the scene's place, era, product or kind of object (a Lynn street of the 1880s, an office of
+ * 1900), NONE has nothing to do with it (a random museum object, another country or era).
+ */
+export const RELEVANCE = ['literal', 'context', 'none'] as const
+export type Relevance = (typeof RELEVANCE)[number]
+
 export interface VisualVerdict {
   ok: boolean
   what: string
   kind: MediaKind
+  /** Missing in checks cached before the two levels existed: ok then means literal */
+  level?: Relevance
 }
 
 const visionSchema = z.object({
   images: z.array(
     z.object({
       image: z.number().int(),
-      shows: z.boolean(),
+      level: z.enum(RELEVANCE),
       what: z.string(),
       kind: z.enum(MEDIA_KINDS)
     })
   )
 })
 
+/** The verdict of one answer: LITERAL and CONTEXT may be used, NONE never. */
+export function verdictOf(a: { level: Relevance; what: string; kind: MediaKind }): VisualVerdict {
+  return { ok: a.level !== 'none', what: a.what, kind: a.kind, level: a.level }
+}
+
+/** Literal pictures first, then context ones; NONE never. */
+export function byRelevance<T extends { level?: Relevance }>(items: T[]): T[] {
+  const rank = (l?: Relevance): number => (l === 'context' ? 1 : l === 'none' ? 2 : 0)
+  return items.filter((i) => i.level !== 'none').sort((a, b) => rank(a.level) - rank(b.level))
+}
+
 /**
- * The model looks at each image and says whether it shows something the narration line
- * mentions (yes/no and what), and what kind of picture it is. Only a "yes" may be used.
- * `files` are small local previews; the answer is keyed by their index.
+ * The model looks at each image and says how it relates to the narration line (LITERAL,
+ * CONTEXT or NONE, and what it shows), and what kind of picture it is. `files` are small local
+ * previews; the answer is keyed by their index.
  */
 export async function visualCheck(
   narration: string,
@@ -135,15 +156,19 @@ export async function visualCheck(
   if (!files.length) return []
   const { images } = await generateStructured(
     `You check pictures for a YouTube documentary about "${topic}". Narration line: "${narration}"
-Look at each image below (read each file). For each one answer: does this image show something mentioned in this narration line, or the story's own product, its real ads, or the real people and places of this story? Answer shows=true/false and "what" it shows in a few words. A generic museum object, a random period photo or an unrelated person is false.
+Look at each image below (read each file). For each one give its level:
+- "literal": it shows something this narration line mentions, or the story's own product, its real ads, or the real people and places of this story;
+- "context": it does not show the line itself but shows its place, era, product type or kind of object, in the right country and decades (e.g. a street of the story's town at that time, an office of 1900 for clerks answering letters, a patent medicine bottle of the period);
+- "none": nothing to do with it: a random museum object, another country, another era, an unrelated person.
+"what": what it shows in a few words.
 kind: "ad" (a printed advertisement of the product), "product" (the real bottle, label, package), "portrait" (a real person of the story), "place" (factory, town, building of the story), "event" (a period engraving or photo of an event mentioned), "other".
 ${files.map((f, i) => `Image ${i}: ${f}`).join('\n')}
-Return ONLY JSON: {"images": [{"image": 0, "shows": true, "what": "...", "kind": "product"}, ...]} with one entry per image.`,
+Return ONLY JSON: {"images": [{"image": 0, "level": "literal", "what": "...", "kind": "product"}, ...]} with one entry per image.`,
     visionSchema,
     { settings, signal, temperature: 0, effort: 'low', images: files }
   )
   return files.map((_, i) => {
     const a = images.find((x) => x.image === i)
-    return a ? { ok: a.shows, what: a.what, kind: a.kind } : { ok: false, what: '', kind: 'other' }
+    return a ? verdictOf(a) : { ok: false, what: '', kind: 'other', level: 'none' }
   })
 }

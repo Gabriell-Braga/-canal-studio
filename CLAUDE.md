@@ -21,7 +21,7 @@ npm run test:intro           # checks the channel intro fade (scripts/check-intr
 npm run check-setup          # verifies local prerequisites (scripts/check-setup.ps1)
 ```
 
-E2E (Playwright drives the built app from `out/`): `npm run test:e2e` builds and runs all; `node e2e/run.mjs <phase1..phase5>` runs one phase against an existing build. The window opens without focus (`CANAL_E2E=1`) so it does not disturb the user's screen. `CANAL_FAKE_STEPS=1` replaces every step with a timed stub to exercise the queue without GPU work. `CANAL_DATA_DIR` points the app at a throwaway data folder (tests and E2E always use one; never touch the real `dados/`).
+E2E (Playwright drives the built app from `out/`): `npm run test:e2e` builds and runs `phase1` only; `node e2e/run.mjs <scenario> [--keep-data]` runs one scenario against an existing build (names are the keys of `scenarios` in `e2e/scenarios.mjs`: phase1..phase6 plus feature scenarios such as `attachAd`, `oneScript`, `shorts`; `phase5` reuses a `phase4` data folder via `CANAL_DATA_DIR`). `E2E_EXE` runs the packaged exe instead of `out/`. The window opens without focus (`CANAL_E2E=1`) so it does not disturb the user's screen. `CANAL_FAKE_STEPS=1` replaces every step with a timed stub to exercise the queue without GPU work. `CANAL_DATA_DIR` points the app at a throwaway data folder (tests and E2E always use one; never touch the real `dados/`).
 
 After any change, run `npm run deploy:desktop` so the desktop app picks it up, then commit and push.
 

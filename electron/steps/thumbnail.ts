@@ -227,14 +227,18 @@ export async function mobilePreview(
 }
 
 /** Problems of a thumbnail at feed size; none when the check cannot run (sidecar down). */
-async function previewProblems(file: string, ctx: StepContext): Promise<string[]> {
+async function previewProblems(
+  file: string,
+  ctx: StepContext,
+  checkCoverage = true
+): Promise<string[]> {
   try {
     const r = await pythonPost<ThumbReading>(
       '/thumb_check',
       { image_path: file, width: THUMB.preview.width, height: THUMB.preview.height },
       ctx.signal
     )
-    return thumbProblems(r)
+    return thumbProblems(r, checkCoverage)
   } catch (error) {
     if (ctx.signal.aborted) throw error
     ctx.log(`Checagem da prévia indisponível: ${(error as Error).message}`, 'warn')
@@ -559,7 +563,7 @@ Return ONLY JSON: {"titles": [{"title": "...", "curiosity": 0, "clarity": 0, "di
   if (realOnly) {
     const passed: typeof stills = []
     for (const st of stills) {
-      const problems = await previewProblems(st.out, ctx)
+      const problems = await previewProblems(st.out, ctx, false)
       if (problems.length) {
         ctx.log(
           `Thumbnail ${st.props.approach} reprovada na prévia: ${problems.join('; ')}`,

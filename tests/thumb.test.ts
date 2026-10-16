@@ -12,6 +12,8 @@ describe('thumbnail rules', () => {
     expect(thumbProblems({ coverage: 0.5, contrast: 0.25, subject_contrast: 0.2 })).toEqual([])
     expect(thumbProblems({ coverage: 0.1, contrast: 0.25, subject_contrast: 0.2 })).toHaveLength(1)
     expect(thumbProblems({ coverage: 0.1, contrast: 0.05, subject_contrast: 0 })).toHaveLength(2)
+    // Real newspaper scans: coverage is not checked, contrast still is.
+    expect(thumbProblems({ coverage: 0.1, contrast: 0.25, subject_contrast: 0 }, false)).toEqual([])
   })
 })
 

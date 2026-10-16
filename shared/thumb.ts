@@ -42,10 +42,14 @@ export interface ThumbReading {
   subject_contrast: number
 }
 
-/** Why the preview does not read on a phone (pt-BR); empty when it passes. */
-export function thumbProblems(r: ThumbReading): string[] {
+/**
+ * Why the preview does not read on a phone (pt-BR); empty when it passes. Real newspaper
+ * scans skip coverage: saliency finds only part of a paper ad on paper, and their layouts
+ * already fix the ad's size.
+ */
+export function thumbProblems(r: ThumbReading, checkCoverage = true): string[] {
   const out: string[] = []
-  if (r.coverage < THUMB_CHECK.minCoverage)
+  if (checkCoverage && r.coverage < THUMB_CHECK.minCoverage)
     out.push(`Sujeito pequeno (${Math.round(r.coverage * 100)}% do quadro; mínimo 30%)`)
   if (r.contrast < THUMB_CHECK.minContrast)
     out.push(`Contraste baixo (${r.contrast.toFixed(2)}; mínimo ${THUMB_CHECK.minContrast})`)

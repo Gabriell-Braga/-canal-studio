@@ -48,7 +48,7 @@ import {
 } from '../services/youtube'
 import { registerIpc } from './ipc'
 import { handleMedia, registerMediaScheme } from './media'
-import { appRoot, channelDir, channelMusicDir, dataDir, projectDir } from './paths'
+import { appRoot, channelDir, channelMusicDir, dataDir, musicDir, projectDir } from './paths'
 
 const isE2E = process.env.CANAL_E2E === '1'
 const startHidden = process.argv.includes('--hidden')
@@ -269,7 +269,14 @@ app.whenReady().then(async () => {
   openDb(join(dataDir(), 'canal.db'))
   handleMedia(() => [dataDir()])
   configureRemotion(appRoot())
-  configureMusic(channelMusicDir)
+  // A channel without tracks of its own uses the shared library (dados/musica).
+  configureMusic((id) => {
+    const own = channelMusicDir(id)
+    const hasTracks = readdirSync(own, { recursive: true }).some((f) =>
+      /\.(mp3|wav|m4a|ogg)$/i.test(String(f))
+    )
+    return hasTracks ? own : musicDir()
+  })
   configureStockCache(join(dataDir(), 'cache', 'stock'))
   configureLocGate({
     stateFile: join(dataDir(), 'cache', 'loc-block.json'),

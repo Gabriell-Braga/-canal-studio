@@ -637,8 +637,10 @@ export async function vintageScenes(videoId: number, ctx: StepContext): Promise<
         batch.forEach((m, k) => (cache[vkey(narration, m.file)] = verdicts[k]))
         writeFileSync(cacheFile, JSON.stringify(cache, null, 2))
       } catch (error) {
+        // Without the check every picture would count as refused and the video would be
+        // planned from almost nothing: stop and let the queue try again later.
         if (ctx.signal.aborted) throw error
-        log(`Checagem visual falhou: ${(error as Error).message}`, 'warn')
+        throw new Error(`Checagem visual indisponível: ${(error as Error).message}`)
       }
     }
     const ok: MediaItem[] = []

@@ -160,6 +160,11 @@ Look at each image below (read each file). For each one give its level:
 - "literal": it shows something this narration line mentions, or the story's own product, its real ads, or the real people and places of this story;
 - "context": it does not show the line itself but shows its place, era, product type or kind of object, in the right country and decades (e.g. a street of the story's town at that time, an office of 1900 for clerks answering letters, a patent medicine bottle of the period);
 - "none": nothing to do with it: a random museum object, another country, another era, an unrelated person.
+Strict rules, they override the levels above:
+- A page that is mostly printed text is "literal" only when its text is about this product, its ads or this story (e.g. the ad's own testimonials, a lab report on it); a page about anything else is "none", even from the company's own booklet (recipes, sewing patterns, household tips, exercise, puzzles, a census or ledger page).
+- A portrait or recognizable face is "literal" only when it is a person of this story; any other identifiable person is "none".
+- Anatomical or medical plates, sewing diagrams, maps or charts of something else, cowboys, soldiers, ships, sports, or scenes of another region are "none" unless the narration line talks about exactly that.
+- "context" must show a place, object or everyday scene a viewer would connect to this story at a glance; when in doubt, "none".
 "what": what it shows in a few words.
 kind: "ad" (a printed advertisement of the product), "product" (the real bottle, label, package), "portrait" (a real person of the story), "place" (factory, town, building of the story), "event" (a period engraving or photo of an event mentioned), "other".
 ${files.map((f, i) => `Image ${i}: ${f}`).join('\n')}

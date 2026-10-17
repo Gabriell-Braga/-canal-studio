@@ -385,7 +385,8 @@ type VisionCache = Record<string, VisualVerdict>
 
 const vkey = (narration: string, file: string): string =>
   createHash('sha1')
-    .update(`${narration}|${basename(file)}`)
+    // v3: the stricter relevance rules (text pages, other people, unrelated plates).
+    .update(`v3|${narration}|${basename(file)}`)
     .digest('hex')
     .slice(0, 16)
 

@@ -96,7 +96,8 @@ export async function searchSmithsonian(
   signal?: AbortSignal
 ): Promise<StockCandidate[]> {
   if (!key) return []
-  const q = encodeURIComponent(`${query.slice(0, 100)} AND online_media_type:Images`)
+  // Only records whose media are CC0: about 1% of the index, and the only ones in the dump.
+  const q = encodeURIComponent(`${query.slice(0, 100)} AND media_usage:CC0`)
   const res = await fetch(`${API}?q=${q}&rows=30&api_key=${encodeURIComponent(key)}`, { signal })
   if (!res.ok) throw new Error(`Smithsonian HTTP ${res.status}`)
   const rows = ((await res.json()) as { response?: { rows?: SiRow[] } }).response?.rows ?? []
